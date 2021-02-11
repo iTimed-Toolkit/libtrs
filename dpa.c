@@ -4,29 +4,34 @@
 #include <string.h>
 #include <errno.h>
 #include <math.h>
+#include <unistd.h>
 
 #include <pthread.h>
 #include <semaphore.h>
 #include <sys/time.h>
 
 #define PATH(arg)           (arg)->ts_path
-#define MAX_RAM(arg)         (arg)->max_ram
-#define BUF_THRD(arg)       (arg)->n_buf_thrd
-#define CALC_THRD(arg)      (arg)->n_calc_thrd
-#define ALL_THRD(arg)       BUF_THRD(arg) + CALC_THRD(arg)
+#define CALC_THRD(arg)      (arg)->n_thrd
 #define N_PMS(arg)          (arg)->n_power_models
+
+struct result_data
+{
+    sem_t lock;
+    size_t num_hyp, num_samples, num_traces;
+    size_t num_calculated;
+
+    double **pm_sum, **pm_sq;
+    double *tr_sum, *tr_sq;
+    double **product;
+};
 
 struct thread_arg
 {
     int index;
-    sem_t start, *global_done;
     struct dpa_args *dpa_arg;
 
     enum thread_cmd
     {
-        // buffering
-        CMD_GET = 0,
-
         // calculation
         CMD_CALC,
 
@@ -44,85 +49,11 @@ struct thread_arg
     } status;
 
     struct trace_set *set;
-    struct trace **t;
-    void *other_data;
+    struct result_data *local_res;
     size_t base, tpb, curr;
 };
 
-struct result_data
-{
-    sem_t lock;
-    size_t num_hyp, num_samples, num_traces;
-    size_t num_calculated;
-    size_t num_new;
-
-    double **pm_sum, **pm_sq;
-    double *tr_sum, *tr_sq;
-    double **product;
-};
-
 #define LINEAR(res, pi, ti)     ((res)->num_hyp * (ti) + (pi))
-
-void *buffer_thread_func(void *arg)
-{
-    struct thread_arg *my_arg = (struct thread_arg *) arg;
-    size_t trace;
-    int ret;
-
-    struct timeval start, stop, diff;
-
-    while(1)
-    {
-        sem_wait(&my_arg->start);
-        switch(my_arg->cmd)
-        {
-            case CMD_EXIT:
-                return NULL;
-
-            case CMD_NOP:
-                break;
-
-            case CMD_GET:
-                gettimeofday(&start, NULL);
-
-                for(trace = 0;
-                    trace < my_arg->tpb &&
-                    my_arg->base + trace < ts_num_traces(my_arg->set);
-                    trace++)
-                {
-                    gettimeofday(&stop, NULL);
-                    timersub(&stop, &start, &diff);
-
-                    if(diff.tv_usec >= 20000)
-                    {
-                        gettimeofday(&start, NULL);
-                        my_arg->curr = trace;
-                    }
-
-                    ret = trace_get(my_arg->set,
-                                    &my_arg->t[trace],
-                                    my_arg->base + trace,
-                                    true);
-                    if(ret < 0)
-                    {
-                        my_arg->status = ret;
-                        break;
-                    }
-                }
-
-                my_arg->curr = trace;
-                my_arg->status = STAT_DONE;
-                //printf("buffer %i done buffering base %li\n", my_arg->index, my_arg->base);
-                break;
-
-            case CMD_CALC:
-                my_arg->status = STAT_FAILED;
-                break;
-        }
-
-        sem_post(my_arg->global_done);
-    }
-}
 
 void __free_result_data(struct result_data *data,
                         struct dpa_args *dpa_arg)
@@ -231,7 +162,7 @@ size_t __result_data_size(struct trace_set *set, int n_pm)
 {
     return sizeof(double) * (n_pm * 2 * 256 +
                              2 * ts_num_samples(set) +
-                             n_pm * 256 * ts_num_samples(set));
+                             2 * n_pm * 256 * ts_num_samples(set));
 }
 
 static const unsigned char sbox_inv[16][16] =
@@ -271,12 +202,13 @@ static inline int hamming_distance(unsigned char n, unsigned char p)
 static inline float power_model(struct trace *t, size_t guess, int target)
 {
     uint8_t *data, state, val1, val2;
-//    trace_data_output(t, &data);
+    trace_data_output(t, &data);
+    val1 = data[target];
+    val2 = data[(target + 4 * (target % 4)) % 16];
 
-    trace_data_all(t, &data);
-
-    val1 = data[16 + target];
-    val2 = data[16 + (target + 4 * (target % 4)) % 16];
+//    trace_data_all(t, &data);
+//    val1 = data[16 + target];
+//    val2 = data[16 + (target + 4 * (target % 4)) % 16];
 
     state = val1 ^ ((uint8_t) guess);
     state = sbox_inv[state >> 4u][state & 0xfu];
@@ -286,126 +218,74 @@ static inline float power_model(struct trace *t, size_t guess, int target)
 void *calc_thread_func(void *arg)
 {
     struct thread_arg *my_arg = (struct thread_arg *) arg;
-    struct result_data *res = (struct result_data *) my_arg->other_data;
-
-    size_t trace, last_trace;
+    struct trace *curr;
+    size_t trace;
 
     int ret, k, i, p;
     float *trace_data, power_models[N_PMS(my_arg->dpa_arg)][256];
     struct timeval start, stop, diff;
-    struct result_data *local_res;
+    struct result_data *local_res = my_arg->local_res;
 
-    // todo cleanly fail
-    __init_result_data(&local_res, my_arg->set, my_arg->dpa_arg);
-
-    while(1)
+    gettimeofday(&start, NULL);
+    for(trace = 0;
+        trace < my_arg->tpb &&
+        my_arg->base + trace < ts_num_traces(my_arg->set);
+        trace++)
     {
-        sem_wait(&my_arg->start);
-        switch(my_arg->cmd)
+        gettimeofday(&stop, NULL);
+        timersub(&stop, &start, &diff);
+
+        if(diff.tv_sec >= 1)
         {
-            case CMD_EXIT:
-                return NULL;
-
-            case CMD_NOP:
-                break;
-
-            case CMD_CALC:
-                gettimeofday(&start, NULL);
-                last_trace = 0;
-
-                for(trace = 0;
-                    trace < my_arg->tpb &&
-                    my_arg->base + trace < ts_num_traces(my_arg->set);
-                    trace++)
-                {
-                    gettimeofday(&stop, NULL);
-                    timersub(&stop, &start, &diff);
-
-                    if(diff.tv_sec >= 1)
-                    {
-                        if(sem_trywait(&res->lock) == 0)
-                        {
-                            res->num_calculated += (trace - last_trace);
-                            last_trace = trace;
-
-                            for(i = 0; i < ts_num_samples(my_arg->set); i++)
-                            {
-                                res->tr_sum[i] += local_res->tr_sum[i];
-                                res->tr_sq[i] += local_res->tr_sq[i];
-
-                                for(p = 0; p < N_PMS(my_arg->dpa_arg); p++)
-                                {
-                                    for(k = 0; k < 256; k++)
-                                    {
-                                        if(i == 0)
-                                        {
-                                            res->pm_sum[p][k] += local_res->pm_sum[p][k];
-                                            res->pm_sq[p][k] += local_res->pm_sq[p][k];
-                                        }
-
-                                        res->product[p][LINEAR(res, k, i)] +=
-                                                local_res->product[p][LINEAR(res, k, i)];
-                                    }
-                                }
-                            }
-                            sem_post(&res->lock);
-
-
-                            for(p = 0; p < N_PMS(my_arg->dpa_arg); p++)
-                            {
-                                memset(local_res->pm_sum[p], 0, 256 * sizeof(double));
-                                memset(local_res->pm_sq[p], 0, 256 * sizeof(double));
-                                memset(local_res->product[p], 0, 256 * ts_num_samples(my_arg->set) * sizeof(double));
-                            }
-
-                            memset(local_res->tr_sum, 0, ts_num_samples(my_arg->set) * sizeof(double));
-                            memset(local_res->tr_sq, 0, ts_num_samples(my_arg->set) * sizeof(double));
-                        }
-
-                        my_arg->curr = trace;
-                        gettimeofday(&start, NULL);
-                    }
-
-                    ret = trace_samples(my_arg->t[trace], &trace_data);
-                    if(ret < 0)
-                    {
-                        my_arg->status = ret;
-                        break;
-                    }
-
-                    for(i = 0; i < ts_num_samples(my_arg->set); i++)
-                    {
-                        local_res->tr_sum[i] += trace_data[i];
-                        local_res->tr_sq[i] += (trace_data[i] * trace_data[i]);
-
-                        for(p = 0; p < N_PMS(my_arg->dpa_arg); p++)
-                        {
-                            for(k = 0; k < 256; k++)
-                            {
-                                if(i == 0)
-                                {
-                                    power_models[p][k] = power_model(my_arg->t[trace], k, p);
-                                    local_res->pm_sum[p][k] += power_models[p][k];
-                                    local_res->pm_sq[p][k] += (power_models[p][k] * power_models[p][k]);
-                                }
-
-                                local_res->product[p][LINEAR(res, k, i)] +=
-                                        power_models[p][k] * trace_data[i];
-                            }
-                        }
-                    }
-                }
-
-                my_arg->status = STAT_DONE;
-                break;
-
-            case CMD_GET:
-                my_arg->status = STAT_FAILED;
-                break;
+            my_arg->curr = trace;
+            gettimeofday(&start, NULL);
         }
 
-        sem_post(my_arg->global_done);
+        ret = trace_get(my_arg->set, &curr, my_arg->base + trace, false);
+        if(ret < 0)
+        {
+            my_arg->status = ret;
+            break;
+        }
+
+        ret = trace_samples(curr, &trace_data);
+        if(ret < 0)
+        {
+            my_arg->status = ret;
+            break;
+        }
+
+        sem_wait(&local_res->lock);
+
+        local_res->num_calculated++;
+        for(i = 0; i < ts_num_samples(my_arg->set); i++)
+        {
+            local_res->tr_sum[i] += trace_data[i];
+            local_res->tr_sq[i] += (trace_data[i] * trace_data[i]);
+
+            for(p = 0; p < N_PMS(my_arg->dpa_arg); p++)
+            {
+                for(k = 0; k < 256; k++)
+                {
+                    if(i == 0)
+                    {
+                        power_models[p][k] = power_model(curr, k, p);
+                        local_res->pm_sum[p][k] += power_models[p][k];
+                        local_res->pm_sq[p][k] += (power_models[p][k] * power_models[p][k]);
+                    }
+
+                    local_res->product[p][LINEAR(local_res, k, i)] +=
+                            power_models[p][k] * trace_data[i];
+                }
+            }
+        }
+        sem_post(&local_res->lock);
+
+        trace_free(curr);
     }
+
+    my_arg->curr = trace;
+    my_arg->status = STAT_DONE;
 }
 
 #define RESET_TIMERS(now, wait)             \
@@ -417,13 +297,11 @@ void *calc_thread_func(void *arg)
 double *global_max_pearson, *global_max_k, *global_max_i;
 size_t last_nproc;
 
-void print_progress(struct thread_arg *buffer_args,
-                    struct thread_arg *calc_args,
+void print_progress(struct thread_arg *t_args,
                     struct result_data *res,
                     struct dpa_args *dpa_arg)
 {
     int i, j, k, p;
-    size_t nproc;
     double done;
 
     double pearson, pm_avg, pm_dev, tr_avg, tr_dev;
@@ -438,11 +316,62 @@ void print_progress(struct thread_arg *buffer_args,
     if(!global_max_i)
         global_max_i = calloc(N_PMS(dpa_arg), sizeof(double));
 
-    sem_wait(&res->lock);
-    nproc = res->num_calculated;
-
-    if(nproc - last_nproc > 250)
+    for(j = 0; j < CALC_THRD(dpa_arg); j++)
     {
+        sem_wait(&t_args[j].local_res->lock);
+
+        if(j == 0)
+        {
+            res->num_calculated = t_args[j].local_res->num_calculated;
+            for(i = 0; i < ts_num_samples(t_args[j].set); i++)
+            {
+                res->tr_sum[i] = t_args[j].local_res->tr_sum[i];
+                res->tr_sq[i] = t_args[j].local_res->tr_sq[i];
+
+                for(p = 0; p < N_PMS(dpa_arg); p++)
+                {
+                    for(k = 0; k < 256; k++)
+                    {
+                        if(i == 0)
+                        {
+                            res->pm_sum[p][k] = t_args[j].local_res->pm_sum[p][k];
+                            res->pm_sq[p][k] = t_args[j].local_res->pm_sq[p][k];
+                        }
+
+                        res->product[p][LINEAR(res, k, i)] =
+                                t_args[j].local_res->product[p][LINEAR(res, k, i)];
+                    }
+                }
+            }
+        }
+        else
+        {
+            res->num_calculated += t_args[j].local_res->num_calculated;
+            for(i = 0; i < ts_num_samples(t_args[j].set); i++)
+            {
+                res->tr_sum[i] += t_args[j].local_res->tr_sum[i];
+                res->tr_sq[i] += t_args[j].local_res->tr_sq[i];
+
+                for(p = 0; p < N_PMS(dpa_arg); p++)
+                {
+                    for(k = 0; k < 256; k++)
+                    {
+                        if(i == 0)
+                        {
+                            res->pm_sum[p][k] += t_args[j].local_res->pm_sum[p][k];
+                            res->pm_sq[p][k] += t_args[j].local_res->pm_sq[p][k];
+                        }
+
+                        res->product[p][LINEAR(res, k, i)] +=
+                                t_args[j].local_res->product[p][LINEAR(res, k, i)];
+                    }
+                }
+            }
+        }
+
+        sem_post(&t_args[j].local_res->lock);
+    }
+
     for(p = 0; p < N_PMS(dpa_arg); p++)
     {
         max_pearson = 0;
@@ -480,36 +409,14 @@ void print_progress(struct thread_arg *buffer_args,
         global_max_k[p] = max_k;
         global_max_i[p] = max_i;
     }
-    last_nproc = nproc;
-    }
-    sem_post(&res->lock);
-
-    printf("Buffer threads\n");
-    for(i = 0; i < BUF_THRD(dpa_arg); i++)
-    {
-        done = buffer_args[i].tpb == 0 ?
-               0 :
-               ((double) buffer_args[i].curr /
-                (double) buffer_args[i].tpb);
-
-        printf("buf%i [", i);
-        for(j = 0; j < 80; j++)
-        {
-            if((double) j / 80.0 < done)
-                printf("=");
-            else
-                printf(" ");
-        }
-        printf("] %.2f%% (%li)\n", done * 100, buffer_args[i].base);
-    }
 
     printf("\nCompute threads\n");
     for(i = 0; i < CALC_THRD(dpa_arg); i++)
     {
-        done = calc_args[i].tpb == 0 ?
+        done = t_args[i].tpb == 0 ?
                0 :
-               ((double) calc_args[i].curr /
-                (double) calc_args[i].tpb);
+               ((double) t_args[i].curr /
+                (double) t_args[i].tpb);
 
         printf("calc%i [", i);
         for(j = 0; j < 80; j++)
@@ -519,10 +426,10 @@ void print_progress(struct thread_arg *buffer_args,
             else
                 printf(" ");
         }
-        printf("] %.2f%% (%li)\n", done * 100, calc_args[i].base);
+        printf("] %.2f%% (%li)\n", done * 100, t_args[i].base);
     }
 
-    printf("\nCurrent Pearson (%li traces)\n", nproc);
+    printf("\nCurrent Pearson (%li traces)\n", res->num_calculated);
     for(p = 0; p < N_PMS(dpa_arg); p++)
     {
         printf("\t%i %f for guess 0x%02X at sample %i\n",
@@ -532,17 +439,10 @@ void print_progress(struct thread_arg *buffer_args,
     printf("\n\n\n\n");
 }
 
-bool __any_running(struct thread_arg *buffer_args,
-                   struct thread_arg *calc_args,
+bool __any_running(struct thread_arg *calc_args,
                    struct dpa_args *dpa_args)
 {
     int i;
-    for(i = 0; i < BUF_THRD(dpa_args); i++)
-    {
-        if(buffer_args[i].status == STAT_RUNNING)
-            return true;
-    }
-
     for(i = 0; i < CALC_THRD(dpa_args); i++)
     {
         if(calc_args[i].status == STAT_RUNNING)
@@ -555,24 +455,13 @@ bool __any_running(struct thread_arg *buffer_args,
 int run_dpa(struct dpa_args *arg)
 {
     int i, j, k, ret;
-    size_t trace_per_block, batch = 0;
+    size_t batch = 0, trace_per_thread;
 
     struct trace_set *set;
-    struct trace **trace_blocks[ALL_THRD(arg)];
-    enum trace_status
-    {
-        EMPTY = 0, FETCH, CALC
-    } trace_status[ALL_THRD(arg)];
-    int trace_index[ALL_THRD(arg)];
-
     struct result_data *res;
 
-    sem_t global_done;
-    bool sem_init_success;
-    pthread_t buffer_threads[BUF_THRD(arg)];
-    pthread_t calc_threads[CALC_THRD(arg)];
-    struct thread_arg buffer_args[BUF_THRD(arg)];
-    struct thread_arg calc_args[CALC_THRD(arg)];
+    pthread_t t_handles[CALC_THRD(arg)];
+    struct thread_arg t_args[CALC_THRD(arg)];
 
     ret = ts_open(&set, PATH(arg));
     if(ret < 0)
@@ -581,21 +470,7 @@ int run_dpa(struct dpa_args *arg)
         return ret;
     }
 
-    if(MAX_RAM(arg) -
-       (CALC_THRD(arg) + 1) *
-       __result_data_size(set, N_PMS(arg)) < 0)
-    {
-        printf("not enough RAM for necessary structures\n");
-        goto __close_set;
-    }
-
-    trace_per_block = ((MAX_RAM(arg) -
-                        (CALC_THRD(arg) + 1) *
-                        __result_data_size(set, N_PMS(arg))) /
-                       ts_trace_size(set)) / (ALL_THRD(arg));
-
-    if(trace_per_block > (ts_num_traces(set) / (ALL_THRD(arg))))
-        trace_per_block = (ts_num_traces(set) / (ALL_THRD(arg)));
+    trace_per_thread = ts_num_traces(set) / CALC_THRD(arg);
 
     if(__init_result_data(&res, set, arg) < 0)
     {
@@ -603,79 +478,21 @@ int run_dpa(struct dpa_args *arg)
         goto __close_set;
     }
 
-    for(i = 0; i < ALL_THRD(arg); i++)
-    {
-        trace_status[i] = EMPTY;
-        trace_blocks[i] = calloc(trace_per_block,
-                                 sizeof(struct trace *));
-        if(!trace_blocks[i])
-            goto __free_trace_sets;
-    }
-
-    ret = sem_init(&global_done, 0, BUF_THRD(arg));
-    if(ret < 0)
-    {
-        ret = errno;
-        goto __free_trace_sets;
-    }
-
-    for(i = 0; i < BUF_THRD(arg); i++)
-    {
-        // create buffering threads
-        buffer_args[i].index = i;
-        buffer_args[i].dpa_arg = arg;
-        buffer_args[i].status = STAT_READY;
-        buffer_args[i].set = set;
-        buffer_args[i].t = NULL;
-        buffer_args[i].other_data = NULL;
-        buffer_args[i].base = 0;
-        buffer_args[i].tpb = trace_per_block;
-        buffer_args[i].curr = 0;
-        buffer_args[i].global_done = &global_done;
-
-        sem_init_success = false;
-        ret = sem_init(&buffer_args[i].start, 0, 0);
-        if(ret < 0)
-        {
-            ret = -errno;
-            goto __free_buffer_threads;
-        }
-
-        sem_init_success = true;
-        ret = pthread_create(&buffer_threads[i], NULL,
-                             buffer_thread_func, &buffer_args[i]);
-        if(ret < 0)
-        {
-            ret = -errno;
-            goto __free_buffer_threads;
-        }
-    }
-
     for(i = 0; i < CALC_THRD(arg); i++)
     {
         // create calculation threads
-        calc_args[i].index = i;
-        calc_args[i].dpa_arg = arg;
-        calc_args[i].status = STAT_READY;
-        calc_args[i].set = set;
-        calc_args[i].t = NULL;
-        calc_args[i].other_data = res;
-        calc_args[i].base = 0;
-        calc_args[i].tpb = trace_per_block;
-        calc_args[i].curr = 0;
-        calc_args[i].global_done = &global_done;
+        t_args[i].index = i;
+        t_args[i].dpa_arg = arg;
+        t_args[i].status = STAT_RUNNING;
+        t_args[i].set = set;
 
-        sem_init_success = false;
-        ret = sem_init(&calc_args[i].start, 0, 0);
-        if(ret < 0)
-        {
-            ret = -errno;
-            goto __free_calc_args;
-        }
+        __init_result_data(&t_args[i].local_res, set, arg);
+        t_args[i].base = i * trace_per_thread;
+        t_args[i].tpb = trace_per_thread;
+        t_args[i].curr = 0;
 
-        sem_init_success = true;
-        ret = pthread_create(&calc_threads[i], NULL,
-                             calc_thread_func, &calc_args[i]);
+        ret = pthread_create(&t_handles[i], NULL,
+                             calc_thread_func, &t_args[i]);
         if(ret < 0)
         {
             ret = -errno;
@@ -683,166 +500,21 @@ int run_dpa(struct dpa_args *arg)
         }
     }
 
-    struct timeval now;
-    struct timespec wait;
-
-    while(batch < ts_num_traces(set) ||
-          __any_running(buffer_args, calc_args, arg))
+    while(__any_running(t_args, arg))
     {
-        RESET_TIMERS(now, wait);
-        while(sem_timedwait(&global_done, &wait) < 0)
-        {
-            print_progress(buffer_args, calc_args, res, arg);
-            RESET_TIMERS(now, wait);
-        }
-
-        for(i = 0; i < ALL_THRD(arg); i++)
-        {
-            switch(trace_status[i])
-            {
-                case CALC:
-                    if(calc_args[trace_index[i]].status == STAT_DONE)
-                    {
-                        for(k = 0; k < trace_per_block; k++)
-                        {
-                            trace_free(calc_args[trace_index[i]].t[k]);
-                            calc_args[trace_index[i]].t[k] = NULL;
-                        }
-
-                        calc_args[trace_index[i]].status = STAT_READY;
-                        calc_args[trace_index[i]].t = NULL;
-                        calc_args[trace_index[i]].base = 0;
-                        calc_args[trace_index[i]].tpb = 0;
-                        calc_args[trace_index[i]].curr = 0;
-
-                        trace_status[i] = EMPTY;
-                        trace_index[i] = -1;
-                        sem_post(&global_done);
-                    }
-                    break;
-
-                case FETCH:
-                    if(buffer_args[trace_index[i]].status == STAT_DONE)
-                    {
-                        // search for an empty calc thread
-                        for(j = 0; j < CALC_THRD(arg); j++)
-                        {
-                            if(calc_args[j].status == STAT_READY)
-                            {
-                                calc_args[j].status = STAT_RUNNING;
-                                calc_args[j].t = buffer_args[trace_index[i]].t;
-                                calc_args[j].cmd = CMD_CALC;
-                                calc_args[j].base = buffer_args[trace_index[i]].base;
-                                calc_args[j].tpb = buffer_args[trace_index[i]].tpb;
-                                calc_args[j].curr = 0;
-                                sem_post(&calc_args[j].start);
-
-                                buffer_args[trace_index[i]].status = STAT_READY;
-                                buffer_args[trace_index[i]].t = NULL;
-                                buffer_args[trace_index[i]].base = 0;
-                                buffer_args[trace_index[i]].tpb = 0;
-                                buffer_args[trace_index[i]].curr = 0;
-
-                                trace_status[i] = CALC;
-                                trace_index[i] = j;
-                                break;
-                            }
-                        }
-                    }
-                    break;
-
-                case EMPTY:
-                    for(j = 0; j < BUF_THRD(arg) &&
-                               batch < ts_num_traces(set); j++)
-                    {
-                        if(buffer_args[j].status == STAT_READY)
-                        {
-                            buffer_args[j].status = STAT_RUNNING;
-                            buffer_args[j].t = trace_blocks[i];
-                            buffer_args[j].cmd = CMD_GET;
-                            buffer_args[j].base = batch;
-                            buffer_args[j].tpb = (batch + trace_per_block >= ts_num_traces(set)) ?
-                                                 ts_num_traces(set) - batch :
-                                                 trace_per_block;
-                            buffer_args[j].curr = 0;
-                            sem_post(&buffer_args[j].start);
-
-                            trace_status[i] = FETCH;
-                            trace_index[i] = j;
-
-                            batch += trace_per_block;
-                            break;
-                        }
-                    }
-                    break;
-            }
-        }
+        usleep(1000000);
+        print_progress(t_args, res, arg);
     }
 
-    print_progress(buffer_args, calc_args, res, arg);
+    print_progress(t_args, res, arg);
 
     i = CALC_THRD(arg) - 1;
 __free_calc_args:
     for(j = 0; j <= i; j++)
     {
-        if(j == i && i != CALC_THRD(arg) - 1)
-        {
-            // pthread init must've failed
-            // if sem_init failed, nothing to be done here
-            if(sem_init_success)
-                sem_destroy(&calc_args[i].start);
-        }
-        else
-        {
-            calc_args[i].cmd = CMD_EXIT;
-            sem_post(&calc_args[i].start);
-
-            pthread_join(calc_threads[i], NULL);
-            sem_destroy(&calc_args[i].start);
-        }
-    }
-
-    i = BUF_THRD(arg) - 1;
-__free_buffer_threads:
-    for(j = 0; j <= i; j++)
-    {
-        if(j == i && i != BUF_THRD(arg) - 1)
-        {
-            // pthread init must've failed
-            // if sem_init failed, nothing to be done here
-            if(sem_init_success)
-                sem_destroy(&buffer_args[i].start);
-        }
-        else
-        {
-            buffer_args[i].cmd = CMD_EXIT;
-            sem_post(&buffer_args[i].start);
-
-            pthread_join(buffer_threads[i], NULL);
-            sem_destroy(&buffer_args[i].start);
-        }
-    }
-
-__destroy_global_done:
-    sem_destroy(&global_done);
-
-__free_trace_sets:
-    for(i = 0; i < ALL_THRD(arg); i++)
-    {
-        if(trace_blocks[i])
-        {
-            for(j = 0; j < trace_per_block; j++)
-            {
-                if(trace_blocks[i][j])
-                {
-                    trace_free(trace_blocks[i][j]);
-                    trace_blocks[i][j] = NULL;
-                }
-            }
-
-            free(trace_blocks[i]);
-            trace_blocks[i] = NULL;
-        }
+        // todo figure out some cancellation mechanism
+        pthread_join(t_handles[i], NULL);
+//        sem_destroy(&t_args[i].start);
     }
 
     if(res)

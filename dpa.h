@@ -9,12 +9,8 @@ typedef int (*pm_func)(struct trace *t, size_t guess);
 struct dpa_args
 {
     char *ts_path;
-    size_t max_ram;
-    size_t n_buf_thrd;
-    size_t n_calc_thrd;
-
+    size_t n_thrd;
     size_t n_power_models;
-
     // todo
     pm_func *power_model_funcs;
 };
