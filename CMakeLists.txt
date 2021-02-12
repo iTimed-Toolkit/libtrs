@@ -7,6 +7,8 @@ set(CMAKE_CUDA_STANDARD  14)
 
 add_executable(libtrs_test_cpu dpa.c libtrs.c test.c)
 target_link_libraries(libtrs_test_cpu m pthread)
+target_compile_definitions(libtrs_test_cpu PRIVATE USE_GPU=0)
 
-#add_executable(libtrs_test_gpu dpa.c libtrs.c dpa_accel.cu test.c)
-#target_link_libraries(libtrs_test_gpu m pthread)
+add_executable(libtrs_test_gpu dpa.c libtrs.c dpa_accel.cu test.c)
+target_link_libraries(libtrs_test_gpu m pthread)
+target_compile_definitions(libtrs_test_gpu PRIVATE USE_GPU=1)
