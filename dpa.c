@@ -447,7 +447,7 @@ void print_progress(struct thread_arg *t_args,
     double done;
 
     double pearson, pm_avg, pm_dev, tr_avg, tr_dev;
-    double max_pearson, max_k, max_i;
+    double max_pearson, max_k, max_i, sig;
 
     if(!global_max_pearson)
         global_max_pearson = calloc(N_PMS(dpa_arg), sizeof(double));
@@ -514,6 +514,7 @@ void print_progress(struct thread_arg *t_args,
         sem_post(&t_args[j].local_res->lock);
     }
 
+    sig = 4.0 / sqrt((double) res->num_calculated);
     for(p = 0; p < N_PMS(dpa_arg); p++)
     {
         max_pearson = 0;
@@ -571,11 +572,15 @@ void print_progress(struct thread_arg *t_args,
         printf("] %.2f%% (%li)\n", done * 100, t_args[i].base);
     }
 
-    printf("\nCurrent Pearson (%li traces)\n", res->num_calculated);
+    printf("\nCurrent Pearson (%li traces, sig = %f)\n", res->num_calculated, sig);
     for(p = 0; p < N_PMS(dpa_arg); p++)
     {
-        printf("\t%i %f for guess 0x%02X at sample %i\n",
+        printf("\t%i %f for guess 0x%02X at sample %i ",
                p, global_max_pearson[p], (uint8_t) global_max_k[p], (int) global_max_i[p]);
+
+        if(global_max_pearson[p] > sig)
+            printf("(!)");
+        printf("\n");
     }
 
     printf("\n\n\n\n");
