@@ -437,7 +437,9 @@ void *calc_thread_func(void *arg)
 
 // todo: unglobal this
 double *global_max_pearson, *global_max_k, *global_max_i;
-size_t last_nproc;
+
+#define CHECKPOINT_FREQ     1000
+size_t last_checkpoint = 0;
 
 void print_progress(struct thread_arg *t_args,
                     struct result_data *res,
@@ -448,6 +450,9 @@ void print_progress(struct thread_arg *t_args,
 
     double pearson, pm_avg, pm_dev, tr_avg, tr_dev;
     double max_pearson, max_k, max_i, sig;
+
+    char fname[256];
+    FILE *checkpoint_file;
 
     if(!global_max_pearson)
         global_max_pearson = calloc(N_PMS(dpa_arg), sizeof(double));
@@ -514,7 +519,42 @@ void print_progress(struct thread_arg *t_args,
         sem_post(&t_args[j].local_res->lock);
     }
 
-    sig = 4.0 / sqrt((double) res->num_calculated);
+    if(res->num_calculated >= last_checkpoint + CHECKPOINT_FREQ)
+    {
+        sprintf(fname, "checkpoint_%li.bin", res->num_calculated);
+        checkpoint_file = fopen(fname, "wb+");
+
+        fwrite("h", 1, 1, checkpoint_file);
+        fwrite(&res->num_hyp, sizeof(size_t), 1, checkpoint_file);
+        fwrite("s", 1, 1, checkpoint_file);
+        fwrite(&res->num_samples, sizeof(size_t), 1, checkpoint_file);
+        fwrite("t", 1, 1, checkpoint_file);
+        fwrite(&res->num_traces, sizeof(size_t), 1, checkpoint_file);
+        fwrite("p", 1, 1, checkpoint_file);
+        fwrite(&dpa_arg->n_power_models, sizeof(size_t), 1, checkpoint_file);
+        fwrite("c", 1, 1, checkpoint_file);
+        fwrite(&res->num_calculated, sizeof(size_t), 1, checkpoint_file);
+
+        fwrite("iu", 1, 2, checkpoint_file);
+        fwrite(res->tr_sum, sizeof(double), res->num_samples, checkpoint_file);
+
+        fwrite("is", 1, 2, checkpoint_file);
+        fwrite(res->tr_sq, sizeof(double), res->num_samples, checkpoint_file);
+
+        for(p = 0; p < N_PMS(dpa_arg); p++)
+        {
+            fwrite("ku", 1, 2, checkpoint_file);
+            fwrite(res->pm_sum[p], sizeof(double), 256, checkpoint_file);
+            fwrite("ks", 1, 2, checkpoint_file);
+            fwrite(res->pm_sq[p], sizeof(double), 256, checkpoint_file);
+            fwrite("ki", 1, 2, checkpoint_file);
+            fwrite(res->product[p], sizeof(double), 256 * res->num_samples, checkpoint_file);
+        }
+
+        fclose(checkpoint_file);
+        last_checkpoint = res->num_traces;
+    }
+
     for(p = 0; p < N_PMS(dpa_arg); p++)
     {
         max_pearson = 0;
@@ -572,6 +612,7 @@ void print_progress(struct thread_arg *t_args,
         printf("] %.2f%% (%li)\n", done * 100, t_args[i].base);
     }
 
+    sig = 4.0 / sqrt((double) res->num_calculated);
     printf("\nCurrent Pearson (%li traces, sig = %f)\n", res->num_calculated, sig);
     for(p = 0; p < N_PMS(dpa_arg); p++)
     {
