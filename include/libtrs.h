@@ -5,8 +5,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define SUPPORT_PTHREAD     1
-
 // opaque structs, no need for user to worry about implementation :)
 struct trace_set;
 struct trace;
@@ -43,13 +41,6 @@ int ts_close(struct trace_set *ts);
 int ts_create(struct trace_set **ts, struct trace_set *from, const char *path);
 
 /**
- * Print the headers found in a given trace set.
- *
- * @param ts The traceset to print.
- */
-void dump_headers(struct trace_set *ts);
-
-/**
  * Unimplemented.
  *
  * @param ts
@@ -57,6 +48,22 @@ void dump_headers(struct trace_set *ts);
  * @return
  */
 int ts_append(struct trace_set *ts, struct trace *t);
+
+/**
+ * Create a new trace set transformed in some way from a previous one
+ * @param new_ts Where to place a pointer to the new trace set.
+ * @param prev The source trace set for the tfm.
+ * @param transform Opaque pointer to a transformation object.
+ * @return - 0 on success, or a standard errno error code on failure.
+ */
+int ts_transform(struct trace_set **new_ts, struct trace_set *prev, void *transform);
+
+/**
+ * Print the headers found in a given trace set.
+ *
+ * @param ts The traceset to print.
+ */
+void dump_headers(struct trace_set *ts);
 
 /**
  * Get the number of traces in a trace set.
@@ -77,10 +84,10 @@ size_t ts_num_traces(struct trace_set *ts);
 size_t ts_num_samples(struct trace_set *ts);
 
 /**
- * Get the size (in bytes) of a single traces in a trace set.
+ * Get the init (in bytes) of a single traces in a trace set.
  *
  * @param ts The trace set to operate on.
- * @return The (positive) trace size, or a (negative)
+ * @return The (positive) trace init, or a (negative)
  * standard errno error code on failure.
  */
 size_t ts_trace_size(struct trace_set *ts);

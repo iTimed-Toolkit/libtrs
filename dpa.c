@@ -577,8 +577,8 @@ void print_progress(struct thread_arg *t_args,
                 pearson -= res->tr_sum[i] * pm_avg;
                 pearson -= res->pm_sum[p][k] * tr_avg;
                 pearson += res->num_calculated * pm_avg * tr_avg;
-
                 pearson /= (res->num_calculated * pm_dev * tr_dev);
+
                 if(fabs(pearson) > max_pearson)
                 {
                     max_pearson = fabs(pearson);

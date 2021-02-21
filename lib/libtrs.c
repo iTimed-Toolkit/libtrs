@@ -1,12 +1,11 @@
 #include "libtrs.h"
+#include "__libtrs_internal.h"
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <semaphore.h>
 
 /* --- static defines --- */
 
@@ -80,13 +79,13 @@ static const char header_desc[][80] = {
 #define __def_TH_BOOL  boolean
 
 #define HEADER_NAME(_index, _tag, _name, _req, \
-                        _type, _len, _def)      \
-    [_index == _tag ? _index : -1] =            \
-        {                                       \
-            .name = _name, .req = _req,         \
-            .th_type = _type, .len = _len,      \
-            .desc = header_desc[_index],        \
-            .def.__def_ ## _type = _def         \
+                        _type, _len, _def)     \
+    [(_index) == (_tag) ? (_index) : -1] =     \
+        {                                      \
+            .name = (_name), .req = (_req),    \
+            .th_type = (_type), .len = (_len), \
+            .desc = header_desc[(_index)],     \
+            .def.__def_ ## _type = (_def)      \
         }
 
 struct th_def
@@ -187,33 +186,6 @@ struct th_data
 #define ts_lock(set, out)   ;
 #define ts_unlock(set, out) ;
 #endif
-
-struct trace_set
-{
-    FILE *ts_file;
-#if SUPPORT_PTHREAD
-    sem_t file_lock;
-#endif
-
-    size_t num_samples, num_traces;
-    size_t title_size, data_size;
-
-    size_t input_offs, input_len,
-            output_offs, output_len,
-            key_offs, key_len;
-
-    enum datatype
-    {
-        DT_BYTE = 0x1, DT_SHORT = 0x2,
-        DT_INT = 0x4, DT_FLOAT = 0x14,
-        DT_NONE = 0xFF
-    } datatype;
-    size_t trace_start, trace_length;
-    float yscale;
-
-    size_t num_headers;
-    struct th_data *headers;
-};
 
 int __read_tag_and_len(FILE *ts_file, uint8_t *tag, uint32_t *actual_len)
 {
@@ -433,7 +405,7 @@ int ts_open(struct trace_set **ts, const char *path)
     if(!ts || !path)
         return -EINVAL;
 
-    ts_result = (struct trace_set *) malloc(sizeof(struct trace_set));
+    ts_result = calloc(1, sizeof(struct trace_set));
     if(!ts_result)
         return -ENOMEM;
 
@@ -468,6 +440,9 @@ int ts_open(struct trace_set **ts, const char *path)
         goto __free_headers;
     }
 #endif
+
+    ts_result->prev = NULL;
+    ts_result->tfm = NULL;
 
     *ts = ts_result;
     return 0;
@@ -505,8 +480,15 @@ int ts_close(struct trace_set *ts)
             free(ts->headers[i].val.bytes);
     }
 
-    free(ts->headers);
-    fclose(ts->ts_file);
+    if(ts->headers)
+        free(ts->headers);
+
+    if(ts->ts_file)
+        fclose(ts->ts_file);
+
+    if(ts->prev && ts->tfm)
+        ((struct tfm_generic *) ts->tfm)->exit(ts);
+
     free(ts);
     return 0;
 }
@@ -521,6 +503,44 @@ int ts_append(struct trace_set *ts, struct trace *t)
 {
     fprintf(stderr, "ts_append currently unsupported\n");
     return -1;
+}
+
+int ts_transform(struct trace_set **new_ts, struct trace_set *prev, void *transform)
+{
+    int ret;
+    struct trace_set *ts_result;
+
+    if(!new_ts || !prev || !transform)
+        return -EINVAL;
+
+    struct tfm_generic *tfm = transform;
+
+    ts_result = calloc(1, sizeof(struct trace_set));
+    if(!ts_result)
+        return -ENOMEM;
+
+    // no need to seek within a file or parse headers
+    ts_result->ts_file = NULL;
+    ts_result->trace_length = 1;
+    ts_result->trace_start = 0;
+
+    ts_result->num_headers = 0;
+    ts_result->headers = NULL;
+
+    // link previous set
+    ts_result->prev = prev;
+    ts_result->tfm = transform;
+
+    // transform-specific initialization
+    ret = tfm->init(ts_result);
+    if(ret < 0)
+    {
+        free(ts_result);
+        return ret;
+    }
+
+    *new_ts = ts_result;
+    return 0;
 }
 
 size_t ts_num_traces(struct trace_set *ts)
@@ -540,16 +560,6 @@ size_t ts_num_samples(struct trace_set *ts)
 }
 
 /* --- trace operations --- */
-
-struct trace
-{
-    struct trace_set *owner;
-    size_t start_offset;
-
-    char *buffered_title;
-    uint8_t *buffered_data;
-    float *buffered_samples;
-};
 
 size_t ts_trace_size(struct trace_set *ts)
 {
@@ -610,14 +620,28 @@ int trace_free(struct trace *t)
     if(!t)
         return -EINVAL;
 
-    if(t->buffered_title)
-        free(t->buffered_title);
+    if(t->owner->prev && t->owner->tfm)
+    {
+        if(t->buffered_title)
+            ((struct tfm_generic *) t->owner->tfm)->free_title(t);
 
-    if(t->buffered_data)
-        free(t->buffered_data);
+        if(t->buffered_data)
+            ((struct tfm_generic *) t->owner->tfm)->free_data(t);
 
-    if(t->buffered_samples)
-        free(t->buffered_samples);
+        if(t->buffered_samples)
+            ((struct tfm_generic *) t->owner->tfm)->free_samples(t);
+    }
+    else
+    {
+        if(t->buffered_title)
+            free(t->buffered_title);
+
+        if(t->buffered_data)
+            free(t->buffered_data);
+
+        if(t->buffered_samples)
+            free(t->buffered_samples);
+    }
 
     free(t);
     return 0;
@@ -638,27 +662,36 @@ int trace_title(struct trace *t, char **title)
         return 0;
     }
 
-    result = calloc(1, t->owner->title_size);
-    if(!result)
-        return -ENOMEM;
-
-    ts_lock(t->owner, goto __sem_fail);
-
-    stat = fseek(t->owner->ts_file, t->start_offset, SEEK_SET);
-    if(stat)
+    if(t->owner->prev && t->owner->tfm)
     {
-        stat = -EIO;
-        goto __free_result;
+        stat = ((struct tfm_generic *) t->owner->tfm)->title(t, &result);
+        if(stat < 0)
+            goto __fail;
     }
-
-    ret = fread(result, 1, t->owner->title_size, t->owner->ts_file);
-    if(ret != t->owner->title_size)
+    else
     {
-        stat = -EIO;
-        goto __free_result;
-    }
+        result = calloc(1, t->owner->title_size);
+        if(!result)
+            return -ENOMEM;
 
-    ts_unlock(t->owner, goto __sem_fail);
+        ts_lock(t->owner, goto __sem_fail);
+
+        stat = fseek(t->owner->ts_file, t->start_offset, SEEK_SET);
+        if(stat)
+        {
+            stat = -EIO;
+            goto __free_result;
+        }
+
+        ret = fread(result, 1, t->owner->title_size, t->owner->ts_file);
+        if(ret != t->owner->title_size)
+        {
+            stat = -EIO;
+            goto __free_result;
+        }
+
+        ts_unlock(t->owner, goto __sem_fail);
+    }
 
     t->buffered_title = result;
     *title = result;
@@ -671,6 +704,8 @@ __sem_fail:
 
 __free_result:
     free(result);
+
+__fail:
     return stat;
 }
 
@@ -678,27 +713,37 @@ int __trace_buffer_data(struct trace *t)
 {
     int stat;
     size_t ret;
-    uint8_t *result = calloc(1, t->owner->data_size);
+    uint8_t *result;
 
-    if(!result)
-        return -ENOMEM;
-
-    ts_lock(t->owner, goto __sem_fail);
-    stat = fseek(t->owner->ts_file, t->start_offset + t->owner->title_size, SEEK_SET);
-    if(stat)
+    if(t->owner->prev && t->owner->tfm)
     {
-        stat = -EIO;
-        goto __free_result;
+        stat = ((struct tfm_generic *) t->owner->tfm)->data(t, &result);
+        if(stat < 0)
+            goto __fail;
+    }
+    else
+    {
+        result = calloc(1, t->owner->data_size);
+        if(!result)
+            return -ENOMEM;
+
+        ts_lock(t->owner, goto __sem_fail);
+        stat = fseek(t->owner->ts_file, t->start_offset + t->owner->title_size, SEEK_SET);
+        if(stat)
+        {
+            stat = -EIO;
+            goto __free_result;
+        }
+
+        ret = fread(result, 1, t->owner->data_size, t->owner->ts_file);
+        if(ret != t->owner->data_size)
+        {
+            stat = -EIO;
+            goto __free_result;
+        }
+        ts_unlock(t->owner, goto __sem_fail);
     }
 
-    ret = fread(result, 1, t->owner->data_size, t->owner->ts_file);
-    if(ret != t->owner->data_size)
-    {
-        stat = -EIO;
-        goto __free_result;
-    }
-
-    ts_unlock(t->owner, goto __sem_fail);
     t->buffered_data = result;
     return 0;
 
@@ -709,6 +754,8 @@ __sem_fail:
 
 __free_result:
     free(result);
+
+__fail:
     return stat;
 }
 
@@ -793,62 +840,71 @@ size_t trace_samples(struct trace *t, float **data)
         return 0;
     }
 
-    temp = calloc(t->owner->datatype & 0xF, t->owner->num_samples);
-    if(!temp)
-        return -ENOMEM;
-
-    result = calloc(sizeof(float), t->owner->num_samples);
-    if(!result)
+    if(t->owner->prev && t->owner->tfm)
     {
-        stat = -ENOMEM;
-        goto __free_temp;
+        stat = ((struct tfm_generic *) t->owner->tfm)->samples(t, &result);
+        if(stat < 0)
+            goto __fail;
     }
-
-    ts_lock(t->owner, goto __sem_fail);
-    stat = fseek(t->owner->ts_file,
-                 t->start_offset + t->owner->title_size + t->owner->data_size,
-                 SEEK_SET);
-    if(stat)
+    else
     {
-        stat = -EIO;
-        goto __free_temp;
+        temp = calloc(t->owner->datatype & 0xF, t->owner->num_samples);
+        if(!temp)
+            return -ENOMEM;
+
+        result = calloc(sizeof(float), t->owner->num_samples);
+        if(!result)
+        {
+            stat = -ENOMEM;
+            goto __free_temp;
+        }
+
+        ts_lock(t->owner, goto __sem_fail);
+        stat = fseek(t->owner->ts_file,
+                     t->start_offset + t->owner->title_size + t->owner->data_size,
+                     SEEK_SET);
+        if(stat)
+        {
+            stat = -EIO;
+            goto __free_temp;
+        }
+
+        ret = fread(temp, t->owner->datatype & 0xF, t->owner->num_samples, t->owner->ts_file);
+        if(ret != t->owner->num_samples)
+        {
+            stat = -EIO;
+            goto __free_temp;
+        }
+        ts_unlock(t->owner, goto __sem_fail);
+
+        switch(t->owner->datatype)
+        {
+            case DT_BYTE:
+                for(i = 0; i < t->owner->num_samples; i++)
+                    result[i] = t->owner->yscale * (float) ((char *) temp)[i];
+                break;
+
+            case DT_SHORT:
+                for(i = 0; i < t->owner->num_samples; i++)
+                    result[i] = t->owner->yscale * (float) ((short *) temp)[i];
+                break;
+
+            case DT_INT:
+                for(i = 0; i < t->owner->num_samples; i++)
+                    result[i] = t->owner->yscale * (float) ((int *) temp)[i];
+                break;
+
+            case DT_FLOAT:
+                for(i = 0; i < t->owner->num_samples; i++)
+                    result[i] = t->owner->yscale * ((float *) temp)[i];
+                break;
+
+            case DT_NONE:
+                goto __free_result;
+        }
+
+        free(temp);
     }
-
-    ret = fread(temp, t->owner->datatype & 0xF, t->owner->num_samples, t->owner->ts_file);
-    if(ret != t->owner->num_samples)
-    {
-        stat = -EIO;
-        goto __free_temp;
-    }
-    ts_unlock(t->owner, goto __sem_fail);
-
-    switch(t->owner->datatype)
-    {
-        case DT_BYTE:
-            for(i = 0; i < t->owner->num_samples; i++)
-                result[i] = t->owner->yscale * (float) ((char *) temp)[i];
-            break;
-
-        case DT_SHORT:
-            for(i = 0; i < t->owner->num_samples; i++)
-                result[i] = t->owner->yscale * (float) ((short *) temp)[i];
-            break;
-
-        case DT_INT:
-            for(i = 0; i < t->owner->num_samples; i++)
-                result[i] = t->owner->yscale * (float) ((int *) temp)[i];
-            break;
-
-        case DT_FLOAT:
-            for(i = 0; i < t->owner->num_samples; i++)
-                result[i] = t->owner->yscale * ((float *) temp)[i];
-            break;
-
-        case DT_NONE:
-            goto __free_result;
-    }
-
-    free(temp);
 
     t->buffered_samples = result;
     *data = result;
@@ -864,5 +920,7 @@ __free_result:
 
 __free_temp:
     free(temp);
+
+__fail:
     return stat;
 }
