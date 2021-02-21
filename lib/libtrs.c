@@ -487,7 +487,7 @@ int ts_close(struct trace_set *ts)
         fclose(ts->ts_file);
 
     if(ts->prev && ts->tfm)
-        ((struct tfm_generic *) ts->tfm)->exit(ts);
+        ts->tfm->exit(ts);
 
     free(ts);
     return 0;
@@ -505,15 +505,13 @@ int ts_append(struct trace_set *ts, struct trace *t)
     return -1;
 }
 
-int ts_transform(struct trace_set **new_ts, struct trace_set *prev, void *transform)
+int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *transform)
 {
     int ret;
     struct trace_set *ts_result;
 
     if(!new_ts || !prev || !transform)
         return -EINVAL;
-
-    struct tfm_generic *tfm = transform;
 
     ts_result = calloc(1, sizeof(struct trace_set));
     if(!ts_result)
@@ -532,7 +530,7 @@ int ts_transform(struct trace_set **new_ts, struct trace_set *prev, void *transf
     ts_result->tfm = transform;
 
     // transform-specific initialization
-    ret = tfm->init(ts_result);
+    ret = transform->init(ts_result);
     if(ret < 0)
     {
         free(ts_result);
@@ -623,13 +621,13 @@ int trace_free(struct trace *t)
     if(t->owner->prev && t->owner->tfm)
     {
         if(t->buffered_title)
-            ((struct tfm_generic *) t->owner->tfm)->free_title(t);
+            t->owner->tfm->free_title(t);
 
         if(t->buffered_data)
-            ((struct tfm_generic *) t->owner->tfm)->free_data(t);
+            t->owner->tfm->free_data(t);
 
         if(t->buffered_samples)
-            ((struct tfm_generic *) t->owner->tfm)->free_samples(t);
+            t->owner->tfm->free_samples(t);
     }
     else
     {
@@ -664,7 +662,7 @@ int trace_title(struct trace *t, char **title)
 
     if(t->owner->prev && t->owner->tfm)
     {
-        stat = ((struct tfm_generic *) t->owner->tfm)->title(t, &result);
+        stat = t->owner->tfm->title(t, &result);
         if(stat < 0)
             goto __fail;
     }
@@ -717,7 +715,7 @@ int __trace_buffer_data(struct trace *t)
 
     if(t->owner->prev && t->owner->tfm)
     {
-        stat = ((struct tfm_generic *) t->owner->tfm)->data(t, &result);
+        stat = t->owner->tfm->data(t, &result);
         if(stat < 0)
             goto __fail;
     }
@@ -842,7 +840,7 @@ size_t trace_samples(struct trace *t, float **data)
 
     if(t->owner->prev && t->owner->tfm)
     {
-        stat = ((struct tfm_generic *) t->owner->tfm)->samples(t, &result);
+        stat = t->owner->tfm->samples(t, &result);
         if(stat < 0)
             goto __fail;
     }

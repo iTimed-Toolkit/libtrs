@@ -8,6 +8,7 @@
 // opaque structs, no need for user to worry about implementation :)
 struct trace_set;
 struct trace;
+struct tfm;
 
 /* trace set operations */
 
@@ -56,7 +57,7 @@ int ts_append(struct trace_set *ts, struct trace *t);
  * @param transform Opaque pointer to a transformation object.
  * @return - 0 on success, or a standard errno error code on failure.
  */
-int ts_transform(struct trace_set **new_ts, struct trace_set *prev, void *transform);
+int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *transform);
 
 /**
  * Print the headers found in a given trace set.

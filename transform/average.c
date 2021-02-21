@@ -6,15 +6,16 @@
 #include <string.h>
 #include <errno.h>
 
+#define TFM_DATA(tfm)   ((struct tfm_average *) (tfm)->tfm_data)
+
 struct tfm_average
 {
-    struct tfm_generic gen;
     bool per_sample;
 };
 
 int __tfm_average_init(struct trace_set *ts)
 {
-    struct tfm_average *tfm = ts->tfm;
+    struct tfm_average *tfm = TFM_DATA(ts->tfm);
     if(tfm->per_sample)
     {
         ts->num_samples = ts->prev->num_samples;
@@ -54,7 +55,7 @@ int __tfm_average_samples(struct trace *t, float **samples)
     int i, j, ret;
     char *title;
     struct trace *curr;
-    struct tfm_average *tfm = t->owner->tfm;
+    struct tfm_average *tfm = TFM_DATA(t->owner->tfm);
     float *result = calloc(t->owner->num_samples, sizeof(float)),
             *curr_samples;
 
@@ -142,17 +143,23 @@ void __tfm_average_free_samples(struct trace *t)
     free(t->buffered_samples);
 }
 
-int tfm_average(void **tfm, bool per_sample)
+int tfm_average(struct tfm **tfm, bool per_sample)
 {
-    struct tfm_average *res;
-
+    struct tfm *res;
     res = calloc(1, sizeof(struct tfm_average));
     if(!res)
         return -ENOMEM;
 
     ASSIGN_TFM_FUNCS(res, __tfm_average);
-    res->per_sample = per_sample;
 
+    res->tfm_data = calloc(1, sizeof(struct tfm_average));
+    if(!res->tfm_data)
+    {
+        free(res);
+        return -ENOMEM;
+    }
+
+    TFM_DATA(res)->per_sample = per_sample;
     *tfm = res;
     return 0;
 }

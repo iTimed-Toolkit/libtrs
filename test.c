@@ -14,7 +14,7 @@ int main()
 //
 //    run_dpa(&args);
 
-    void *tfm_avg, *tfm_extract_fixed, *tfm_extract_random;
+    struct tfm *tfm_avg, *tfm_extract_fixed, *tfm_extract_random;
     struct trace_set *source,
             *split_fixed, *split_random,
             *avg_fixed, *avg_random;

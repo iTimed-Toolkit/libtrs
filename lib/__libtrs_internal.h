@@ -35,7 +35,7 @@ struct trace_set
 
     // for transformations
     struct trace_set *prev;
-    void *tfm;
+    struct tfm *tfm;
 };
 
 struct trace
@@ -49,16 +49,16 @@ struct trace
 };
 
 #define ASSIGN_TFM_FUNCS(res, name)                       \
-        (res)->gen.init = name ## _init;                  \
-        (res)->gen.title = name ## _title;                \
-        (res)->gen.data = name ## _data;                  \
-        (res)->gen.samples = name ## _samples;            \
-        (res)->gen.exit = name ## _exit;                  \
-        (res)->gen.free_title = name ## _free_title;      \
-        (res)->gen.free_data = name ## _free_data;        \
-        (res)->gen.free_samples = name ## _free_samples;  \
+        (res)->init = name ## _init;                  \
+        (res)->title = name ## _title;                \
+        (res)->data = name ## _data;                  \
+        (res)->samples = name ## _samples;            \
+        (res)->exit = name ## _exit;                  \
+        (res)->free_title = name ## _free_title;      \
+        (res)->free_data = name ## _free_data;        \
+        (res)->free_samples = name ## _free_samples;  \
 
-struct tfm_generic
+struct tfm
 {
     int (*init)(struct trace_set *ts);
     int (*title)(struct trace *t, char **title);
@@ -69,6 +69,8 @@ struct tfm_generic
     void (*free_title)(struct trace *t);
     void (*free_data)(struct trace *t);
     void (*free_samples)(struct trace *t);
+
+    void *tfm_data;
 };
 
 #endif //LIBTRS___LIBTRS_INTERNAL_H

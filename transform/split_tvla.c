@@ -9,9 +9,10 @@
 #define STR_FIXED       "TVLA set Fixed"
 #define STR_RAND        "TVLA set Random"
 
+#define TFM_DATA(tfm)   ((struct tfm_split_tvla *) (tfm)->tfm_data)
+
 struct tfm_split_tvla
 {
-    struct tfm_generic gen;
     bool which;
 };
 
@@ -75,7 +76,7 @@ int __tfm_split_tvla_title(struct trace *t, char **title)
     char *prev_title, *res;
 
     struct trace *prev_trace;
-    struct tfm_split_tvla *tfm = t->owner->tfm;
+    struct tfm_split_tvla *tfm = TFM_DATA(t->owner->tfm);
 
     ret = trace_get(t->owner->prev, &prev_trace, t->start_offset, false);
     if(ret < 0)
@@ -127,7 +128,7 @@ int __tfm_split_tvla_data(struct trace *t, uint8_t **data)
     uint8_t *prev_data, *res;
 
     struct trace *prev_trace;
-    struct tfm_split_tvla *tfm = t->owner->tfm;
+    struct tfm_split_tvla *tfm = TFM_DATA(t->owner->tfm);
 
     ret = trace_get(t->owner->prev, &prev_trace, t->start_offset, false);
     if(ret < 0)
@@ -179,7 +180,7 @@ int __tfm_split_tvla_samples(struct trace *t, float **samples)
     float *prev_samples, *res;
 
     struct trace *prev_trace;
-    struct tfm_split_tvla *tfm = t->owner->tfm;
+    struct tfm_split_tvla *tfm = TFM_DATA(t->owner->tfm);
 
     ret = trace_get(t->owner->prev, &prev_trace, t->start_offset, false);
     if(ret < 0)
@@ -240,17 +241,24 @@ void __tfm_split_tvla_free_samples(struct trace *t)
     free(t->buffered_samples);
 }
 
-int tfm_split_tvla(void **tfm, bool which)
+int tfm_split_tvla(struct tfm **tfm, bool which)
 {
-    struct tfm_split_tvla *res;
+    struct tfm *res;
 
-    res = calloc(1, sizeof(struct tfm_split_tvla));
+    res = calloc(1, sizeof(struct tfm));
     if(!res)
         return -ENOMEM;
 
     ASSIGN_TFM_FUNCS(res, __tfm_split_tvla);
-    res->which = which;
 
+    res->tfm_data = calloc(1, sizeof(struct tfm_split_tvla));
+    if(!res->tfm_data)
+    {
+        free(res);
+        return -ENOMEM;
+    }
+
+    TFM_DATA(res)->which = which;
     *tfm = res;
     return 0;
 }

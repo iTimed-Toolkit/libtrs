@@ -3,7 +3,14 @@
 
 #include <stdbool.h>
 
-int tfm_average(void **tfm, bool per_sample);
-int tfm_split_tvla(void **tfm, bool which);
+struct tfm;
+
+// Analysis
+int tfm_average(struct tfm **tfm, bool per_sample);
+
+// Traces
+int tfm_split_tvla(struct tfm **tfm, bool which);
+
+// Align
 
 #endif //LIBTRS_TRANSFORM_H
