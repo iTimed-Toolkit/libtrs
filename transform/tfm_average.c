@@ -1,6 +1,8 @@
 #include "transform.h"
 #include "libtrs.h"
-#include "../lib/__libtrs_internal.h"
+
+#include "__tfm_internal.h"
+#include "__libtrs_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -32,10 +34,15 @@ int __tfm_average_init(struct trace_set *ts)
     ts->key_offs = ts->key_len = 0;
 
     ts->title_size = strlen("Average");
-    ts->data_size = 0;
+    ts->data_size = ts->prev->data_size;
     ts->datatype = ts->prev->datatype;
     ts->yscale = ts->prev->yscale;
     return 0;
+}
+
+size_t __tfm_average_trace_size(struct trace_set *ts)
+{
+    return ts_trace_size(ts->prev);
 }
 
 int __tfm_average_title(struct trace *t, char **title)
@@ -53,7 +60,6 @@ int __tfm_average_data(struct trace *t, uint8_t **data)
 int __tfm_average_samples(struct trace *t, float **samples)
 {
     int i, j, ret;
-    char *title;
     struct trace *curr;
     struct tfm_average *tfm = TFM_DATA(t->owner->tfm);
     float *result = calloc(t->owner->num_samples, sizeof(float)),
@@ -74,11 +80,9 @@ int __tfm_average_samples(struct trace *t, float **samples)
             if(ret < 0)
                 goto __free_trace;
 
-            trace_title(curr, &title);
-            if(title) printf("%s\n", title);
-
             if(curr_samples)
             {
+//                fprintf(stderr, "averaging trace %i\n", i);
                 // todo make more cache-efficient
                 for(j = 0; j < t->owner->prev->num_samples; j++)
                     result[j] += curr_samples[j];
@@ -101,9 +105,6 @@ int __tfm_average_samples(struct trace *t, float **samples)
             ret = trace_samples(curr, &curr_samples);
             if(ret < 0)
                 goto __free_trace;
-
-            trace_title(curr, &title);
-            if(title) printf("%s\n", title);
 
             if(curr_samples)
             {
@@ -146,7 +147,7 @@ void __tfm_average_free_samples(struct trace *t)
 int tfm_average(struct tfm **tfm, bool per_sample)
 {
     struct tfm *res;
-    res = calloc(1, sizeof(struct tfm_average));
+    res = calloc(1, sizeof(struct tfm));
     if(!res)
         return -ENOMEM;
 

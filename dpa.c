@@ -551,6 +551,7 @@ void print_progress(struct thread_arg *t_args,
             fwrite(res->product[p], sizeof(double), 256 * res->num_samples, checkpoint_file);
         }
 
+        fflush(checkpoint_file);
         fclose(checkpoint_file);
         last_checkpoint = res->num_traces;
     }

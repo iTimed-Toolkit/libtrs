@@ -1,0 +1,54 @@
+#ifndef LIBTRS___LIBTRS_INTERNAL_H
+#define LIBTRS___LIBTRS_INTERNAL_H
+
+#include <stdio.h>
+#include <stdint.h>
+#include <semaphore.h>
+
+#define SUPPORT_PTHREAD     1
+
+struct trace_set
+{
+    FILE *ts_file;
+#if SUPPORT_PTHREAD
+    sem_t file_lock;
+#endif
+
+    size_t set_id;
+    size_t num_samples, num_traces;
+    size_t title_size, data_size;
+
+    size_t input_offs, input_len,
+            output_offs, output_len,
+            key_offs, key_len;
+
+    enum datatype
+    {
+        DT_BYTE = 0x1, DT_SHORT = 0x2,
+        DT_INT = 0x4, DT_FLOAT = 0x14,
+        DT_NONE = 0xFF
+    } datatype;
+    size_t trace_start, trace_length;
+    float yscale;
+
+    size_t num_headers;
+    struct th_data *headers;
+
+    // for transformations
+    struct trace_set *prev;
+    struct tfm *tfm;
+
+    struct trace_cache *cache;
+};
+
+struct trace
+{
+    struct trace_set *owner;
+    size_t start_offset;
+
+    char *buffered_title;
+    uint8_t *buffered_data;
+    float *buffered_samples;
+};
+
+#endif //LIBTRS___LIBTRS_INTERNAL_H

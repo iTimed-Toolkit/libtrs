@@ -52,12 +52,24 @@ int ts_append(struct trace_set *ts, struct trace *t);
 
 /**
  * Create a new trace set transformed in some way from a previous one
+ *
  * @param new_ts Where to place a pointer to the new trace set.
  * @param prev The source trace set for the tfm.
  * @param transform Opaque pointer to a transformation object.
- * @return - 0 on success, or a standard errno error code on failure.
+ * @return 0 on success, or a standard errno error code on failure.
  */
 int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *transform);
+
+/**
+ * Create a trace cache for the given cache set. The specified size
+ * includes only the size of the cached traces, and not any associated
+ * control structure allocations (usually pretty small).
+ *
+ * @param ts The trace set which to create a cache for
+ * @param size_bytes The maximum size (in bytes) of the cache
+ * @return
+ */
+int ts_create_cache(struct trace_set *ts, size_t size_bytes, size_t assoc);
 
 /**
  * Print the headers found in a given trace set.
@@ -85,7 +97,7 @@ size_t ts_num_traces(struct trace_set *ts);
 size_t ts_num_samples(struct trace_set *ts);
 
 /**
- * Get the init (in bytes) of a single traces in a trace set.
+ * Get the size (in bytes) of a single traces in a trace set.
  *
  * @param ts The trace set to operate on.
  * @return The (positive) trace init, or a (negative)

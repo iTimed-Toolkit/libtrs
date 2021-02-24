@@ -4,33 +4,40 @@
 #include "transform.h"
 #include "libtrs.h"
 
+#include "dpa.h"
+
 int main()
 {
 //    struct dpa_args args = {
-//            .ts_path = "/mnt/shared/c1412.trs",
+//            .ts_path = "/mnt/raid0/Data/em/tvla_pos1_cpu2_ls_aligned_both.trs",
 //            .n_thrd = 7,
 //            .n_power_models = 16
 //    };
 //
 //    run_dpa(&args);
 
-    struct tfm *tfm_avg, *tfm_extract_fixed, *tfm_extract_random;
-    struct trace_set *source,
-            *split_fixed, *split_random,
-            *avg_fixed, *avg_random;
+    struct tfm *tfm_align, *tfm_avg, *tfm_tvla;
+    struct trace_set *source, *filtered, *aligned, *averaged;
     struct trace *trace;
 
-    tfm_average(&tfm_avg, false);
-    tfm_split_tvla(&tfm_extract_fixed, true);
-    tfm_split_tvla(&tfm_extract_random, false);
+    int i;
+    int lower[] = {479};
+    int upper[] = {479 + 300};
 
-    ts_open(&source, "/mnt/raid0/Data/em/tvla_soc_pos1_cpu2.trs");
-    ts_transform(&split_fixed, source, tfm_extract_fixed);
-    ts_transform(&avg_fixed, split_fixed, tfm_avg);
+    tfm_static_align(&tfm_align,
+                     0.95, 500, 5,
+                     1, lower, upper);
+    tfm_average(&tfm_avg, true);
+    tfm_split_tvla(&tfm_tvla, TVLA_RANDOM);
 
-    ts_transform(&split_random, source, tfm_extract_random);
-    ts_transform(&avg_random, split_random, tfm_avg);
+    ts_open(&source, "/mnt/raid0/Data/em/tvla_pos1_arm_ce.trs");
+    ts_transform(&filtered, source, tfm_tvla);
+    ts_transform(&aligned, filtered, tfm_align);
+    ts_transform(&averaged, aligned, tfm_avg);
 
-    trace_get(avg_fixed, &trace, 0, true);
-    trace_get(avg_random, &trace, 0, true);
+    ts_create_cache(source, 1ull  * 1024 * 1024 * 1024, 16);
+    ts_create_cache(filtered, 1ull  * 1024 * 1024 * 1024, 16);
+//    ts_create_cache(aligned, 1ull  * 1024 * 1024 * 1024, 16);
+
+    trace_get(averaged, &trace, 0, true);
 }

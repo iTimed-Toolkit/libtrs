@@ -1,6 +1,8 @@
 #include "transform.h"
 #include "libtrs.h"
-#include "../lib/__libtrs_internal.h"
+
+#include "__tfm_internal.h"
+#include "__libtrs_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -35,6 +37,13 @@ int __tfm_split_tvla_init(struct trace_set *ts)
     return 0;
 }
 
+size_t __tfm_split_tvla_trace_size(struct trace_set *ts)
+{
+    // about half the time, we won't actually be storing samples
+    return ts->title_size + ts->data_size +
+            (ts->num_samples / 2) * sizeof(float);
+}
+
 void __tfm_split_tvla_exit(struct trace_set *ts)
 {
 
@@ -53,13 +62,13 @@ int __get_trace_type(struct trace *t, bool *type)
     {
         if(strncmp(title, STR_FIXED, strlen(STR_FIXED)) == 0)
         {
-            *type = true;
+            *type = TVLA_FIXED;
             return 0;
         }
 
         if(strncmp(title, STR_RAND, strlen(STR_RAND)) == 0)
         {
-            *type = false;
+            *type = TVLA_RANDOM;
             return 0;
         }
 
@@ -71,113 +80,18 @@ int __get_trace_type(struct trace *t, bool *type)
 
 int __tfm_split_tvla_title(struct trace *t, char **title)
 {
-    int ret;
-    bool type;
-    char *prev_title, *res;
-
-    struct trace *prev_trace;
-    struct tfm_split_tvla *tfm = TFM_DATA(t->owner->tfm);
-
-    ret = trace_get(t->owner->prev, &prev_trace, t->start_offset, false);
-    if(ret < 0)
-        return ret;
-
-    ret = __get_trace_type(prev_trace, &type);
-    if(ret < 0)
-        goto __out;
-
-    if(type == tfm->which)
-    {
-        ret = trace_title(prev_trace, &prev_title);
-        if(ret < 0)
-            goto __out;
-
-        if(prev_title)
-        {
-            res = calloc(t->owner->title_size, sizeof(char));
-            if(res < 0)
-            {
-                ret = -ENOMEM;
-                goto __out;
-            }
-
-            memcpy(res, prev_title, t->owner->title_size);
-            *title = res;
-        }
-        else
-        {
-            *title = NULL;
-            ret = 0;
-        }
-    }
-    else
-    {
-        *title = NULL;
-        ret = 0;
-    }
-
-__out:
-    trace_free(prev_trace);
-    return ret;
+    return passthrough_title(t, title);
 }
 
 int __tfm_split_tvla_data(struct trace *t, uint8_t **data)
 {
-    int ret;
-    bool type;
-    uint8_t *prev_data, *res;
-
-    struct trace *prev_trace;
-    struct tfm_split_tvla *tfm = TFM_DATA(t->owner->tfm);
-
-    ret = trace_get(t->owner->prev, &prev_trace, t->start_offset, false);
-    if(ret < 0)
-        return ret;
-
-    ret = __get_trace_type(prev_trace, &type);
-    if(ret < 0)
-        goto __out;
-
-    if(type == tfm->which)
-    {
-        ret = trace_data_all(prev_trace, &prev_data);
-        if(ret < 0)
-            goto __out;
-
-        if(prev_data)
-        {
-            res = calloc(t->owner->data_size, sizeof(uint8_t));
-            if(res < 0)
-            {
-                ret = -ENOMEM;
-                goto __out;
-            }
-
-            memcpy(res, prev_data, t->owner->data_size);
-            *data = res;
-        }
-        else
-        {
-            *data = NULL;
-            ret = 0;
-        }
-    }
-    else
-    {
-        *data = NULL;
-        ret = 0;
-    }
-
-__out:
-    trace_free(prev_trace);
-    return ret;
+    return passthrough_data(t, data);
 }
 
 int __tfm_split_tvla_samples(struct trace *t, float **samples)
 {
     int ret;
     bool type;
-    float *prev_samples, *res;
 
     struct trace *prev_trace;
     struct tfm_split_tvla *tfm = TFM_DATA(t->owner->tfm);
@@ -190,31 +104,9 @@ int __tfm_split_tvla_samples(struct trace *t, float **samples)
     if(ret < 0)
         goto __out;
 
+    // todo this will be efficient once we have a trace cache
     if(type == tfm->which)
-    {
-        ret = trace_samples(prev_trace, &prev_samples);
-        if(ret < 0)
-            goto __out;
-
-        if(prev_samples)
-        {
-            res = calloc(t->owner->datatype & 0xF, t->owner->num_samples);
-            if(res < 0)
-            {
-                ret = -ENOMEM;
-                goto __out;
-            }
-
-            memcpy(res, prev_samples, (t->owner->datatype & 0xF) *
-                                      t->owner->num_samples);
-            *samples = res;
-        }
-        else
-        {
-            *samples = NULL;
-            ret = 0;
-        }
-    }
+        ret = passthrough_samples(t, samples);
     else
     {
         *samples = NULL;
