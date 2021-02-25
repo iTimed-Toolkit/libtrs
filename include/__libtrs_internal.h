@@ -51,4 +51,25 @@ struct trace
     float *buffered_samples;
 };
 
+
+#if SUPPORT_PTHREAD
+#define ts_lock(set, out)   \
+    if(sem_wait(&(set)->file_lock) < 0) out
+
+#define ts_unlock(set, out) \
+    if(sem_post(&(set)->file_lock) < 0) out
+#else
+#define ts_lock(set, out)   ;
+#define ts_unlock(set, out) ;
+#endif
+
+int trace_free_memory(struct trace *t);
+
+int init_headers(struct trace_set *ts);
+int free_headers(struct trace_set *ts);
+
+int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace);
+int tc_store(struct trace_set *ts, size_t index, struct trace *trace);
+int tc_deref(struct trace_set *ts, size_t index, struct trace *trace);
+
 #endif //LIBTRS___LIBTRS_INTERNAL_H
