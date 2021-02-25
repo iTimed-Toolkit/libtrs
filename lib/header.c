@@ -176,18 +176,27 @@ int __read_tag_and_len(FILE *ts_file, uint8_t *tag, uint32_t *actual_len)
 
     ret = fread(tag, 1, 1, ts_file);
     if(ret != 1)
+    {
+        err("Failed to read next tag from trace set file\n");
         return -EIO;
+    }
 
     ret = fread(&len, 1, 1, ts_file);
     if(ret != 1)
+    {
+        err("Failed to read tag length from trace set file\n");
         return -EIO;
+    }
 
     if(len & 0x80)
     {
         *actual_len = 0;
         ret = fread(actual_len, 1, len & 0x7F, ts_file);
         if(ret != (len & 0x7F))
+        {
+            err("Failed to read extended tag length from trace set file\n");
             return -EIO;
+        }
     }
     else *actual_len = len;
 
@@ -243,13 +252,16 @@ int __parse_headers(struct trace_set *ts)
     ts->key_offs = -1;
     ts->key_len = -1;
 
-    ts->yscale = 0.0;
+    ts->yscale = 0.0f;
 
     for(i = 0; i < ts->num_headers; i++)
     {
         stat = __read_tag_and_len(ts->ts_file, &tag, &actual_len);
         if(stat < 0)
+        {
+            err("Failed to get next tag and length\n");
             return stat;
+        }
 
         ts->headers[i].tag = tag;
         switch(all_headers[tag].th_type)
@@ -260,6 +272,7 @@ int __parse_headers(struct trace_set *ts)
                 ret = fread(&ts->headers[i].val, 1, actual_len, ts->ts_file);
                 if(ret != actual_len)
                 {
+                    err("Failed to read standard tag data from trace set file\n");
                     stat = -EIO;
                     goto __fail;
                 }
@@ -270,6 +283,7 @@ int __parse_headers(struct trace_set *ts)
                 ts->headers[i].val.bytes = calloc(actual_len, 1);
                 if(!ts->headers[i].val.bytes)
                 {
+                    err("Failed to allocate buffer for tag data\n");
                     stat = -EIO;
                     goto __fail;
                 }
@@ -277,12 +291,14 @@ int __parse_headers(struct trace_set *ts)
                 ret = fread(ts->headers[i].val.bytes, 1, actual_len, ts->ts_file);
                 if(ret != actual_len)
                 {
+                    err("Failed to read array tag data from trace set file\n");
                     stat = -EIO;
                     goto __fail;
                 }
                 break;
 
             default:
+                err("Got bad tag type %i\n", all_headers[tag].th_type);
                 return -EINVAL;
         }
 
@@ -319,6 +335,7 @@ int __parse_headers(struct trace_set *ts)
        ts->title_size == -1 || ts->data_size == -1 ||
        ts->datatype == DT_NONE)
     {
+        err("Failed to read all required tag types from trace file\n");
         return -EINVAL;
     }
 
@@ -352,7 +369,10 @@ int __num_headers(FILE *ts_file)
     uint32_t actual_len;
 
     if(!ts_file)
+    {
+        err("Invalid trace set file specified\n");
         return -EINVAL;
+    }
 
     start = ftell(ts_file);
     while(tag != TRACE_BLOCK)
@@ -361,21 +381,35 @@ int __num_headers(FILE *ts_file)
         count++;
 
         if(stat < 0)
+        {
+            err("Failed to get next tag and length\n");
             return stat;
+        }
 
         if(actual_len > sizeof(data))
+        {
+            err("Tag length bigger than data buffer (Gregor can fix this)\n");
             return -ENOMEM;
+        }
 
         if(actual_len == 0)
             continue;
 
         ret = fread(data, 1, actual_len, ts_file);
         if(ret != actual_len)
+        {
+            err("Failed to read tag data from trace set file\n");
             return -EIO;
-
+        }
     }
 
-    fseek(ts_file, start, SEEK_SET);
+    stat = fseek(ts_file, start, SEEK_SET);
+    if(stat != 0)
+    {
+        err("Failed to seek trace set file to start\n");
+        return -EIO;
+    }
+
     return count;
 }
 
@@ -385,16 +419,23 @@ int init_headers(struct trace_set *ts)
 
     ret = __num_headers(ts->ts_file);
     if(ret < 0)
+    {
+        err("Failed to get number of headers\n");
         return ret;
+    }
 
     ts->num_headers = ret;
     ts->headers = (struct th_data *) calloc(ret, sizeof(struct th_data));
     if(!ts->headers)
+    {
+        err("Failed to allocate memory for trace set headers\n");
         return -ENOMEM;
+    }
 
     ret = __parse_headers(ts);
     if(ret < 0)
     {
+        err("Failed to parse trace set headers\n");
         free(ts->headers);
         ts->headers = NULL;
         return ret;

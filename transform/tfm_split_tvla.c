@@ -56,7 +56,10 @@ int __get_trace_type(struct trace *t, bool *type)
 
     ret = trace_title(t, &title);
     if(ret < 0)
+    {
+        err("Failed to get title from trace\n");
         return ret;
+    }
 
     if(title)
     {
@@ -72,6 +75,7 @@ int __get_trace_type(struct trace *t, bool *type)
             return 0;
         }
 
+        err("Invalid trace title, not a TVLA dataset?\n");
         return -EINVAL;
     }
     else return 0;
@@ -98,11 +102,18 @@ int __tfm_split_tvla_samples(struct trace *t, float **samples)
 
     ret = trace_get(t->owner->prev, &prev_trace, t->start_offset, false);
     if(ret < 0)
+    {
+        err("Failed to get trace from previous set\n");
         return ret;
+    }
 
     ret = __get_trace_type(prev_trace, &type);
     if(ret < 0)
+    {
+        err("Failed to get trace type from title\n");
         goto __out;
+    }
+
 
     // todo this will be efficient once we have a trace cache
     if(type == tfm->which)
@@ -139,13 +150,17 @@ int tfm_split_tvla(struct tfm **tfm, bool which)
 
     res = calloc(1, sizeof(struct tfm));
     if(!res)
+    {
+        err("Failed to allocate memory for transformation\n");
         return -ENOMEM;
+    }
 
     ASSIGN_TFM_FUNCS(res, __tfm_split_tvla);
 
     res->tfm_data = calloc(1, sizeof(struct tfm_split_tvla));
     if(!res->tfm_data)
     {
+        err("Failed to allocate memory for transformation variables\n");
         free(res);
         return -ENOMEM;
     }

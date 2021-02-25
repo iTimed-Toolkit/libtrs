@@ -183,12 +183,12 @@ int trace_data_key(struct trace *t, uint8_t **data);
 /**
  * Get the samples from a trace. These are postprocessed already,
  * such that the specific sample values correspond exactly to the
- * gathered data and not any specific input encoding.
+ * gathered samples and not any specific input encoding.
  *
  * @param t The trace to operate on.
- * @param data Where to place a pointer to the trace's sample data.
+ * @param samples Where to place a pointer to the trace's samples.
  * @return 0 on success, or a standard errno error code on failure.
  */
-size_t trace_samples(struct trace *t, float **data);
+size_t trace_samples(struct trace *t, float **samples);
 
 #endif //LIBTRS_LIBTRS_H

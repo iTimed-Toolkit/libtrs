@@ -2,21 +2,11 @@
 #include "__libtrs_internal.h"
 #include "__tfm_internal.h"
 
-#include <assert.h>
 #include <stdlib.h>
+#include <string.h>
 #include <errno.h>
 
-#include <stdint.h>
-#include <stdbool.h>
-
-/* --- static defines --- */
-
-
-/* --- global state / functions --- */
-
-size_t set_index = 0;
-
-/* --- trace sets and trace headers --- */
+size_t gbl_set_index = 0;
 
 int ts_open(struct trace_set **ts, const char *path)
 {
@@ -24,33 +14,44 @@ int ts_open(struct trace_set **ts, const char *path)
     struct trace_set *ts_result;
 
     if(!ts || !path)
+    {
+        err("Invalid trace set or path\n");
         return -EINVAL;
+    }
 
     ts_result = calloc(1, sizeof(struct trace_set));
     if(!ts_result)
+    {
+        err("Trace set allocation failed\n");
         return -ENOMEM;
+    }
 
     ts_result->ts_file = fopen(path, "rb");
     if(!ts_result->ts_file)
     {
-        retval = -ENOENT;
+        err("Unable to open trace set at %s: %s\n", path, strerror(errno));
+        retval = -errno;
         goto __free_ts_result;
     }
 
     retval = init_headers(ts_result);
     if(retval < 0)
+    {
+        err("Failed to initialize trace set headers\n");
         goto __close_ts_file;
+    }
 
 #if SUPPORT_PTHREAD
     retval = sem_init(&ts_result->file_lock, 0, 1);
     if(retval < 0)
     {
-        retval = errno;
+        err("Failed to initialize file lock semaphore: %s\n", strerror(errno));
+        retval = -errno;
         goto __free_headers;
     }
 #endif
 
-    ts_result->set_id = __sync_fetch_and_add(&set_index, 1);
+    ts_result->set_id = __sync_fetch_and_add(&gbl_set_index, 1);
     ts_result->prev = NULL;
     ts_result->tfm = NULL;
     ts_result->cache = NULL;
@@ -74,7 +75,10 @@ __free_ts_result:
 int ts_close(struct trace_set *ts)
 {
     if(!ts)
+    {
+        err("Invalid trace set\n");
         return -EINVAL;
+    }
 
     // wait for any consumers
     ts_lock(ts, ;)
@@ -92,7 +96,8 @@ int ts_close(struct trace_set *ts)
     if(ts->prev && ts->tfm)
         ts->tfm->exit(ts);
 
-    // todo destroy cache
+    if(ts->cache)
+        tc_free(ts);
 
     free(ts);
     return 0;
@@ -100,13 +105,13 @@ int ts_close(struct trace_set *ts)
 
 int ts_create(struct trace_set **ts, struct trace_set *from, const char *path)
 {
-    fprintf(stderr, "ts_create currently unsupported\n");
+    err("Unsupported\n");
     return -1;
 }
 
 int ts_append(struct trace_set *ts, struct trace *t)
 {
-    fprintf(stderr, "ts_append currently unsupported\n");
+    err("Unsupported\n");
     return -1;
 }
 
@@ -116,11 +121,17 @@ int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *
     struct trace_set *ts_result;
 
     if(!new_ts || !prev || !transform)
+    {
+        err("Invalid trace sets or transform\n");
         return -EINVAL;
+    }
 
     ts_result = calloc(1, sizeof(struct trace_set));
     if(!ts_result)
+    {
+        err("Trace set allocation failed\n");
         return -ENOMEM;
+    }
 
     // no need to seek within a file or parse headers
     ts_result->ts_file = NULL;
@@ -131,7 +142,7 @@ int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *
     ts_result->headers = NULL;
 
     // link previous set
-    ts_result->set_id = __sync_fetch_and_add(&set_index, 1);
+    ts_result->set_id = __sync_fetch_and_add(&gbl_set_index, 1);
     ts_result->cache = NULL;
     ts_result->prev = prev;
     ts_result->tfm = transform;
@@ -140,6 +151,7 @@ int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *
     ret = transform->init(ts_result);
     if(ret < 0)
     {
+        err("Failed to initialize transform\n");
         free(ts_result);
         return ret;
     }
@@ -151,7 +163,10 @@ int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *
 size_t ts_num_traces(struct trace_set *ts)
 {
     if(!ts)
+    {
+        err("Invalid trace set\n");
         return -EINVAL;
+    }
 
     return ts->num_traces;
 }
@@ -159,17 +174,21 @@ size_t ts_num_traces(struct trace_set *ts)
 size_t ts_num_samples(struct trace_set *ts)
 {
     if(!ts)
+    {
+        err("Invalid trace set\n");
         return -EINVAL;
+    }
 
     return ts->num_samples;
 }
 
-/* --- trace operations --- */
-
 size_t ts_trace_size(struct trace_set *ts)
 {
     if(!ts)
+    {
+        err("Invalid trace set\n");
         return -EINVAL;
+    }
 
     if(ts->prev && ts->tfm)
         return ts->tfm->trace_size(ts);

@@ -14,17 +14,26 @@ int passthrough_title(struct trace *trace, char **title)
 
     ret = trace_get(trace->owner->prev, &prev_trace, trace->start_offset, false);
     if(ret < 0)
+    {
+        err("Failed to get trace from previous trace set\n");
         return ret;
+    }
 
     ret = trace_title(prev_trace, &prev_title);
     if(ret < 0)
+    {
+        err("Failed to get title from previous trace\n");
         goto __out;
+    }
 
     if(prev_title)
     {
         res = calloc(trace->owner->title_size, sizeof(char));
-        if(res < 0)
+        if(!res)
+        {
+            err("Failed to allocate memory for trace title\n");
             return -ENOMEM;
+        }
 
         memcpy(res, prev_title, trace->owner->title_size);
         *title = res;
@@ -45,17 +54,26 @@ int passthrough_data(struct trace *trace, uint8_t **data)
 
     ret = trace_get(trace->owner->prev, &prev_trace, trace->start_offset, false);
     if(ret < 0)
+    {
+        err("Failed to get trace from previous trace set\n");
         return ret;
+    }
 
     ret = trace_data_all(prev_trace, &prev_data);
     if(ret < 0)
+    {
+        err("Failed to get data from previous trace\n");
         goto __out;
+    }
 
     if(prev_data)
     {
         res = calloc(trace->owner->data_size, sizeof(uint8_t));
-        if(res < 0)
+        if(!res)
+        {
+            err("Failed to allocate memory for trace data\n");
             return -ENOMEM;
+        }
 
         memcpy(res, prev_data, trace->owner->data_size);
         *data = res;
@@ -76,17 +94,26 @@ int passthrough_samples(struct trace *trace, float **samples)
 
     ret = trace_get(trace->owner->prev, &prev_trace, trace->start_offset, false);
     if(ret < 0)
+    {
+        err("Failed to get trace from previous trace set\n");
         return ret;
+    }
 
     ret = trace_samples(prev_trace, &prev_samples);
     if(ret < 0)
+    {
+        err("Failed to get samples from previous trace\n");
         goto __out;
+    }
 
     if(prev_samples)
     {
         res = calloc(trace->owner->num_samples, sizeof(float));
-        if(res < 0)
+        if(!res)
+        {
+            err("Failed to allocate memory for trace samples\n");
             return -ENOMEM;
+        }
 
         memcpy(res, prev_samples, trace->owner->num_samples * sizeof(float));
         *samples = res;

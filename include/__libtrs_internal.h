@@ -51,6 +51,11 @@ struct trace
     float *buffered_samples;
 };
 
+#define __first_arg(a, ...)     a
+#define __other_arg(a, ...)     , ## __VA_ARGS__
+#define err(...)                fprintf(stderr, "libtrs >>> %s @ %i: "         \
+                                        __first_arg(__VA_ARGS__), __FUNCTION__, \
+                                        __LINE__ __other_arg(__VA_ARGS__))
 
 #if SUPPORT_PTHREAD
 #define ts_lock(set, out)   \
@@ -66,10 +71,15 @@ struct trace
 int trace_free_memory(struct trace *t);
 
 int init_headers(struct trace_set *ts);
+
 int free_headers(struct trace_set *ts);
 
 int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace);
+
 int tc_store(struct trace_set *ts, size_t index, struct trace *trace);
+
 int tc_deref(struct trace_set *ts, size_t index, struct trace *trace);
+
+int tc_free(struct trace_set *ts);
 
 #endif //LIBTRS___LIBTRS_INTERNAL_H

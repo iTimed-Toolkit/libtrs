@@ -8,8 +8,6 @@
 #include <errno.h>
 #include <math.h>
 
-#include <assert.h>
-
 #define TFM_DATA(tfm)   ((struct tfm_static_align *) (tfm)->tfm_data)
 
 struct tfm_static_align
@@ -61,11 +59,17 @@ int __accumulate(struct trace *t, const float *ref_samples,
 
     ret = trace_get(t->owner->prev, &curr_trace, t->start_offset, false);
     if(ret < 0)
+    {
+        err("Failed to get trace to align from previous trace set\n");
         return ret;
+    }
 
     ret = trace_samples(curr_trace, &curr_samples);
     if(ret < 0)
+    {
+        err("Failed to get samples from trace to align\n");
         goto __free_trace;
+    }
 
     if(!curr_samples)
     {
@@ -73,7 +77,8 @@ int __accumulate(struct trace *t, const float *ref_samples,
         goto __free_trace;
     }
 
-    // todo optimize! probably from a caching perspective
+    // todo optimize! probably from a caching perspective,
+    // pretty optimal already from flop arithmetic perspective
     for(index = 0; index < t->owner->num_samples; index++)
     {
         curr_sq = pow(curr_samples[index], 2);
@@ -120,6 +125,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
     shift_cnt = calloc(2 * tfm->max_shift, sizeof(size_t));
     if(!shift_cnt)
     {
+        err("Failed to allocate count buffer\n");
         ret = -ENOMEM;
         goto __free_temp;
     }
@@ -127,6 +133,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
     shift_sum = calloc(2 * tfm->max_shift, sizeof(double));
     if(!shift_sum)
     {
+        err("Failed to allocate sum buffer\n");
         ret = -ENOMEM;
         goto __free_temp;
     }
@@ -134,6 +141,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
     shift_sq = calloc(2 * tfm->max_shift, sizeof(double));
     if(!shift_sq)
     {
+        err("Failed to allocate square buffer\n");
         ret = -ENOMEM;
         goto __free_temp;
     }
@@ -141,17 +149,24 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
     shift_prod = calloc(2 * tfm->max_shift, sizeof(double));
     if(!shift_prod)
     {
+        err("Failed to allocate product buffer\n");
         ret = -ENOMEM;
         goto __free_temp;
     }
 
     ret = trace_get(t->owner->prev, &ref_trace, tfm->ref_trace, false);
     if(ret < 0)
+    {
+        err("Failed to get reference trace from previous trace set\n");
         return ret;
+    }
 
     ret = trace_samples(ref_trace, &ref_samples);
     if(ret < 0)
+    {
+        err("Failed to get reference trace samples from previoust race\n");
         goto __free_ref;
+    }
 
     if(!ref_samples)
     {
@@ -184,7 +199,10 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
                        shift_cnt, shift_sum,
                        shift_sq, shift_prod);
     if(ret < 0)
+    {
+        err("Failed to accumulate samples for trace to shift\n");
         goto __free_ref;
+    }
     else if(ret == 1)
     {
         // special condition, trace not found
@@ -259,13 +277,17 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
 
     ret = __do_align(t, &best_conf, &best_shift);
     if(ret < 0)
+    {
+        err("Failed to align trace\n");
         goto __out;
+    }
 
     if(best_conf >= tfm->confidence)
     {
         result = calloc(t->owner->num_samples, sizeof(float));
         if(!result)
         {
+            err("Failed to allocate sample buffer for aligned trace\n");
             ret = -ENOMEM;
             goto __out;
         }
@@ -273,17 +295,24 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
         // these should never fail, since they succeeded in __do_align above
         ret = trace_get(t->owner->prev, &prev_trace, t->start_offset, false);
         if(ret < 0)
+        {
+            err("Failed to get trace to align from previous trace sets\n");
             goto __free_result;
+        }
 
         ret = trace_samples(prev_trace, &shift);
         if(ret < 0)
+        {
+            err("Failed to get samples from trace to align\n");
             goto __free_prev_trace;
+        }
 
         if(!shift)
         {
             // typically this would just mean the previous transformation does
             // not create a trace for this index (not an error) but in this case
             // this is actually an error (see above)
+            err("Trace to align is not defined for this index, but was when doing alignment\n");
             ret = -ENODATA;
             goto __free_prev_trace;
         }
@@ -342,13 +371,17 @@ int tfm_static_align(struct tfm **tfm, double confidence,
     struct tfm *res;
     res = calloc(1, sizeof(struct tfm));
     if(!res)
+    {
+        err("Failed to allocate memory for transformation\n");
         return -ENOMEM;
+    }
 
     ASSIGN_TFM_FUNCS(res, __tfm_static_align);
 
     res->tfm_data = calloc(1, sizeof(struct tfm_static_align));
     if(!res->tfm_data)
     {
+        err("Failed to allocate memory for transformation variables\n");
         free(res);
         return -ENOMEM;
     }

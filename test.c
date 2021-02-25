@@ -20,7 +20,6 @@ int main()
     struct trace_set *source, *filtered, *aligned, *averaged;
     struct trace *trace;
 
-    int i;
     int lower[] = {479};
     int upper[] = {479 + 300};
 

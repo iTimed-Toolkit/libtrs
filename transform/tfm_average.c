@@ -66,7 +66,10 @@ int __tfm_average_samples(struct trace *t, float **samples)
             *curr_samples;
 
     if(!result)
+    {
+        err("Failed to allocate buffer for accumulating average\n");
         return -ENOMEM;
+    }
 
     if(tfm->per_sample)
     {
@@ -74,11 +77,17 @@ int __tfm_average_samples(struct trace *t, float **samples)
         {
             ret = trace_get(t->owner->prev, &curr, i, false);
             if(ret < 0)
+            {
+                err("Failed to get trace from previous trace set\n");
                 goto __free_result;
+            }
 
             ret = trace_samples(curr, &curr_samples);
             if(ret < 0)
+            {
+                err("Failed to get samples to average from trace\n");
                 goto __free_trace;
+            }
 
             if(curr_samples)
             {
@@ -100,11 +109,17 @@ int __tfm_average_samples(struct trace *t, float **samples)
         {
             ret = trace_get(t->owner->prev, &curr, i, false);
             if(ret < 0)
+            {
+                err("Failed to get trace from previous trace set\n");
                 goto __free_result;
+            }
 
             ret = trace_samples(curr, &curr_samples);
             if(ret < 0)
+            {
+                err("Failed to get samples to average from trace\n");
                 goto __free_trace;
+            }
 
             if(curr_samples)
             {
@@ -149,13 +164,17 @@ int tfm_average(struct tfm **tfm, bool per_sample)
     struct tfm *res;
     res = calloc(1, sizeof(struct tfm));
     if(!res)
+    {
+        err("Failed to allocate memory for transformation\n");
         return -ENOMEM;
+    }
 
     ASSIGN_TFM_FUNCS(res, __tfm_average);
 
     res->tfm_data = calloc(1, sizeof(struct tfm_average));
     if(!res->tfm_data)
     {
+        err("Failed to allocate memory for transformation variables\n");
         free(res);
         return -ENOMEM;
     }

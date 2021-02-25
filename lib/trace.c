@@ -4,11 +4,15 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 
 int trace_free_memory(struct trace *t)
 {
     if(!t)
+    {
+        err("Invalid trace\n");
         return -EINVAL;
+    }
 
     if(t->owner->prev && t->owner->tfm)
     {
@@ -44,22 +48,38 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuff
     bool cache_missed = false;
 
     if(!ts || !t)
+    {
+        err("Invalid trace set or trace\n");
         return -EINVAL;
+    }
 
     if(index >= ts->num_traces)
-        return -EFAULT;
+    {
+        err("Index %li out of bounds for trace set\n", index);
+        return -EINVAL;
+    }
 
     if(ts->cache)
     {
         ret = tc_lookup(ts, index, &t_result);
-        if(ret == 0 && t_result)
+        if(ret < 0)
+        {
+            err("Failed to lookup trace in cache\n");
+            return ret;
+        }
+
+        if(t_result)
             goto __out;
-        else cache_missed = true;
+        else
+            cache_missed = true;
     }
 
     t_result = calloc(1, sizeof(struct trace));
     if(!t_result)
+    {
+        err("Failed to allocate memory for trace\n");
         return -ENOMEM;
+    }
 
     t_result->owner = ts;
     t_result->start_offset = ts->trace_start + index * ts->trace_length;
@@ -86,7 +106,10 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuff
     {
         ret = tc_store(ts, index, t_result);
         if(ret < 0)
+        {
+            err("Failed to store result trace in cache\n");
             goto __fail;
+        }
     }
 
 __out:
@@ -122,7 +145,10 @@ int trace_title(struct trace *t, char **title)
     char *result;
 
     if(!t || !title)
+    {
+        err("Invalid trace or title pointer\n");
         return -EINVAL;
+    }
 
     if(t->buffered_title)
     {
@@ -134,19 +160,26 @@ int trace_title(struct trace *t, char **title)
     {
         stat = t->owner->tfm->title(t, &result);
         if(stat < 0)
+        {
+            err("Failed to get title from transformation\n");
             goto __fail;
+        }
     }
     else
     {
         result = calloc(1, t->owner->title_size);
         if(!result)
+        {
+            err("Failed to allocate memory for trace title\n");
             return -ENOMEM;
+        }
 
         ts_lock(t->owner, goto __sem_fail);
 
         stat = fseek(t->owner->ts_file, t->start_offset, SEEK_SET);
         if(stat)
         {
+            err("Failed to seek file to title position\n");
             stat = -EIO;
             goto __free_result;
         }
@@ -154,6 +187,7 @@ int trace_title(struct trace *t, char **title)
         ret = fread(result, 1, t->owner->title_size, t->owner->ts_file);
         if(ret != t->owner->title_size)
         {
+            err("Failed to read title from file\n");
             stat = -EIO;
             goto __free_result;
         }
@@ -166,8 +200,9 @@ int trace_title(struct trace *t, char **title)
     return 0;
 
 #if SUPPORT_PTHREAD
-    __sem_fail:
-    stat = errno;
+__sem_fail:
+    err("Semaphore operation failed: %s\n", strerror(errno));
+    stat = -errno;
 #endif
 
 __free_result:
@@ -187,18 +222,25 @@ int __trace_buffer_data(struct trace *t)
     {
         stat = t->owner->tfm->data(t, &result);
         if(stat < 0)
+        {
+            err("Failed to get data from transformation\n");
             goto __fail;
+        }
     }
     else
     {
         result = calloc(1, t->owner->data_size);
         if(!result)
+        {
+            err("Failed to allocate memory for trace data\n");
             return -ENOMEM;
+        }
 
         ts_lock(t->owner, goto __sem_fail);
         stat = fseek(t->owner->ts_file, t->start_offset + t->owner->title_size, SEEK_SET);
         if(stat)
         {
+            err("Failed to seek file to data position\n");
             stat = -EIO;
             goto __free_result;
         }
@@ -206,6 +248,7 @@ int __trace_buffer_data(struct trace *t)
         ret = fread(result, 1, t->owner->data_size, t->owner->ts_file);
         if(ret != t->owner->data_size)
         {
+            err("Failed to read data from file\n");
             stat = -EIO;
             goto __free_result;
         }
@@ -216,8 +259,9 @@ int __trace_buffer_data(struct trace *t)
     return 0;
 
 #if SUPPORT_PTHREAD
-    __sem_fail:
-    stat = errno;
+__sem_fail:
+    err("Semaphore operation failed: %s\n", strerror(errno));
+    stat = -errno;
 #endif
 
 __free_result:
@@ -246,6 +290,7 @@ int __trace_data_generic(struct trace *t, uint8_t **data,
     stat = __trace_buffer_data(t);
     if(stat < 0)
     {
+        err("Failed to buffer trace data\n");
         *data = NULL;
         return stat;
     }
@@ -257,7 +302,10 @@ int __trace_data_generic(struct trace *t, uint8_t **data,
 int trace_data_all(struct trace *t, uint8_t **data)
 {
     if(!t || !data)
+    {
+        err("Invalid trace or data pointer\n");
         return -EINVAL;
+    }
 
     return __trace_data_generic(t, data, 0, t->owner->data_size);
 }
@@ -265,7 +313,10 @@ int trace_data_all(struct trace *t, uint8_t **data)
 int trace_data_input(struct trace *t, uint8_t **data)
 {
     if(!t || !data)
+    {
+        err("Invalid trace or data pointer\n");
         return -EINVAL;
+    }
 
     return __trace_data_generic(t, data,
                                 t->owner->input_offs,
@@ -275,7 +326,10 @@ int trace_data_input(struct trace *t, uint8_t **data)
 int trace_data_output(struct trace *t, uint8_t **data)
 {
     if(!t || !data)
+    {
+        err("Invalid trace or data pointer\n");
         return -EINVAL;
+    }
 
     return __trace_data_generic(t, data,
                                 t->owner->output_offs,
@@ -285,26 +339,32 @@ int trace_data_output(struct trace *t, uint8_t **data)
 int trace_data_key(struct trace *t, uint8_t **data)
 {
     if(!t || !data)
+    {
+        err("Invalid trace or data pointer\n");
         return -EINVAL;
+    }
 
     return __trace_data_generic(t, data,
                                 t->owner->key_offs,
                                 t->owner->key_len);
 }
 
-size_t trace_samples(struct trace *t, float **data)
+size_t trace_samples(struct trace *t, float **samples)
 {
     int stat, i;
     size_t ret;
     void *temp;
     float *result;
 
-    if(!t || !data)
+    if(!t || !samples)
+    {
+        err("Invalid trace or sample pointer\n");
         return -EINVAL;
+    }
 
     if(t->buffered_samples)
     {
-        *data = t->buffered_samples;
+        *samples = t->buffered_samples;
         return 0;
     }
 
@@ -312,17 +372,24 @@ size_t trace_samples(struct trace *t, float **data)
     {
         stat = t->owner->tfm->samples(t, &result);
         if(stat < 0)
+        {
+            err("Failed to get samples from transformation\n");
             goto __fail;
+        }
     }
     else
     {
         temp = calloc(t->owner->datatype & 0xF, t->owner->num_samples);
         if(!temp)
+        {
+            err("Failed to allocate memory for temporary calculation buffer\n");
             return -ENOMEM;
+        }
 
         result = calloc(sizeof(float), t->owner->num_samples);
         if(!result)
         {
+            err("Failed to allocate memory for sample buffer\n");
             stat = -ENOMEM;
             goto __free_temp;
         }
@@ -333,6 +400,7 @@ size_t trace_samples(struct trace *t, float **data)
                      SEEK_SET);
         if(stat)
         {
+            err("Failed to seek file to sample position\n");
             stat = -EIO;
             goto __free_temp;
         }
@@ -340,6 +408,7 @@ size_t trace_samples(struct trace *t, float **data)
         ret = fread(temp, t->owner->datatype & 0xF, t->owner->num_samples, t->owner->ts_file);
         if(ret != t->owner->num_samples)
         {
+            err("Failed to read samples from file\n");
             stat = -EIO;
             goto __free_temp;
         }
@@ -368,6 +437,7 @@ size_t trace_samples(struct trace *t, float **data)
                 break;
 
             case DT_NONE:
+                err("Invalid trace data type: %i\n", t->owner->datatype);
                 goto __free_result;
         }
 
@@ -375,12 +445,13 @@ size_t trace_samples(struct trace *t, float **data)
     }
 
     t->buffered_samples = result;
-    *data = result;
+    *samples = result;
     return 0;
 
 #if SUPPORT_PTHREAD
-    __sem_fail:
-    stat = errno;
+__sem_fail:
+    err("Semaphore operation failed: %s\n", strerror(errno));
+    stat = -errno;
 #endif
 
 __free_result:
