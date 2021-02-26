@@ -26,6 +26,9 @@ int ts_open(struct trace_set **ts, const char *path)
         return -ENOMEM;
     }
 
+    ts_result->set_id = __sync_fetch_and_add(&gbl_set_index, 1);
+    debug("Creating new trace set with ID %li\n", ts_result->set_id);
+
     ts_result->ts_file = fopen(path, "rb");
     if(!ts_result->ts_file)
     {
@@ -51,7 +54,6 @@ int ts_open(struct trace_set **ts, const char *path)
     }
 #endif
 
-    ts_result->set_id = __sync_fetch_and_add(&gbl_set_index, 1);
     ts_result->prev = NULL;
     ts_result->tfm = NULL;
     ts_result->cache = NULL;
@@ -79,6 +81,8 @@ int ts_close(struct trace_set *ts)
         err("Invalid trace set\n");
         return -EINVAL;
     }
+
+    debug("Closing trace set %li\n", ts->set_id);
 
     // wait for any consumers
     ts_lock(ts, ;)
@@ -146,6 +150,8 @@ int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *
     ts_result->cache = NULL;
     ts_result->prev = prev;
     ts_result->tfm = transform;
+
+    debug("Creating transformed trace set with ID %li\n", ts_result->set_id);
 
     // transform-specific initialization
     ret = transform->init(ts_result);

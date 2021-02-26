@@ -254,6 +254,7 @@ int __parse_headers(struct trace_set *ts)
 
     ts->yscale = 0.0f;
 
+    debug("Parsing headers for trace set %li\n", ts->set_id);
     for(i = 0; i < ts->num_headers; i++)
     {
         stat = __read_tag_and_len(ts->ts_file, &tag, &actual_len);
@@ -303,31 +304,65 @@ int __parse_headers(struct trace_set *ts)
         }
 
         if(tag == NUMBER_TRACES)
+        {
             ts->num_traces = ts->headers[i].val.integer;
+            debug("Found number of traces = %li\n", ts->num_headers);
+        }
         else if(tag == NUMBER_SAMPLES)
+        {
             ts->num_samples = ts->headers[i].val.integer;
-
+            debug("Found number of samples = %li\n", ts->num_samples);
+        }
         else if(tag == TITLE_SPACE)
+        {
             ts->title_size = ts->headers[i].val.integer;
+            debug("Found title size = %li\n", ts->title_size);
+        }
         else if(tag == LENGTH_DATA)
+        {
             ts->data_size = ts->headers[i].val.integer;
+            debug("Found data size = %li\n", ts->title_size);
+        }
         else if(tag == SAMPLE_CODING)
+        {
             ts->datatype = ts->headers[i].val.integer;
-
+            debug("Found sample coding = %i\n", ts->datatype);
+        }
         else if(tag == INPUT_OFFSET)
+        {
             ts->input_offs = ts->headers[i].val.integer;
+            debug("Found input offset = %li\n", ts->input_offs);
+        }
         else if(tag == INPUT_LENGTH)
+        {
             ts->input_len = ts->headers[i].val.integer;
+            debug("Found input length = %li\n", ts->input_len);
+        }
         else if(tag == OUTPUT_OFFSET)
+        {
             ts->output_offs = ts->headers[i].val.integer;
+            debug("Found output offset = %li\n", ts->output_offs);
+        }
         else if(tag == OUTPUT_LENGTH)
+        {
             ts->output_len = ts->headers[i].val.integer;
+            debug("Found output length = %li\n", ts->output_len);
+        }
         else if(tag == KEY_OFFSET)
+        {
             ts->key_offs = ts->headers[i].val.integer;
+            debug("Found key offset = %li\n", ts->key_offs);
+        }
         else if(tag == KEY_LENGTH)
+        {
             ts->key_len = ts->headers[i].val.integer;
+            debug("Found key length = %li\n", ts->key_len);
+        }
         else if(tag == SCALE_Y)
+        {
             ts->yscale = ts->headers[i].val.floating;
+            debug("Found y scale = %f\n", ts->yscale);
+        }
     }
 
     // others are okay to not have
@@ -410,6 +445,7 @@ int __num_headers(FILE *ts_file)
         return -EIO;
     }
 
+    debug("Counted %i headers\n", count);
     return count;
 }
 

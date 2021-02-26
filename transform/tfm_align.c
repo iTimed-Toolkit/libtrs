@@ -5,8 +5,11 @@
 #include "__libtrs_internal.h"
 
 #include <stdlib.h>
+#include <string.h>
 #include <errno.h>
 #include <math.h>
+
+#include <immintrin.h>
 
 #define TFM_DATA(tfm)   ((struct tfm_static_align *) (tfm)->tfm_data)
 
@@ -44,16 +47,16 @@ size_t __tfm_static_align_trace_size(struct trace_set *ts)
     return ts_trace_size(ts->prev);
 }
 
-int __accumulate(struct trace *t, const float *ref_samples,
-                 size_t *shift_cnt, double *shift_sum,
-                 double *shift_sq, double *shift_prod)
+int __accumulate_avx(struct trace *t, const float *ref_samples,
+                     size_t *shift_cnt, float *shift_sum,
+                     float *shift_sq, float *shift_prod)
 {
-    int ret, r, i;
-    int index, i_lower, i_upper;
-    double curr_sq;
+    int ret, num, c, r, i, j, k;
+    int i_lower, i_upper;
 
     struct trace *curr_trace;
-    float *curr_samples;
+    float *curr_samples, batch_ref[8], batch_curr[8], batch_sq[8], batch_prod[8];
+    __m256 curr_sum, curr_sq, curr_prod;
 
     struct tfm_static_align *tfm = TFM_DATA(t->owner->tfm);
 
@@ -77,25 +80,65 @@ int __accumulate(struct trace *t, const float *ref_samples,
         goto __free_trace;
     }
 
-    // todo optimize! probably from a caching perspective,
-    // pretty optimal already from flop arithmetic perspective
-    for(index = 0; index < t->owner->num_samples; index++)
+    for(c = 0; c < ts_num_samples(t->owner); c++)
     {
-        curr_sq = pow(curr_samples[index], 2);
+        curr_sum = _mm256_broadcast_ss(&curr_samples[c]);
+        curr_sq = _mm256_mul_ps(curr_sum, curr_sum);
+        _mm256_storeu_ps(batch_curr, curr_sum);
+        _mm256_storeu_ps(batch_sq, curr_sq);
+
         for(r = 0; r < tfm->num_regions; r++)
         {
-            i_lower = (index - tfm->max_shift >= tfm->ref_samples_lower[r]) ?
-                      index - tfm->max_shift + 1 : (int) tfm->ref_samples_lower[r];
+            i_lower = (c - tfm->max_shift >= tfm->ref_samples_lower[r]) ?
+                      c - tfm->max_shift + 1 : (int) tfm->ref_samples_lower[r];
 
-            i_upper = (index + tfm->max_shift < tfm->ref_samples_higher[r] ?
-                       index + tfm->max_shift : (int) tfm->ref_samples_higher[r]);
+            i_upper = (c + tfm->max_shift < tfm->ref_samples_higher[r] ?
+                       c + tfm->max_shift + 1 : (int) tfm->ref_samples_higher[r]);
 
-            for(i = i_lower; i < i_upper; i++)
+            for(i = i_upper - 1; i >= i_lower; i--)
             {
-                shift_cnt[index - i + tfm->max_shift]++;
-                shift_sum[index - i + tfm->max_shift] += curr_samples[index];
-                shift_sq[index - i + tfm->max_shift] += curr_sq;
-                shift_prod[index - i + tfm->max_shift] += curr_samples[index] * ref_samples[i];
+                j = c - i + tfm->max_shift;
+                num = (j + 8 <= c - i_lower + tfm->max_shift) ?
+                      8 : i - i_lower + 1;
+
+                memcpy(batch_ref, &ref_samples[i - num + 1], num * sizeof(float));
+                curr_prod = _mm256_mul_ps(curr_sum, _mm256_loadu_ps(batch_ref));
+                curr_prod = _mm256_permute_ps(
+                        _mm256_permute2f128_ps(curr_prod, curr_prod, 1),
+                        27);
+
+                for(k = 0; k < num; k++)
+                    shift_cnt[j + k]++;
+
+                if(num == 8)
+                {
+                    _mm256_storeu_ps(&shift_sum[j],
+                                     _mm256_add_ps(
+                                             _mm256_loadu_ps(&shift_sum[j]),
+                                             curr_sum));
+
+                    _mm256_storeu_ps(&shift_sq[j],
+                                     _mm256_add_ps(
+                                             _mm256_loadu_ps(&shift_sq[j]),
+                                             curr_sq));
+
+                    _mm256_storeu_ps(&shift_prod[j],
+                                     _mm256_add_ps(
+                                             _mm256_loadu_ps(&shift_prod[j]),
+                                             curr_prod));
+                }
+                else
+                {
+                    _mm256_storeu_ps(batch_prod, curr_prod);
+                    for(k = 0; k < num; k++)
+                    {
+                        shift_sum[j + k] += batch_curr[k];
+                        shift_sq[j + k] += batch_sq[k];
+                        shift_prod[j + k] += batch_prod[8 - num + k];
+                    }
+                }
+
+                i -= (num - 1);
             }
         }
     }
@@ -117,7 +160,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
     double product;
 
     size_t *shift_cnt = NULL;
-    double *shift_sum = NULL, *shift_sq = NULL, *shift_prod = NULL;
+    float *shift_sum = NULL, *shift_sq = NULL, *shift_prod = NULL;
 
     struct trace *ref_trace;
     struct tfm_static_align *tfm = TFM_DATA(t->owner->tfm);
@@ -130,7 +173,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
         goto __free_temp;
     }
 
-    shift_sum = calloc(2 * tfm->max_shift, sizeof(double));
+    shift_sum = calloc(2 * tfm->max_shift, sizeof(float));
     if(!shift_sum)
     {
         err("Failed to allocate sum buffer\n");
@@ -138,7 +181,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
         goto __free_temp;
     }
 
-    shift_sq = calloc(2 * tfm->max_shift, sizeof(double));
+    shift_sq = calloc(2 * tfm->max_shift, sizeof(float));
     if(!shift_sq)
     {
         err("Failed to allocate square buffer\n");
@@ -146,7 +189,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
         goto __free_temp;
     }
 
-    shift_prod = calloc(2 * tfm->max_shift, sizeof(double));
+    shift_prod = calloc(2 * tfm->max_shift, sizeof(float));
     if(!shift_prod)
     {
         err("Failed to allocate product buffer\n");
@@ -195,9 +238,9 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
     ref_dev -= (ref_avg * ref_avg);
     ref_dev = sqrt(ref_dev);
 
-    ret = __accumulate(t, ref_samples,
-                       shift_cnt, shift_sum,
-                       shift_sq, shift_prod);
+    ret = __accumulate_avx(t, ref_samples,
+                           shift_cnt, shift_sum,
+                           shift_sq, shift_prod);
     if(ret < 0)
     {
         err("Failed to accumulate samples for trace to shift\n");
@@ -228,7 +271,8 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
         product += curr_count * curr_avg * ref_avg;
         product /= (curr_count * curr_dev * ref_dev);
 
-        if(product > *best_conf)
+        // todo criteria for allowing a shift
+        if(product > *best_conf && shift_cnt[j] == 300)
         {
             *best_conf = product;
             *best_shift = j - tfm->max_shift;
@@ -282,6 +326,7 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
         goto __out;
     }
 
+    warn("Found best confidence %f for shift %i for trace %li\n", best_conf, best_shift, t->start_offset);
     if(best_conf >= tfm->confidence)
     {
         result = calloc(t->owner->num_samples, sizeof(float));

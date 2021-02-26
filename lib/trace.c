@@ -59,8 +59,10 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuff
         return -EINVAL;
     }
 
+    debug("Getting trace %li from trace set %li\n", index, ts->set_id);
     if(ts->cache)
     {
+        debug("Looking up in cache\n");
         ret = tc_lookup(ts, index, &t_result);
         if(ret < 0)
         {
@@ -68,10 +70,10 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuff
             return ret;
         }
 
-        if(t_result)
-            goto __out;
-        else
-            cache_missed = true;
+        if(t_result) goto __out;
+        else cache_missed = true;
+
+        debug("Trace %li not found in cache\n", index);
     }
 
     t_result = calloc(1, sizeof(struct trace));
@@ -89,6 +91,7 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuff
 
     if(prebuffer || cache_missed)
     {
+        debug("Prebuffering trace %li\n", index);
         ret = trace_title(t_result, &t_result->buffered_title);
         if(ret < 0)
             goto __fail;
@@ -104,6 +107,7 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuff
 
     if(cache_missed)
     {
+        debug("Storing trace %li in the cache\n", index);
         ret = tc_store(ts, index, t_result);
         if(ret < 0)
         {
@@ -126,6 +130,7 @@ int trace_free(struct trace *t)
 {
     if(t->owner->cache)
     {
+        debug("Dereferencing trace in cache\n");
         // this will cause a free if it needs to
         return tc_deref(t->owner,
                         (t->start_offset - t->owner->trace_start) /
@@ -134,6 +139,7 @@ int trace_free(struct trace *t)
     }
     else
     {
+        debug("Freeing trace memory\n");
         return trace_free_memory(t);
     }
 }

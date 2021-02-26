@@ -45,6 +45,7 @@ size_t __find_num_traces(struct trace_set *ts, size_t size_bytes, int assoc)
         ntraces++;
     }
 
+    debug("Cache for trace set %li can fit %li traces\n", ts->set_id, ntraces);
     return ntraces;
 }
 
@@ -80,6 +81,9 @@ int ts_create_cache(struct trace_set *ts, size_t size_bytes, size_t assoc)
         err("Invalid trace set, or cache size < size of one trace\n");
         return -EINVAL;
     }
+
+    debug("Creating cache with assoc %li for trace set %li, max size %li bytes\n",
+          assoc, ts->set_id, size_bytes);
 
     res = calloc(1, sizeof(struct trace_cache));
     if(!res)
@@ -126,6 +130,8 @@ int tc_free(struct trace_set *ts)
         err("Invalid trace set\n");
         return -EINVAL;
     }
+
+    debug("Freeing cache for trace set %li\n", ts->set_id);
 
     if(!ts->cache)
     {
@@ -196,6 +202,9 @@ int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace)
     }
 
     __sync_fetch_and_add(&ts->cache->accesses, 1);
+    debug("Trace set %li, cache access %li for index %li\n",
+          ts->set_id, ts->cache->accesses, index);
+
     if(ts->cache->accesses % 1000 == 0)
     {
         fprintf(stderr, "set %li cache accesses %li hits %li (%f) misses %li (%f)\n",
@@ -210,6 +219,9 @@ int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace)
     {
         __sync_fetch_and_add(&ts->cache->misses, 1);
         *trace = NULL;
+
+        debug("Set %li is not initialized, cache miss (%li misses total)\n",
+              set, ts->cache->misses);
         return 0;
     }
 
@@ -233,6 +245,9 @@ int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace)
 
             __sync_fetch_and_add(&ts->cache->hits, 1);
             *trace = curr_set->traces[i];
+
+            debug("Cache hit in set %li for way %i (%li hits total)\n",
+                  set, i, ts->cache->hits);
             break;
         }
     }
@@ -245,7 +260,11 @@ int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace)
     }
 
     if(!*trace)
+    {
         __sync_fetch_and_add(&ts->cache->misses, 1);
+        debug("Cache miss (%li misses total)\n",
+              ts->cache->misses);
+    }
 
     return 0;
 }
@@ -274,11 +293,15 @@ int tc_store(struct trace_set *ts, size_t index, struct trace *trace)
         return -EINVAL;
     }
 
+    debug("Trace set %li, store for index %li\n",
+          ts->set_id, index);
+
     set = index % ts->cache->nsets;
     curr_set = &ts->cache->sets[set];
 
     if(!curr_set->initialized)
     {
+        debug("Initializing set %li\n", set);
         ret = sem_wait(&ts->cache->cache_lock);
         if(ret < 0)
         {
@@ -356,6 +379,8 @@ int tc_store(struct trace_set *ts, size_t index, struct trace *trace)
         }
     }
 
+    debug("First pass found way %i with LRU %i\n", way, highest_lru);
+
     // second pass - no empty slots, look for refcount 0 and highest lru
     if(highest_lru == -1)
     {
@@ -367,6 +392,8 @@ int tc_store(struct trace_set *ts, size_t index, struct trace *trace)
                 way = i;
             }
         }
+
+        debug("Second pass found way %i with LRU %i\n", way, highest_lru);
     }
 
     // no empty entries and all are referenced from somewhere. the best we
@@ -374,6 +401,8 @@ int tc_store(struct trace_set *ts, size_t index, struct trace *trace)
     // in the future but not found in the cache this should fail silently
     if(highest_lru == -1)
     {
+        debug("No available slot found, not caching trace\n");
+
         ret = sem_post(&curr_set->set_lock);
         if(ret < 0)
         {
@@ -386,11 +415,13 @@ int tc_store(struct trace_set *ts, size_t index, struct trace *trace)
 
     if(curr_set->valid[way])
     {
+        debug("Evicting way %i from cache set %li\n", way, set);
         trace_free_memory(curr_set->traces[way]);
         curr_set->traces[way] = NULL;
         curr_set->valid[way] = false;
     }
 
+    debug("Placing index %li in set %li way %i\n", index, set, way);
     curr_set->valid[way] = true;
     curr_set->refcount[way] = 1;
     curr_set->traces[way] = trace;
@@ -425,8 +456,6 @@ __free_tc_set:
 
 int tc_deref(struct trace_set *ts, size_t index, struct trace *trace)
 {
-    // todo handle case where trace isn't resident -- this is a bug because we were holding a reference to it
-    // todo just delete trace if not found in cache -- probably couldnt store it at the time
     int i, ret;
     size_t set;
     struct tc_set *curr_set;
@@ -449,11 +478,17 @@ int tc_deref(struct trace_set *ts, size_t index, struct trace *trace)
         return -EINVAL;
     }
 
+    debug("Trace set %li, deref for index %li\n",
+          ts->set_id, index);
+
     set = index % ts->cache->nsets;
     curr_set = &ts->cache->sets[set];
 
     if(!curr_set->initialized)
     {
+        warn("Current set is not initialized, freeing trace\n");
+        trace_free_memory(trace);
+        return 0;
         // todo this is a bug
     }
 
@@ -471,8 +506,13 @@ int tc_deref(struct trace_set *ts, size_t index, struct trace *trace)
             if(trace == curr_set->traces[i])
             {
                 curr_set->refcount[i]--;
+                debug("Found trace, decremented refcount to %i\n", curr_set->refcount[i]);
             }
-            else trace_free_memory(trace);
+            else
+            {
+                warn("Correct trace found, but pointer does not match -- freeing\n");
+                trace_free_memory(trace);
+            }
             break;
         }
     }
