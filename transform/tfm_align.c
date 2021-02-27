@@ -95,7 +95,7 @@ int __accumulate_avx(struct trace *t, const float *ref_samples,
             i_upper = (c + tfm->max_shift < tfm->ref_samples_higher[r] ?
                        c + tfm->max_shift + 1 : (int) tfm->ref_samples_higher[r]);
 
-            for(i = i_upper - 1; i >= i_lower; i--)
+            for(i = i_upper - 1; i >= i_lower;)
             {
                 j = c - i + tfm->max_shift;
                 num = (j + 8 <= c - i_lower + tfm->max_shift) ?
@@ -138,7 +138,7 @@ int __accumulate_avx(struct trace *t, const float *ref_samples,
                     }
                 }
 
-                i -= (num - 1);
+                i -= num;
             }
         }
     }
@@ -164,8 +164,7 @@ void __calculate_ref(struct tfm_static_align *tfm, float *ref_samples,
     for(r = 0; r < tfm->num_regions; r++)
     {
         for(i = (int) tfm->ref_samples_lower[r];
-            i < (int) tfm->ref_samples_higher[r];
-            i++)
+            i < (int) tfm->ref_samples_higher[r];)
         {
             if((int) tfm->ref_samples_higher[r] - i >= 8)
             {
@@ -175,7 +174,7 @@ void __calculate_ref(struct tfm_static_align *tfm, float *ref_samples,
                                         _mm256_mul_ps(ref_curr,
                                                       ref_curr));
                 ref_count += 8;
-                i += 7;
+                i += 8;
             }
             else break;
         }
@@ -191,6 +190,7 @@ void __calculate_ref(struct tfm_static_align *tfm, float *ref_samples,
     _mm256_storeu_ps(batch, ref_sum);
     for(i = 1; i < 8; i++)
         batch[0] += batch[i];
+
     ref_sum = _mm256_broadcast_ss(&batch[0]);
     batch[0] /= ref_count;
     ref_avg = _mm256_broadcast_ss(&batch[0]);
@@ -199,6 +199,7 @@ void __calculate_ref(struct tfm_static_align *tfm, float *ref_samples,
     for(i = 1; i < 8; i++)
         batch[0] += batch[i];
     batch[0] /= ref_count;
+
     ref_dev = _mm256_broadcast_ss(&batch[0]);
     ref_dev = _mm256_sub_ps(ref_dev, _mm256_mul_ps(ref_avg, ref_avg));
     ref_dev = _mm256_sqrt_ps(ref_dev);
@@ -329,7 +330,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
         goto __free_ref;
     }
 
-    for(j = 0; j < 2 * tfm->max_shift; j++)
+    for(j = 0; j < 2 * tfm->max_shift;)
     {
         if(j + 8 < 2 * tfm->max_shift)
         {
@@ -348,7 +349,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
                 }
             }
 
-            j += 7;
+            j += 8;
         }
         else
         {
@@ -357,6 +358,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
             curr_dev -= (curr_avg * curr_avg);
             curr_dev = sqrt(curr_dev);
 
+            product = shift_prod[j];
             product -= ref_sum[0] * curr_avg;
             product -= shift_sum[j] * ref_avg[0];
             product += shift_cnt[j] * curr_avg * ref_avg[0];
@@ -368,6 +370,8 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
                 *best_conf = product;
                 *best_shift = j - tfm->max_shift;
             }
+
+            j++;
         }
     }
 
@@ -449,6 +453,7 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
             // typically this would just mean the previous transformation does
             // not create a trace for this index (not an error) but in this case
             // this is actually an error (see above)
+
             err("Trace to align is not defined for this index, but was when doing alignment\n");
             ret = -ENODATA;
             goto __free_prev_trace;
@@ -488,12 +493,12 @@ void __tfm_static_align_exit(struct trace_set *ts)
 
 void __tfm_static_align_free_title(struct trace *t)
 {
-    free(t->buffered_title);
+    passthrough_free_title(t);
 }
 
 void __tfm_static_align_free_data(struct trace *t)
 {
-    free(t->buffered_data);
+    passthrough_free_data(t);
 }
 
 void __tfm_static_align_free_samples(struct trace *t)
@@ -532,4 +537,4 @@ int tfm_static_align(struct tfm **tfm, double confidence,
 
     *tfm = res;
     return 0;
-};
+}

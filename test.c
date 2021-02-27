@@ -33,22 +33,22 @@ int main()
 
     ts_open(&source, "/mnt/raid0/Data/em/tvla_pos1_arm_ce.trs");
     ts_transform(&filtered, source, tfm_tvla);
-    ts_transform(&aligned, source, tfm_align);
+    ts_transform(&aligned, filtered, tfm_align);
     ts_transform(&averaged, aligned, tfm_avg);
     ts_transform(&broken, aligned, tfm_differential);
 
-//    ts_create_cache(source, 8 * 1024 * 1024, 4);
-//    ts_create_cache(filtered, 8 * 1024 * 1024, 4);
-//    ts_create_cache(aligned, 1ull * 1024 * 1024 * 1024, 16);
+    ts_create_cache(source, 8 * 1024 * 1024, 4);
+    ts_create_cache(filtered, 8 * 1024 * 1024, 4);
+    ts_create_cache(aligned, 1ull * 1024 * 1024 * 1024, 16);
 
-//    for(i = 0; i < ts_num_traces(broken); i++)
-//    {
-//        trace_get(broken, &trace, i, true);
-//    }
+    for(i = 0; i < ts_num_traces(broken); i++)
+    {
+        trace_get(broken, &trace, i, true);
+    }
 
-    trace_get(averaged, &trace, 0, true);
-
-//    for(i = 0; i < 1000; i++)
+//    trace_get(averaged, &trace, 0, true);
+//
+//    for(i = 0; i < 10; i++)
 //    {
 //        trace_get(aligned, &trace, i, true);
 //        trace_free(trace);

@@ -10,7 +10,7 @@ size_t gbl_set_index = 0;
 
 int ts_open(struct trace_set **ts, const char *path)
 {
-    int retval;
+    int ret;
     struct trace_set *ts_result;
 
     if(!ts || !path)
@@ -33,26 +33,24 @@ int ts_open(struct trace_set **ts, const char *path)
     if(!ts_result->ts_file)
     {
         err("Unable to open trace set at %s: %s\n", path, strerror(errno));
-        retval = -errno;
+        ret = -errno;
         goto __free_ts_result;
     }
 
-    retval = init_headers(ts_result);
-    if(retval < 0)
+    ret = init_headers(ts_result);
+    if(ret < 0)
     {
         err("Failed to initialize trace set headers\n");
         goto __close_ts_file;
     }
 
-#if SUPPORT_PTHREAD
-    retval = sem_init(&ts_result->file_lock, 0, 1);
-    if(retval < 0)
+    ret = sem_init(&ts_result->file_lock, 0, 1);
+    if(ret < 0)
     {
         err("Failed to initialize file lock semaphore: %s\n", strerror(errno));
-        retval = -errno;
+        ret = -errno;
         goto __free_headers;
     }
-#endif
 
     ts_result->prev = NULL;
     ts_result->tfm = NULL;
@@ -71,11 +69,12 @@ __free_ts_result:
     free(ts_result);
 
     *ts = NULL;
-    return retval;
+    return ret;
 }
 
 int ts_close(struct trace_set *ts)
 {
+    int ret;
     if(!ts)
     {
         err("Invalid trace set\n");
@@ -85,11 +84,11 @@ int ts_close(struct trace_set *ts)
     debug("Closing trace set %li\n", ts->set_id);
 
     // wait for any consumers
-    ts_lock(ts, ;)
+    ret = sem_wait(&ts->file_lock);
+    if(ret < 0)
+        // welp, we're gonna destroy it anyway
 
-#if SUPPORT_PTHREAD
     sem_destroy(&ts->file_lock);
-#endif
 
     if(ts->headers)
         free_headers(ts);

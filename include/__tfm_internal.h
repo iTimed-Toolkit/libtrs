@@ -39,4 +39,8 @@ int passthrough_title(struct trace *trace, char **title);
 int passthrough_data(struct trace *trace, uint8_t **data);
 int passthrough_samples(struct trace *trace, float **samples);
 
+void passthrough_free_title(struct trace *t);
+void passthrough_free_data(struct trace *t);
+void passthrough_free_samples(struct trace *t);
+
 #endif //LIBTRS___TFM_INTERNAL_H

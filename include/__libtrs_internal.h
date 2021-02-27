@@ -5,14 +5,10 @@
 #include <stdint.h>
 #include <semaphore.h>
 
-#define SUPPORT_PTHREAD     1
-
 struct trace_set
 {
     FILE *ts_file;
-#if SUPPORT_PTHREAD
     sem_t file_lock;
-#endif
 
     size_t set_id;
     size_t num_samples, num_traces;
@@ -70,17 +66,6 @@ static log_level_t libtrs_log_level = ERR;
 #define debug(...)              __msg(DEBUG, __VA_ARGS__)
 #define warn(...)               __msg(WARN, __VA_ARGS__)
 #define err(...)                __msg(ERR, __VA_ARGS__)
-
-#if SUPPORT_PTHREAD
-#define ts_lock(set, out)   \
-    if(sem_wait(&(set)->file_lock) < 0) out
-
-#define ts_unlock(set, out) \
-    if(sem_post(&(set)->file_lock) < 0) out
-#else
-#define ts_lock(set, out)   ;
-#define ts_unlock(set, out) ;
-#endif
 
 int trace_free_memory(struct trace *t);
 

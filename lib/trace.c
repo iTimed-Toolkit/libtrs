@@ -180,7 +180,12 @@ int trace_title(struct trace *t, char **title)
             return -ENOMEM;
         }
 
-        ts_lock(t->owner, goto __sem_fail);
+        ret = sem_wait(&t->owner->file_lock);
+        if(ret < 0)
+        {
+            err("Failed to wait on trace set file lock\n");
+            goto __sem_fail;
+        }
 
         stat = fseek(t->owner->ts_file, t->start_offset, SEEK_SET);
         if(stat)
@@ -198,18 +203,20 @@ int trace_title(struct trace *t, char **title)
             goto __free_result;
         }
 
-        ts_unlock(t->owner, goto __sem_fail);
+        ret = sem_post(&t->owner->file_lock);
+        if(ret < 0)
+        {
+            err("Failed to post to trace set file lock\n");
+            goto __sem_fail;
+        }
     }
 
     t->buffered_title = result;
     *title = result;
     return 0;
 
-#if SUPPORT_PTHREAD
 __sem_fail:
-    err("Semaphore operation failed: %s\n", strerror(errno));
     stat = -errno;
-#endif
 
 __free_result:
     free(result);
@@ -242,7 +249,13 @@ int __trace_buffer_data(struct trace *t)
             return -ENOMEM;
         }
 
-        ts_lock(t->owner, goto __sem_fail);
+        ret = sem_wait(&t->owner->file_lock);
+        if(ret < 0)
+        {
+            err("Failed to wait on trace set file lock\n");
+            goto __sem_fail;
+        }
+
         stat = fseek(t->owner->ts_file, t->start_offset + t->owner->title_size, SEEK_SET);
         if(stat)
         {
@@ -258,17 +271,20 @@ int __trace_buffer_data(struct trace *t)
             stat = -EIO;
             goto __free_result;
         }
-        ts_unlock(t->owner, goto __sem_fail);
+
+        ret = sem_post(&t->owner->file_lock);
+        if(ret < 0)
+        {
+            err("Failed to post to trace set file lock\n");
+            goto __sem_fail;
+        }
     }
 
     t->buffered_data = result;
     return 0;
 
-#if SUPPORT_PTHREAD
 __sem_fail:
-    err("Semaphore operation failed: %s\n", strerror(errno));
     stat = -errno;
-#endif
 
 __free_result:
     free(result);
@@ -400,7 +416,13 @@ size_t trace_samples(struct trace *t, float **samples)
             goto __free_temp;
         }
 
-        ts_lock(t->owner, goto __sem_fail);
+        ret = sem_wait(&t->owner->file_lock);
+        if(ret < 0)
+        {
+            err("Failed to wait on trace set file lock\n");
+            goto __sem_fail;
+        }
+
         stat = fseek(t->owner->ts_file,
                      t->start_offset + t->owner->title_size + t->owner->data_size,
                      SEEK_SET);
@@ -418,7 +440,13 @@ size_t trace_samples(struct trace *t, float **samples)
             stat = -EIO;
             goto __free_temp;
         }
-        ts_unlock(t->owner, goto __sem_fail);
+
+        ret = sem_post(&t->owner->file_lock);
+        if(ret < 0)
+        {
+            err("Failed to post to trace set file lock\n");
+            goto __sem_fail;
+        }
 
         switch(t->owner->datatype)
         {
@@ -454,11 +482,8 @@ size_t trace_samples(struct trace *t, float **samples)
     *samples = result;
     return 0;
 
-#if SUPPORT_PTHREAD
 __sem_fail:
-    err("Semaphore operation failed: %s\n", strerror(errno));
     stat = -errno;
-#endif
 
 __free_result:
     free(result);

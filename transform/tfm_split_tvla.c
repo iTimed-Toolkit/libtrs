@@ -114,8 +114,6 @@ int __tfm_split_tvla_samples(struct trace *t, float **samples)
         goto __out;
     }
 
-
-    // todo this will be efficient once we have a trace cache
     if(type == tfm->which)
         ret = passthrough_samples(t, samples);
     else
@@ -131,17 +129,17 @@ __out:
 
 void __tfm_split_tvla_free_title(struct trace *t)
 {
-    free(t->buffered_title);
+    passthrough_free_title(t);
 }
 
 void __tfm_split_tvla_free_data(struct trace *t)
 {
-    free(t->buffered_data);
+    passthrough_free_data(t);
 }
 
 void __tfm_split_tvla_free_samples(struct trace *t)
 {
-    free(t->buffered_samples);
+    passthrough_free_samples(t);
 }
 
 int tfm_split_tvla(struct tfm **tfm, bool which)

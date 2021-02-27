@@ -369,6 +369,7 @@ int tc_store(struct trace_set *ts, size_t index, struct trace *trace)
     }
 
     // first pass - look for empty slots, pick the one with highest lru value
+    way = -1;
     highest_lru = -1;
     for(i = 0; i < ts->cache->nways; i++)
     {

@@ -125,3 +125,21 @@ __out:
     trace_free(prev_trace);
     return ret;
 }
+
+void passthrough_free_title(struct trace *t)
+{
+    if(t->buffered_title)
+        free(t->buffered_title);
+}
+
+void passthrough_free_data(struct trace *t)
+{
+    if(t->buffered_data)
+        free(t->buffered_data);
+}
+
+void passthrough_free_samples(struct trace *t)
+{
+    if(t->buffered_samples)
+        free(t->buffered_samples);
+}
