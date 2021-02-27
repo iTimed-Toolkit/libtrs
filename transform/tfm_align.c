@@ -48,7 +48,7 @@ size_t __tfm_static_align_trace_size(struct trace_set *ts)
 }
 
 int __accumulate_avx(struct trace *t, const float *ref_samples,
-                     size_t *shift_cnt, float *shift_sum,
+                     float *shift_cnt, float *shift_sum,
                      float *shift_sq, float *shift_prod)
 {
     int ret, num, c, r, i, j, k;
@@ -149,23 +149,111 @@ __free_trace:
     return ret;
 }
 
+void __calculate_ref(struct tfm_static_align *tfm, float *ref_samples,
+                     size_t *ref_count_res, __m256 *ref_sum_res,
+                     __m256 *ref_avg_res, __m256 *ref_dev_res)
+{
+    int i, r;
+    float batch[8];
+
+    size_t ref_count = 0;
+    __m256 ref_curr, ref_avg;
+    __m256 ref_sum = _mm256_setzero_ps();
+    __m256 ref_dev = _mm256_setzero_ps();
+
+    for(r = 0; r < tfm->num_regions; r++)
+    {
+        for(i = (int) tfm->ref_samples_lower[r];
+            i < (int) tfm->ref_samples_higher[r];
+            i++)
+        {
+            if((int) tfm->ref_samples_higher[r] - i >= 8)
+            {
+                ref_curr = _mm256_loadu_ps(&ref_samples[i]);
+                ref_sum = _mm256_add_ps(ref_sum, ref_curr);
+                ref_dev = _mm256_add_ps(ref_dev,
+                                        _mm256_mul_ps(ref_curr,
+                                                      ref_curr));
+                ref_count += 8;
+                i += 7;
+            }
+            else break;
+        }
+
+        for(; i < (int) tfm->ref_samples_higher[r]; i++)
+        {
+            ref_sum[(i - tfm->ref_samples_lower[r]) % 8] += ref_samples[i];
+            ref_dev[(i - tfm->ref_samples_lower[r]) % 8] += pow(ref_samples[i], 2.0);
+            ref_count++;
+        }
+    }
+
+    _mm256_storeu_ps(batch, ref_sum);
+    for(i = 1; i < 8; i++)
+        batch[0] += batch[i];
+    ref_sum = _mm256_broadcast_ss(&batch[0]);
+    batch[0] /= ref_count;
+    ref_avg = _mm256_broadcast_ss(&batch[0]);
+
+    _mm256_storeu_ps(batch, ref_dev);
+    for(i = 1; i < 8; i++)
+        batch[0] += batch[i];
+    batch[0] /= ref_count;
+    ref_dev = _mm256_broadcast_ss(&batch[0]);
+    ref_dev = _mm256_sub_ps(ref_dev, _mm256_mul_ps(ref_avg, ref_avg));
+    ref_dev = _mm256_sqrt_ps(ref_dev);
+
+    *ref_count_res = ref_count;
+    *ref_sum_res = ref_sum;
+    *ref_avg_res = ref_avg;
+    *ref_dev_res = ref_dev;
+}
+
+void __calculate_curr(float *shift_cnt, float *shift_sum,
+                      float *shift_sq, float *shift_prod,
+                      __m256 ref_sum, __m256 ref_avg, __m256 ref_dev,
+                      int j, __m256 *corr)
+{
+    __m256 curr_count, curr_sum, curr_sq, curr_prod, curr_avg, curr_dev;
+
+    curr_count = _mm256_loadu_ps(&shift_cnt[j]);
+    curr_sum = _mm256_loadu_ps(&shift_sum[j]);
+    curr_sq = _mm256_loadu_ps(&shift_sq[j]);
+    curr_prod = _mm256_loadu_ps(&shift_prod[j]);
+
+    curr_avg = _mm256_div_ps(curr_sum, curr_count);
+    curr_dev = _mm256_div_ps(curr_sq, curr_count);
+    curr_dev = _mm256_sub_ps(curr_dev, _mm256_mul_ps(curr_avg, curr_avg));
+    curr_dev = _mm256_sqrt_ps(curr_dev);
+
+    curr_prod = _mm256_sub_ps(curr_prod, _mm256_mul_ps(ref_sum, curr_avg));
+    curr_prod = _mm256_sub_ps(curr_prod, _mm256_mul_ps(curr_sum, ref_avg));
+    curr_prod = _mm256_add_ps(curr_prod, _mm256_mul_ps(curr_count,
+                                                       _mm256_mul_ps(curr_avg,
+                                                                     ref_avg)));
+    curr_prod = _mm256_div_ps(curr_prod, _mm256_mul_ps(curr_count,
+                                                       _mm256_mul_ps(curr_dev,
+                                                                     ref_dev)));
+    *corr = curr_prod;
+}
+
 int __do_align(struct trace *t, double *best_conf, int *best_shift)
 {
-    int ret, r, i, j;
+    int ret, i, j;
     float *ref_samples;
 
-    size_t ref_count, curr_count;
-    double ref_sum, ref_sq, ref_avg, ref_dev;
-    double curr_sum, curr_sq, curr_avg, curr_dev;
-    double product;
+    size_t ref_count;
+    float batch[8];
+    __m256 ref_sum, ref_avg, ref_dev, curr_prod;
 
-    size_t *shift_cnt = NULL;
+    float *shift_cnt = NULL;
     float *shift_sum = NULL, *shift_sq = NULL, *shift_prod = NULL;
+    float curr_avg, curr_dev, product;
 
     struct trace *ref_trace;
     struct tfm_static_align *tfm = TFM_DATA(t->owner->tfm);
 
-    shift_cnt = calloc(2 * tfm->max_shift, sizeof(size_t));
+    shift_cnt = calloc(2 * tfm->max_shift, sizeof(float));
     if(!shift_cnt)
     {
         err("Failed to allocate count buffer\n");
@@ -217,26 +305,13 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
         goto __free_ref;
     }
 
-    ref_count = 0;
-    ref_sum = 0;
-    ref_sq = 0;
+    __calculate_ref(tfm, ref_samples, &ref_count,
+                    &ref_sum, &ref_avg, &ref_dev);
 
-    for(r = 0; r < tfm->num_regions; r++)
-    {
-        for(i = (int) tfm->ref_samples_lower[r];
-            i < (int) tfm->ref_samples_higher[r];
-            i++)
-        {
-            ref_count++;
-            ref_sum += ref_samples[i];
-            ref_sq += pow(ref_samples[i], 2);
-        }
-    }
-
-    ref_avg = ref_sum / ref_count;
-    ref_dev = ref_sq / ref_count;
-    ref_dev -= (ref_avg * ref_avg);
-    ref_dev = sqrt(ref_dev);
+//    ref_avg = ref_sum / ref_count;
+//    ref_dev = ref_sq / ref_count;
+//    ref_dev -= (ref_avg * ref_avg);
+//    ref_dev = sqrt(ref_dev);
 
     ret = __accumulate_avx(t, ref_samples,
                            shift_cnt, shift_sum,
@@ -256,26 +331,43 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
 
     for(j = 0; j < 2 * tfm->max_shift; j++)
     {
-        curr_count = shift_cnt[j];
-        curr_sum = shift_sum[j];
-        curr_sq = shift_sq[j];
-        product = shift_prod[j];
-
-        curr_avg = curr_sum / curr_count;
-        curr_dev = curr_sq / curr_count;
-        curr_dev -= (curr_avg * curr_avg);
-        curr_dev = sqrt(curr_dev);
-
-        product -= ref_sum * curr_avg;
-        product -= curr_sum * ref_avg;
-        product += curr_count * curr_avg * ref_avg;
-        product /= (curr_count * curr_dev * ref_dev);
-
-        // todo criteria for allowing a shift
-        if(product > *best_conf && shift_cnt[j] == 300)
+        if(j + 8 < 2 * tfm->max_shift)
         {
-            *best_conf = product;
-            *best_shift = j - tfm->max_shift;
+            __calculate_curr(shift_cnt, shift_sum, shift_sq, shift_prod,
+                             ref_sum, ref_avg, ref_dev,
+                             j, &curr_prod);
+
+            _mm256_storeu_ps(batch, curr_prod);
+            for(i = 0; i < 8; i++)
+            {
+                if(fabs(batch[i]) > *best_conf &&
+                   shift_cnt[j + i] == ref_count)
+                {
+                    *best_conf = fabs(batch[i]);
+                    *best_shift = i + j - tfm->max_shift;
+                }
+            }
+
+            j += 7;
+        }
+        else
+        {
+            curr_avg = shift_sum[j] / shift_cnt[j];
+            curr_dev = shift_sq[j] / shift_cnt[j];
+            curr_dev -= (curr_avg * curr_avg);
+            curr_dev = sqrt(curr_dev);
+
+            product -= ref_sum[0] * curr_avg;
+            product -= shift_sum[j] * ref_avg[0];
+            product += shift_cnt[j] * curr_avg * ref_avg[0];
+            product /= (shift_cnt[j] * curr_dev * ref_dev[0]);
+
+            if(product > *best_conf &&
+               shift_cnt[j] == ref_count)
+            {
+                *best_conf = product;
+                *best_shift = j - tfm->max_shift;
+            }
         }
     }
 
@@ -326,7 +418,7 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
         goto __out;
     }
 
-    warn("Found best confidence %f for shift %i for trace %li\n", best_conf, best_shift, t->start_offset);
+    warn("Trace %li, best confidence %f for shift %i\n", t->start_offset, best_conf, best_shift);
     if(best_conf >= tfm->confidence)
     {
         result = calloc(t->owner->num_samples, sizeof(float));
