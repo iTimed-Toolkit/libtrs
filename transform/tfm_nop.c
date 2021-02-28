@@ -62,7 +62,7 @@ void __tfm_nop_free_samples(struct trace *t)
     passthrough_free_samples(t);
 }
 
-int tfn_nop(struct tfm **tfm)
+int tfm_nop(struct tfm **tfm)
 {
     struct tfm *res;
     res = calloc(1, sizeof(struct tfm));
