@@ -48,15 +48,15 @@ int __tfm_dpa_title(struct trace *t, char **title)
         return -ENOMEM;
     }
 
-    if(t->start_offset / 256 < 16)
+    if(TRACE_IDX(t) / 256 < 16)
     {
-        sprintf(res, "Key %lX = %02lX", t->start_offset / 256, t->start_offset % 256);
+        sprintf(res, "Key %lX = %02lX", TRACE_IDX(t) / 256, TRACE_IDX(t) % 256);
         *title = res;
         return 0;
     }
     else
     {
-        err("Trace offset is in inconsitent state\n");
+        err("Trace offset is in inconsistent state\n");
         free(res);
         *title = NULL;
         return -EINVAL;
@@ -137,7 +137,7 @@ int __tfm_dpa_samples(struct trace *t, float **samples)
 
         if(curr_samples && curr_data)
         {
-            pm = tfm->power_model(curr_data, t->start_offset);
+            pm = tfm->power_model(curr_data, TRACE_IDX(t));
             pm_sum += pm;
             pm_sq += pow(pm, 2);
 

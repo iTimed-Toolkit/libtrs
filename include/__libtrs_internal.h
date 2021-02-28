@@ -80,6 +80,9 @@ static log_level_t libtrs_log_level = DEBUG;
 #define err(...)                __msg(ERR, __VA_ARGS__)
 #define critical(...)           __msg(CRITICAL, __VA_ARGS__)
 
+#define TRACE_IDX(t)  (((t)->start_offset - (t)->owner->trace_start)  / \
+                            (t)->owner->trace_length)
+
 int trace_free_memory(struct trace *t);
 
 int read_headers(struct trace_set *ts);

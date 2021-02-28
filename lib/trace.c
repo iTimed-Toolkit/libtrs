@@ -6,10 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define TRACE_IDX(t)  (((t)->start_offset - (t)->owner->trace_start)  / \
-                            (t)->owner->trace_length)
-
-
 int trace_free_memory(struct trace *t)
 {
     if(!t)
@@ -496,10 +492,7 @@ int trace_free(struct trace *t)
     {
         debug("Dereferencing trace in cache\n");
         // this will cause a free if it needs to
-        return tc_deref(t->owner,
-                        (t->start_offset - t->owner->trace_start) /
-                        t->owner->trace_length,
-                        t);
+        return tc_deref(t->owner, TRACE_IDX(t), t);
     }
     else
     {

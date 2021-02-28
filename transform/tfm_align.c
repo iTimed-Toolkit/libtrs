@@ -60,7 +60,7 @@ int __accumulate_avx(struct trace *t, const float *ref_samples,
 
     struct tfm_static_align *tfm = TFM_DATA(t->owner->tfm);
 
-    ret = trace_get(t->owner->prev, &curr_trace, t->start_offset, false);
+    ret = trace_get(t->owner->prev, &curr_trace, TRACE_IDX(t), false);
     if(ret < 0)
     {
         err("Failed to get trace to align from previous trace set\n");
@@ -417,7 +417,7 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
         goto __out;
     }
 
-    warn("Trace %li, best confidence %f for shift %i\n", t->start_offset, best_conf, best_shift);
+    warn("Trace %li, best confidence %f for shift %i\n", TRACE_IDX(t), best_conf, best_shift);
     if(best_conf >= tfm->confidence)
     {
         result = calloc(ts_num_samples(t->owner), sizeof(float));
@@ -429,7 +429,7 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
         }
 
         // these should never fail, since they succeeded in __do_align above
-        ret = trace_get(t->owner->prev, &prev_trace, t->start_offset, false);
+        ret = trace_get(t->owner->prev, &prev_trace, TRACE_IDX(t), false);
         if(ret < 0)
         {
             err("Failed to get trace to align from previous trace sets\n");

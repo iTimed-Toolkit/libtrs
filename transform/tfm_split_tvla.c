@@ -100,7 +100,7 @@ int __tfm_split_tvla_samples(struct trace *t, float **samples)
     struct trace *prev_trace;
     struct tfm_split_tvla *tfm = TFM_DATA(t->owner->tfm);
 
-    ret = trace_get(t->owner->prev, &prev_trace, t->start_offset, false);
+    ret = trace_get(t->owner->prev, &prev_trace, TRACE_IDX(t), false);
     if(ret < 0)
     {
         err("Failed to get trace from previous set\n");

@@ -12,7 +12,7 @@ int passthrough_title(struct trace *trace, char **title)
     char *prev_title, *res;
     struct trace *prev_trace;
 
-    ret = trace_get(trace->owner->prev, &prev_trace, trace->start_offset, false);
+    ret = trace_get(trace->owner->prev, &prev_trace, TRACE_IDX(trace), false);
     if(ret < 0)
     {
         err("Failed to get trace from previous trace set\n");
@@ -52,7 +52,7 @@ int passthrough_data(struct trace *trace, uint8_t **data)
     uint8_t *prev_data, *res;
     struct trace *prev_trace;
 
-    ret = trace_get(trace->owner->prev, &prev_trace, trace->start_offset, false);
+    ret = trace_get(trace->owner->prev, &prev_trace, TRACE_IDX(trace), false);
     if(ret < 0)
     {
         err("Failed to get trace from previous trace set\n");
@@ -92,7 +92,7 @@ int passthrough_samples(struct trace *trace, float **samples)
     float *prev_samples, *res;
     struct trace *prev_trace;
 
-    ret = trace_get(trace->owner->prev, &prev_trace, trace->start_offset, false);
+    ret = trace_get(trace->owner->prev, &prev_trace, TRACE_IDX(trace), false);
     if(ret < 0)
     {
         err("Failed to get trace from previous trace set\n");

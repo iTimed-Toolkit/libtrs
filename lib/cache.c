@@ -237,8 +237,7 @@ int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace)
     {
         // cache hit!
         if(curr_set->valid[i] &&
-           (curr_set->traces[i]->start_offset ==
-            ts->trace_start + index * ts->trace_length))
+           (TRACE_IDX(curr_set->traces[i]) == index))
         {
             __update_lru(ts->cache, set, i, true);
             curr_set->refcount[i]++;
@@ -501,8 +500,7 @@ int tc_deref(struct trace_set *ts, size_t index, struct trace *trace)
     {
         // this is the correct entry
         if(curr_set->valid[i] &&
-           (curr_set->traces[i]->start_offset) ==
-           ts->trace_start + index * ts->trace_length)
+           TRACE_IDX(curr_set->traces[i]) == index)
         {
             if(trace == curr_set->traces[i])
             {
