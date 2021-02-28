@@ -32,16 +32,6 @@ int ts_open(struct trace_set **ts, const char *path);
 int ts_close(struct trace_set *ts);
 
 /**
- * Create a new trace set file.
- *
- * @param ts Where to place a pointer to the created trace set.
- * @param from Previous trace set, which will be the source of traces in the new one.
- * @param path Filename of the newly crated trace set.
- * @return 0 on success, or a standard errno error code on failure.
- */
-int ts_create(struct trace_set **ts, struct trace_set *from, const char *path);
-
-/**
  * Create a new trace set transformed in some way from a previous one
  *
  * @param new_ts Where to place a pointer to the new trace set.
@@ -50,7 +40,6 @@ int ts_create(struct trace_set **ts, struct trace_set *from, const char *path);
  * @return 0 on success, or a standard errno error code on failure.
  */
 int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *transform);
-
 
 /**
  * Fully render a trace set, through its specified transformation chain using the

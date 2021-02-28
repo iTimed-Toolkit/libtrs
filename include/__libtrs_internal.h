@@ -20,7 +20,7 @@ struct trace_set
     // for new trace sets
     size_t num_traces_written;
     size_t prev_next_trace;
-    struct list *indices_processing;
+    void *commit_data;
 
     // commonly used, buffered headers
     size_t title_size, data_size;
@@ -84,6 +84,9 @@ static log_level_t libtrs_log_level = DEBUG;
                             (t)->owner->trace_length)
 
 int trace_free_memory(struct trace *t);
+int __read_title_from_file(struct trace *t, char **title);
+int __read_samples_from_file(struct trace *t, float **samples);
+int __read_data_from_file(struct trace *t, uint8_t **data);
 
 int read_headers(struct trace_set *ts);
 int write_default_headers(struct trace_set *ts);
@@ -110,6 +113,7 @@ int list_free_node(struct list *node);
 int list_link_single(struct list **head, struct list *node, list_comparison_t f);
 int list_unlink_single(struct list **head, struct list *node);
 int list_lookup_single(struct list *head, struct list *node);
+void *list_get_data(struct list *node);
 int list_dump(struct list *head, list_print_t f);
 
 #endif //LIBTRS___LIBTRS_INTERNAL_H

@@ -12,6 +12,9 @@ struct tfm;
 #define TVLA_FIXED      true
 #define TVLA_RANDOM     false
 
+// IO
+int tfm_save(struct tfm **tfm, char *path_prefix);
+
 // Analysis
 int tfm_average(struct tfm **tfm, bool per_sample);
 

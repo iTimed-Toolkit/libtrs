@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.17)
 project(libtrs C)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_FLAGS "-O3 -Wall -Werror -mavx2")
+set(CMAKE_C_FLAGS "-O0 -Wall -mavx2")
 
 include_directories(include)
 
@@ -13,8 +13,9 @@ target_link_libraries(libtrs pthread)
 
 add_library(libtfm transform/tfm.c transform/tfm_align.c
         transform/tfm_average.c transform/tfm_split_tvla.c
-        transform/tfm_dpa.c transform/tfm_nop.c)
-target_link_libraries(libtfm m)
+        transform/tfm_dpa.c transform/tfm_nop.c transform/tfm_save.c
+        lib/list.c)
+target_link_libraries(libtfm pthread m)
 
 add_executable(libtrs_test_cpu test.c)
 target_link_libraries(libtrs_test_cpu libtrs libtfm)

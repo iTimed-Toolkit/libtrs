@@ -58,7 +58,7 @@ int list_link_single(struct list **head,
     debug("Linking node at %p\n", node);
     if(*head == NULL)
     {
-        warn("Setting head\n");
+        debug("Setting head\n");
         *head = node;
         return 0;
     }
@@ -149,6 +149,17 @@ int list_lookup_single(struct list *head, struct list *node)
 
     err("Node %p not found in this list\n", node);
     return -EINVAL;
+}
+
+void *list_get_data(struct list *node)
+{
+    if(!node)
+    {
+        err("Invalid node specified\n");
+        return NULL;
+    }
+
+    return node->data;
 }
 
 int list_dump(struct list *head, list_print_t f)
