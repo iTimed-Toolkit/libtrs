@@ -182,7 +182,7 @@ void __calculate_ref(struct tfm_static_align *tfm, float *ref_samples,
         for(; i < (int) tfm->ref_samples_higher[r]; i++)
         {
             ref_sum[(i - tfm->ref_samples_lower[r]) % 8] += ref_samples[i];
-            ref_dev[(i - tfm->ref_samples_lower[r]) % 8] += pow(ref_samples[i], 2.0);
+            ref_dev[(i - tfm->ref_samples_lower[r]) % 8] += powf(ref_samples[i], 2.0f);
             ref_count++;
         }
     }
@@ -336,10 +336,10 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
             _mm256_storeu_ps(batch, curr_prod);
             for(i = 0; i < 8; i++)
             {
-                if(fabs(batch[i]) > *best_conf &&
+                if(fabsf(batch[i]) > *best_conf &&
                    shift_cnt[j + i] == ref_count)
                 {
-                    *best_conf = fabs(batch[i]);
+                    *best_conf = fabsf(batch[i]);
                     *best_shift = i + j - tfm->max_shift;
                 }
             }
@@ -351,7 +351,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
             curr_avg = shift_sum[j] / shift_cnt[j];
             curr_dev = shift_sq[j] / shift_cnt[j];
             curr_dev -= (curr_avg * curr_avg);
-            curr_dev = sqrt(curr_dev);
+            curr_dev = sqrtf(curr_dev);
 
             product = shift_prod[j];
             product -= ref_sum[0] * curr_avg;
@@ -359,10 +359,10 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
             product += shift_cnt[j] * curr_avg * ref_avg[0];
             product /= (shift_cnt[j] * curr_dev * ref_dev[0]);
 
-            if(product > *best_conf &&
+            if(fabsf(product) > *best_conf &&
                shift_cnt[j] == ref_count)
             {
-                *best_conf = product;
+                *best_conf = fabsf(product);
                 *best_shift = j - tfm->max_shift;
             }
 
@@ -454,16 +454,28 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
             goto __free_prev_trace;
         }
 
-        // todo this can probably be optimized to 1-2 memcpys
-        for(i = 0; i < ts_num_samples(t->owner); i++)
+        if(best_shift < 0)
         {
-            if(i + best_shift < 0)
-                result[i] = shift[i + best_shift + ts_num_samples(t->owner)];
-            else if(i + best_shift >= ts_num_samples(t->owner))
-                result[i] = shift[i + best_shift - ts_num_samples(t->owner)];
-            else
-                result[i] = shift[i + best_shift];
+            memcpy(&result[0], &shift[best_shift],
+                   (ts_num_samples(t->owner) - best_shift) *
+                   sizeof(float));
+
+            memcpy(&result[best_shift], &shift[0],
+                   best_shift * sizeof(float));
         }
+        else if(best_shift > 0)
+        {
+            memcpy(&result[0],
+                   &shift[ts_num_samples(t->owner) - best_shift],
+                   best_shift * sizeof(float));
+
+            memcpy(&result[best_shift], &shift[0],
+                   (ts_num_samples(t->owner) - best_shift) *
+                   sizeof(float));
+        }
+        else
+            memcpy(result, shift,
+                   ts_num_samples(t->owner) * sizeof(float));
     }
     else goto __out;
 
