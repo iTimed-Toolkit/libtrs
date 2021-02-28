@@ -6,6 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define TRACE_IDX(t)  (((t)->start_offset - (t)->owner->trace_start)  / \
+                            (t)->owner->trace_length)
+
+
 int trace_free_memory(struct trace *t)
 {
     if(!t)
@@ -41,10 +45,340 @@ int trace_free_memory(struct trace *t)
     return 0;
 }
 
+int index_order(void *node1, void *node2)
+{
+    size_t index1 = *((size_t *) node1);
+    size_t index2 = *((size_t *) node2);
+
+    return (int) index2 - (int) index1;
+}
+
+void index_print(void *data)
+{
+    fprintf(stderr, "%p, ", data);
+    fflush(stderr);
+    size_t index = *((size_t *) data);
+    fprintf(stderr, "%li\n", index);
+}
+
+int __append_trace_to_file(struct trace *t)
+{
+    int i;
+    int ret;
+    size_t written;
+
+    size_t temp_len;
+    void *temp = NULL;
+
+    warn("Appending trace %li to file\n", TRACE_IDX(t));
+
+    ret = fseek(t->owner->ts_file, t->start_offset, SEEK_SET);
+    if(ret < 0)
+    {
+        err("Failed to seek to end of trace set file\n");
+        return -EIO;
+    }
+
+    // todo avx accelerate?
+    switch(t->owner->datatype)
+    {
+        case DT_BYTE:
+            temp_len = ts_num_samples(t->owner) * sizeof(char);
+            temp = calloc(t->owner->num_samples, sizeof(char));
+            if(!temp) break;
+
+            for(i = 0; i < ts_num_samples(t->owner); i++)
+                ((char *) temp)[i] = (char) (t->buffered_samples[i] / t->owner->yscale);
+            break;
+
+        case DT_SHORT:
+            temp_len = ts_num_samples(t->owner) * sizeof(short);
+            temp = calloc(t->owner->num_samples, sizeof(short));
+            if(!temp) break;
+
+            for(i = 0; i < ts_num_samples(t->owner); i++)
+                ((short *) temp)[i] = (short) (t->buffered_samples[i] / t->owner->yscale);
+            break;
+
+        case DT_INT:
+            temp_len = ts_num_samples(t->owner) * sizeof(int);
+            temp = calloc(t->owner->num_samples, sizeof(int));
+            if(!temp) break;
+
+            for(i = 0; i < ts_num_samples(t->owner); i++)
+                ((int *) temp)[i] = (int) (t->buffered_samples[i] / t->owner->yscale);
+            break;
+
+        case DT_FLOAT:
+            temp_len = ts_num_samples(t->owner) * sizeof(float);
+            temp = calloc(t->owner->num_samples, sizeof(float));
+            if(!temp) break;
+
+            for(i = 0; i < ts_num_samples(t->owner); i++)
+                ((float *) temp)[i] = t->buffered_samples[i] / t->owner->yscale;
+            break;
+
+        case DT_NONE:
+        default:
+            err("Bad trace set datatype %i\n", t->owner->datatype);
+            return -EINVAL;
+    }
+
+    if(!temp)
+    {
+        err("Failed to allocate temporary memory\n");
+        return -ENOMEM;
+    }
+
+    if(t->buffered_title)
+    {
+        written = fwrite(t->buffered_title, 1, t->owner->title_size, t->owner->ts_file);
+        if(written != t->owner->title_size)
+        {
+            err("Failed to write all bytes of title to file\n");
+            ret = -EIO;
+            goto __free_temp;
+        }
+    }
+
+    if(t->buffered_data)
+    {
+        written = fwrite(t->buffered_data, 1, t->owner->data_size, t->owner->ts_file);
+        if(written != t->owner->data_size)
+        {
+            err("Failed to write all bytes of data to file\n");
+            ret = -EIO;
+            goto __free_temp;
+        }
+    }
+
+    written = fwrite(temp, 1, temp_len, t->owner->ts_file);
+    if(written != temp_len)
+    {
+        err("Failed to write all bytes of samples to file\n");
+        ret = -EIO;
+        goto __free_temp;
+    }
+
+    fflush(t->owner->ts_file);
+
+    ret = 0;
+__free_temp:
+    free(temp);
+    return ret;
+
+}
+
+int __trace_render_to_index(struct trace_set *ts, struct trace **t, size_t index)
+{
+    int ret;
+
+    size_t prev_index;
+    struct list *node;
+    struct trace *t_prev = NULL, *t_result = NULL;
+
+    while(1)
+    {
+        ret = sem_wait(&ts->file_lock);
+        if(ret < 0)
+        {
+            err("Failed to wait on trace set file lock\n");
+            return -errno;
+        }
+
+        if(index < ts->num_traces_written)
+        {
+            debug("Index %li < written %li, exiting\n", index, ts->num_traces_written);
+            ret = sem_post(&ts->file_lock);
+            if(ret < 0)
+            {
+                err("Failed to post to trace set file lock\n");
+                return -errno;
+            }
+
+            break;
+        }
+
+        // get a new index to work on
+        prev_index = ts->prev_next_trace;
+        ts->prev_next_trace++;
+
+        list_create_node(&node, &prev_index);
+        list_link_single(&ts->indices_processing, node, index_order);
+
+        ret = sem_post(&ts->file_lock);
+        if(ret < 0)
+        {
+            err("Failed to post to trace set file lock\n");
+            return -errno;
+        }
+
+        debug("Checking prev_index %li\n", prev_index);
+        if(prev_index >= ts_num_traces(ts->prev))
+        {
+            err("Index %li out of bounds for previous trace set\n", prev_index);
+            return -EINVAL;
+        }
+
+        // potentially takes a long time, depending on transformation chain
+        ret = trace_get(ts->prev, &t_prev, prev_index, true);
+        if(ret < 0)
+        {
+            err("Failed to get trace from previous trace set\n");
+            return ret;
+        }
+
+        // this is not a valid trace for this trace set
+        if(!t_prev->buffered_samples ||
+           (ts->prev->title_size != 0 && !t_prev->buffered_title) ||
+           (ts->prev->data_size != 0 && !t_prev->buffered_data))
+        {
+            debug("prev_index %li not a valid index\n", prev_index);
+
+            // release this node
+            ret = sem_wait(&ts->file_lock);
+            if(ret < 0)
+            {
+                err("Failed to wait on trace set file lock\n");
+                ret = -errno;
+                goto __fail_free_prev;
+            }
+
+            list_unlink_single(&ts->indices_processing, node);
+            list_free_node(node);
+
+            ret = sem_post(&ts->file_lock);
+            if(ret < 0)
+            {
+                err("Failed to post to trace set file lock\n");
+                ret = -errno;
+                goto __fail_free_prev;
+            }
+
+            trace_free(t_prev);
+            continue;
+        }
+
+        debug("prev_index %li is a valid index, appending\n", prev_index);
+
+        t_result = calloc(1, sizeof(struct trace));
+        if(!t_result)
+        {
+            err("Failed to allocate memory for trace\n");
+            ret = -ENOMEM;
+            goto __fail_free_prev;
+        }
+
+        t_result->owner = ts;
+        t_result->buffered_title = t_prev->buffered_title;
+        t_result->buffered_data = t_prev->buffered_data;
+        t_result->buffered_samples = t_prev->buffered_samples;
+
+        t_result->buffered_title = calloc(ts->title_size, sizeof(char));
+        if(!t_result->buffered_title)
+        {
+            err("Failed to allocate memory for new trace title\n");
+            ret = -ENOMEM;
+            goto __fail_free_result;
+        }
+
+        t_result->buffered_data = calloc(ts->data_size, sizeof(uint8_t));
+        if(!t_result->buffered_data)
+        {
+            err("Failed to allocate memory for new trace data\n");
+            ret = -ENOMEM;
+            goto __fail_free_result;
+        }
+
+        t_result->buffered_samples = calloc(sizeof(float), ts->num_samples);
+        if(!t_result->buffered_samples)
+        {
+            err("Failed to allocate memory for new trace samples\n");
+            ret = -ENOMEM;
+            goto __fail_free_result;
+        }
+
+        memcpy(t_result->buffered_title, t_prev->buffered_title, ts->title_size * sizeof(char));
+        memcpy(t_result->buffered_data, t_prev->buffered_data, ts->data_size * sizeof(uint8_t));
+        memcpy(t_result->buffered_samples, t_prev->buffered_samples, ts->num_samples * sizeof(float));
+
+        // wait for our turn to write
+        while(1)
+        {
+            ret = sem_wait(&ts->file_lock);
+            if(ret < 0)
+            {
+                err("Failed to wait on trace set file lock\n");
+                ret = -errno;
+                goto __fail_free_result;
+            }
+
+            if(list_lookup_single(ts->indices_processing, node) == 0)
+                break;
+            else
+            {
+                ret = sem_post(&ts->file_lock);
+                if(ret < 0)
+                {
+                    err("Failed to post to trace set file lock\n");
+                    ret = -errno;
+                    goto __fail_free_result;
+                }
+            }
+        }
+
+        t_result->start_offset = ts->trace_start + ts->num_traces_written * ts->trace_length;
+        if(ts->cache)
+        {
+            ret = tc_store(ts, ts->num_traces_written, t_result);
+            if(ret < 0)
+            {
+                err("Failed to store result trace in cache\n");
+                ret = -errno;
+                goto __fail_free_result;
+            }
+        }
+
+        __append_trace_to_file(t_result);
+        ts->num_traces_written++;
+
+        if(ts->num_traces_written - 1 == index)
+            *t = t_result;
+        else
+            trace_free(t_result);
+
+        list_unlink_single(&ts->indices_processing, node);
+        list_free_node(node);
+
+        ret = sem_post(&ts->file_lock);
+        if(ret < 0)
+        {
+            err("Failed to post to trace set file lock\n");
+            ret = -errno;
+            goto __fail_free_prev;
+        }
+
+        trace_free(t_prev);
+    }
+
+    return 0;
+
+__fail_free_result:
+    trace_free_memory(t_result);
+    free(t_result);
+
+__fail_free_prev:
+    trace_free(t_prev);
+
+    return ret;
+}
+
 int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuffer)
 {
     int ret;
     struct trace *t_result;
+    size_t written;
+
     bool cache_missed = false;
 
     if(!ts || !t)
@@ -53,10 +387,40 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuff
         return -EINVAL;
     }
 
-    if(index >= ts->num_traces)
+    if(ts->prev && ts->ts_file)
     {
-        err("Index %li out of bounds for trace set\n", index);
-        return -EINVAL;
+        __atomic_load(&ts->num_traces_written, &written, __ATOMIC_RELAXED);
+
+        // this is a newly created trace set, need to sequentially access
+        if(index >= written)
+        {
+            debug("Rendering trace set %li to index %li\n", ts->set_id, index);
+
+            *t = NULL;
+            ret = __trace_render_to_index(ts, t, index);
+            if(ret < 0)
+            {
+                err("Failed to render trace set up to index %li\n", index);
+                return ret;
+            }
+
+            // this thread got the correct index, and went ahead and stored the result for us
+            if(*t)
+            {
+                debug("Already got correct trace\n");
+                return 0;
+            }
+
+            debug("Getting correct trace from cache or file\n");
+        }
+    }
+    else
+    {
+        if(index >= ts->num_traces)
+        {
+            err("Index %li out of bounds for trace set\n", index);
+            return -EINVAL;
+        }
     }
 
     debug("Getting trace %li from trace set %li\n", index, ts->set_id);

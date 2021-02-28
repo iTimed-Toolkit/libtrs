@@ -32,23 +32,14 @@ int ts_open(struct trace_set **ts, const char *path);
 int ts_close(struct trace_set *ts);
 
 /**
- * Unimplemented.
+ * Create a new trace set file.
  *
- * @param ts
- * @param from
- * @param path
- * @return
+ * @param ts Where to place a pointer to the created trace set.
+ * @param from Previous trace set, which will be the source of traces in the new one.
+ * @param path Filename of the newly crated trace set.
+ * @return 0 on success, or a standard errno error code on failure.
  */
 int ts_create(struct trace_set **ts, struct trace_set *from, const char *path);
-
-/**
- * Unimplemented.
- *
- * @param ts
- * @param t
- * @return
- */
-int ts_append(struct trace_set *ts, struct trace *t);
 
 /**
  * Create a new trace set transformed in some way from a previous one
@@ -59,6 +50,20 @@ int ts_append(struct trace_set *ts, struct trace *t);
  * @return 0 on success, or a standard errno error code on failure.
  */
 int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *transform);
+
+
+/**
+ * Fully render a trace set, through its specified transformation chain using the
+ * specified number of threads. This is accomplished by calling trace_get() for
+ * each trace in the rendered set -- if any new trace sets are specified in the chain
+ * (through ts_create), these will be written to file. Any other traces are immediately
+ * freed afterwards.
+ *
+ * @param ts The trace set to render.
+ * @param nthreads The number of threads to use when rendering.
+ * @return 0 on success, or a standard errno error code on failure.
+ */
+int ts_render(struct trace_set *ts, size_t nthreads);
 
 /**
  * Create a trace cache for the given cache set. The specified size
@@ -76,7 +81,7 @@ int ts_create_cache(struct trace_set *ts, size_t size_bytes, size_t assoc);
  *
  * @param ts The traceset to print.
  */
-void dump_headers(struct trace_set *ts);
+void ts_dump_headers(struct trace_set *ts);
 
 /**
  * Get the number of traces in a trace set.
@@ -97,7 +102,8 @@ size_t ts_num_traces(struct trace_set *ts);
 size_t ts_num_samples(struct trace_set *ts);
 
 /**
- * Get the size (in bytes) of a single traces in a trace set.
+ * Get the average size (in bytes) of a single trace in a trace set.
+ * This is used for determining specific cache configurations
  *
  * @param ts The trace set to operate on.
  * @return The (positive) trace init, or a (negative)

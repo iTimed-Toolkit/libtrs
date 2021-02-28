@@ -28,8 +28,8 @@ int __tfm_dpa_init(struct trace_set *ts)
 
     ts->title_size = strlen("Key X = XX") + 1;
     ts->data_size = 0;
-    ts->datatype = ts->prev->datatype;
-    ts->yscale = ts->prev->yscale;
+    ts->datatype = DT_BYTE;
+    ts->yscale = 1.0f / 256.0f;
     return 0;
 }
 

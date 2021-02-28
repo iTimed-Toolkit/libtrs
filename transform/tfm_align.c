@@ -309,11 +309,6 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
     __calculate_ref(tfm, ref_samples, &ref_count,
                     &ref_sum, &ref_avg, &ref_dev);
 
-//    ref_avg = ref_sum / ref_count;
-//    ref_dev = ref_sq / ref_count;
-//    ref_dev -= (ref_avg * ref_avg);
-//    ref_dev = sqrt(ref_dev);
-
     ret = __accumulate_avx(t, ref_samples,
                            shift_cnt, shift_sum,
                            shift_sq, shift_prod);
@@ -425,7 +420,7 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
     warn("Trace %li, best confidence %f for shift %i\n", t->start_offset, best_conf, best_shift);
     if(best_conf >= tfm->confidence)
     {
-        result = calloc(t->owner->num_samples, sizeof(float));
+        result = calloc(ts_num_samples(t->owner), sizeof(float));
         if(!result)
         {
             err("Failed to allocate sample buffer for aligned trace\n");
@@ -459,12 +454,13 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
             goto __free_prev_trace;
         }
 
-        for(i = 0; i < t->owner->num_samples; i++)
+        // todo this can probably be optimized to 1-2 memcpys
+        for(i = 0; i < ts_num_samples(t->owner); i++)
         {
             if(i + best_shift < 0)
-                result[i] = shift[i + best_shift + t->owner->num_samples];
-            else if(i + best_shift >= t->owner->num_samples)
-                result[i] = shift[i + best_shift - t->owner->num_samples];
+                result[i] = shift[i + best_shift + ts_num_samples(t->owner)];
+            else if(i + best_shift >= ts_num_samples(t->owner))
+                result[i] = shift[i + best_shift - ts_num_samples(t->owner)];
             else
                 result[i] = shift[i + best_shift];
         }

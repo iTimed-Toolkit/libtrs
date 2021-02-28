@@ -33,10 +33,10 @@ int __tfm_average_init(struct trace_set *ts)
     ts->output_offs = ts->output_len =
     ts->key_offs = ts->key_len = 0;
 
-    ts->title_size = strlen("Average");
-    ts->data_size = ts->prev->data_size;
-    ts->datatype = ts->prev->datatype;
-    ts->yscale = ts->prev->yscale;
+    ts->title_size = strlen("Average") + 1;
+    ts->data_size = 0;
+    ts->datatype = DT_FLOAT;
+    ts->yscale = 1;
     return 0;
 }
 
@@ -62,8 +62,8 @@ int __tfm_average_samples(struct trace *t, float **samples)
     int i, j, ret;
     struct trace *curr;
     struct tfm_average *tfm = TFM_DATA(t->owner->tfm);
-    float *result = calloc(t->owner->num_samples, sizeof(float)),
-            *curr_samples;
+    float *result = calloc(ts_num_samples(t->owner), sizeof(float)),
+            *curr_samples, count = 0;
 
     if(!result)
     {
@@ -73,7 +73,7 @@ int __tfm_average_samples(struct trace *t, float **samples)
 
     if(tfm->per_sample)
     {
-        for(i = 0; i < t->owner->prev->num_traces; i++)
+        for(i = 0; i < ts_num_traces(t->owner->prev); i++)
         {
             ret = trace_get(t->owner->prev, &curr, i, false);
             if(ret < 0)
@@ -91,21 +91,20 @@ int __tfm_average_samples(struct trace *t, float **samples)
 
             if(curr_samples)
             {
-//                fprintf(stderr, "averaging trace %i\n", i);
-                // todo make more cache-efficient
-                for(j = 0; j < t->owner->prev->num_samples; j++)
+                count++;
+                for(j = 0; j < ts_num_samples(t->owner->prev); j++)
                     result[j] += curr_samples[j];
             }
 
             trace_free(curr);
         }
 
-        for(i = 0; i < t->owner->prev->num_samples; i++)
-            result[i] /= t->owner->prev->num_traces;
+        for(i = 0; i < ts_num_samples(t->owner->prev); i++)
+            result[i] /= count;
     }
     else
     {
-        for(i = 0; i < t->owner->prev->num_traces; i++)
+        for(i = 0; i < ts_num_traces(t->owner->prev); i++)
         {
             ret = trace_get(t->owner->prev, &curr, i, false);
             if(ret < 0)
@@ -123,10 +122,9 @@ int __tfm_average_samples(struct trace *t, float **samples)
 
             if(curr_samples)
             {
-                // todo index different to avoid empty spots?
-                for(j = 0; j < t->owner->prev->num_samples; j++)
+                for(j = 0; j < ts_num_samples(t->owner->prev); j++)
                     result[i] += curr_samples[j];
-                result[i] /= t->owner->prev->num_samples;
+                result[i] /= ts_num_samples(t->owner->prev);
             }
 
             trace_free(curr);
