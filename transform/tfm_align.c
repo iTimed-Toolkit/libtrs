@@ -402,7 +402,7 @@ int __tfm_static_align_data(struct trace *t, uint8_t **data)
 
 int __tfm_static_align_samples(struct trace *t, float **samples)
 {
-    int i, ret;
+    int ret;
     double best_conf = 0;
     int best_shift = 0;
     float *result = NULL, *shift;
@@ -456,21 +456,21 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
 
         if(best_shift < 0)
         {
-            memcpy(&result[0], &shift[best_shift],
-                   (ts_num_samples(t->owner) - best_shift) *
+            memcpy(&result[0], &shift[-best_shift],
+                   (ts_num_samples(t->owner) + best_shift - 1) *
                    sizeof(float));
 
-            memcpy(&result[best_shift], &shift[0],
-                   best_shift * sizeof(float));
+            memcpy(&result[-best_shift], &shift[0],
+                   -best_shift * sizeof(float));
         }
         else if(best_shift > 0)
         {
             memcpy(&result[0],
-                   &shift[ts_num_samples(t->owner) - best_shift],
+                   &shift[ts_num_samples(t->owner) - best_shift - 1],
                    best_shift * sizeof(float));
 
             memcpy(&result[best_shift], &shift[0],
-                   (ts_num_samples(t->owner) - best_shift) *
+                   (ts_num_samples(t->owner) - best_shift - 1) *
                    sizeof(float));
         }
         else
