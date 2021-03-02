@@ -172,7 +172,8 @@ int __read_title_from_file(struct trace *t, char **title)
     read = fread(result, 1, t->owner->title_size, t->owner->ts_file);
     if(read != t->owner->title_size)
     {
-        err("Failed to read title from file\n");
+        err("Failed to read title from file (read %li expecting %li)\n",
+            read, t->owner->title_size);
         ret = -EIO;
         goto __free_result;
     }
@@ -226,8 +227,8 @@ int __read_samples_from_file(struct trace *t, float **samples)
     }
 
     ret = fseek(t->owner->ts_file,
-                 t->start_offset + t->owner->title_size + t->owner->data_size,
-                 SEEK_SET);
+                t->start_offset + t->owner->title_size + t->owner->data_size,
+                SEEK_SET);
     if(ret)
     {
         err("Failed to seek file to sample position\n");
@@ -238,7 +239,8 @@ int __read_samples_from_file(struct trace *t, float **samples)
     read = fread(temp, t->owner->datatype & 0xF, t->owner->num_samples, t->owner->ts_file);
     if(read != t->owner->num_samples)
     {
-        err("Failed to read samples from file\n");
+        err("Failed to read samples from file (read %li expecting %li)\n",
+            read, t->owner->num_samples);
         ret = -EIO;
         goto __free_temp;
     }
@@ -323,7 +325,8 @@ int __read_data_from_file(struct trace *t, uint8_t **data)
     read = fread(result, 1, t->owner->data_size, t->owner->ts_file);
     if(read != t->owner->data_size)
     {
-        err("Failed to read data from file\n");
+        err("Failed to read data from file (read %li expecting %li)\n",
+            read, t->owner->data_size);
         ret = -EIO;
         goto __free_result;
     }

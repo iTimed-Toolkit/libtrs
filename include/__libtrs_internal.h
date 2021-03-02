@@ -65,7 +65,7 @@ typedef enum
     CRITICAL
 } log_level_t;
 
-static log_level_t libtrs_log_level = DEBUG;
+static log_level_t libtrs_log_level = ERR;
 
 #define __first_arg(a, ...)     a
 #define __other_arg(a, ...)     , ## __VA_ARGS__
@@ -91,6 +91,7 @@ int __read_data_from_file(struct trace *t, uint8_t **data);
 int read_headers(struct trace_set *ts);
 int write_default_headers(struct trace_set *ts);
 int write_inherited_headers(struct trace_set *ts);
+int finalize_headers(struct trace_set *ts);
 int free_headers(struct trace_set *ts);
 
 int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace);

@@ -175,7 +175,12 @@ int list_dump(struct list *head, list_print_t f)
     }
 
     if(i == 0)
+    {
         debug("\t[empty]\n");
-
+    }
+    else
+    {
+        debug("\t%i entries\n", i);
+    }
     return 0;
 }

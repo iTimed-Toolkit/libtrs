@@ -422,7 +422,7 @@ int __parse_headers(struct trace_set *ts)
 
             case TH_STR:
             case TH_BYTE:
-                ts->headers[i].val.bytes = calloc(actual_len, 1);
+                ts->headers[i].val.bytes = calloc(actual_len + 1, 1);
                 if(!ts->headers[i].val.bytes)
                 {
                     err("Failed to allocate buffer for tag data\n");
@@ -726,6 +726,49 @@ int write_inherited_headers(struct trace_set *ts)
             continue;
         }
 
+        if(all_headers[header->tag].th_type == TH_STR ||
+           all_headers[header->tag].th_type == TH_BYTE)
+        {
+            ret = __write_tag_len_data(ts->ts_file, header->tag, header->val.string);
+            if(ret < 0)
+            {
+                err("Failed to write string/byte header to trace set file\n");
+                return ret;
+            }
+        }
+        else
+        {
+            ret = __write_tag_len_data(ts->ts_file, header->tag, &header->val);
+            if(ret < 0)
+            {
+                err("Failed to write header to trace set file\n");
+                return ret;
+            }
+        }
+    }
+
+    return 0;
+}
+
+int finalize_headers(struct trace_set *ts)
+{
+    int i, ret;
+    struct th_data *header;
+
+    ret = fseek(ts->ts_file, 0, SEEK_SET);
+    if(ret)
+    {
+        err("Failed to seek trace set file to beginning\n");
+        return -EIO;
+    }
+
+    // simply need to find NUMBER_TRACES tag and overwrite it with correct value
+    for(i = 0; i < ts->num_headers; i++)
+    {
+        if(ts->headers[i].tag == NUMBER_TRACES)
+            ts->headers[i].val.integer = ts->num_traces;
+
+        header = &ts->headers[i];
         if(all_headers[header->tag].th_type == TH_STR ||
            all_headers[header->tag].th_type == TH_BYTE)
         {

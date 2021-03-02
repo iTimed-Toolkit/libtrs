@@ -82,21 +82,22 @@ int ts_close(struct trace_set *ts)
 
     debug("Closing trace set %li\n", ts->set_id);
 
-    // wait for any consumers
-    sem_wait(&ts->file_lock);
-    sem_destroy(&ts->file_lock);
-
-    if(ts->headers)
-        free_headers(ts);
-
-    if(ts->ts_file)
-        fclose(ts->ts_file);
-
+    // transform specific teardown
     if(ts->prev && ts->tfm)
         ts->tfm->exit(ts);
 
+    if(ts->ts_file)
+    {
+        sem_wait(&ts->file_lock);
+        sem_destroy(&ts->file_lock);
+        fclose(ts->ts_file);
+    }
+
     if(ts->cache)
         tc_free(ts);
+
+    if(ts->headers)
+        free_headers(ts);
 
     free(ts);
     return 0;
@@ -157,7 +158,6 @@ size_t ts_num_traces(struct trace_set *ts)
         return -EINVAL;
     }
 
-    // todo changes for new trace files
     return ts->num_traces;
 }
 

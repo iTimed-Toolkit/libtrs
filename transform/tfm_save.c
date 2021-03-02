@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <string.h>
 #include <pthread.h>
+#include <immintrin.h>
 
 #define TFM_DATA(tfm)   ((struct tfm_save *) (tfm)->tfm_data)
 
@@ -25,6 +26,10 @@ struct __commit_queue
 {
     pthread_t handle;
     sem_t event;
+    sem_t sentinel;
+
+    struct trace_set *ts;
+    int thread_ret;
 
     sem_t list_lock;
     struct list *head;
@@ -36,7 +41,19 @@ int index_order(void *node1, void *node2)
     struct __commit_queue_entry *entry1 = node1;
     struct __commit_queue_entry *entry2 = node2;
 
+    if(entry1->prev_index == -1)
+        return -1;
+
+    if(entry2->prev_index == -1)
+        return 1;
+
     return (int) entry2->prev_index - (int) entry1->prev_index;
+}
+
+void print_commit(void *data)
+{
+    struct __commit_queue_entry *entry = data;
+    fprintf(stderr, " %li (%p)\n", entry->prev_index, entry->trace);
 }
 
 int __list_create_entry(struct __commit_queue *queue,
@@ -46,7 +63,11 @@ int __list_create_entry(struct __commit_queue *queue,
     int ret;
     struct __commit_queue_entry *entry;
 
-    // todo parameter checking
+    if(!queue || !node)
+    {
+        err("Invalid commit queue or node\n");
+        return -EINVAL;
+    }
 
     entry = calloc(1, sizeof(struct __commit_queue_entry));
     if(!entry)
@@ -98,6 +119,12 @@ int __list_remove_entry(struct __commit_queue *queue,
 {
     int ret;
 
+    if(!queue || !node)
+    {
+        err("Invalid commit queue or node\n");
+        return -EINVAL;
+    }
+
     ret = sem_wait(&queue->list_lock);
     if(ret < 0)
     {
@@ -125,14 +152,16 @@ int __list_remove_entry(struct __commit_queue *queue,
     return 0;
 }
 
-int __append_trace_to_file(struct trace *t)
+int __append_trace_sequential(struct trace *t)
 {
-    int i;
+    int i, j;
     int ret;
     size_t written;
 
     size_t temp_len;
     void *temp = NULL;
+    float curr_batch[8];
+    __m256 curr, scale;
 
     if(!t)
     {
@@ -140,16 +169,7 @@ int __append_trace_to_file(struct trace *t)
         return -EINVAL;
     }
 
-    warn("Appending trace %li to file\n", TRACE_IDX(t));
-
-    ret = fseek(t->owner->ts_file, t->start_offset, SEEK_SET);
-    if(ret < 0)
-    {
-        err("Failed to seek to end of trace set file\n");
-        return -EIO;
-    }
-
-    // todo avx accelerate?
+    scale = _mm256_broadcast_ss(&t->owner->yscale);
     switch(t->owner->datatype)
     {
         case DT_BYTE:
@@ -157,8 +177,26 @@ int __append_trace_to_file(struct trace *t)
             temp = calloc(t->owner->num_samples, sizeof(char));
             if(!temp) break;
 
-            for(i = 0; i < ts_num_samples(t->owner); i++)
-                ((char *) temp)[i] = (char) (t->buffered_samples[i] / t->owner->yscale);
+            for(i = 0; i < ts_num_samples(t->owner);)
+            {
+                if(i + 8 < ts_num_samples(t->owner))
+                {
+                    curr = _mm256_loadu_ps(&t->buffered_samples[i]);
+                    curr = _mm256_div_ps(curr, scale);
+                    _mm256_storeu_ps(curr_batch, curr);
+
+                    for(j = 0; j < 8; j++)
+                        ((char *) temp)[i + j] = (char) curr_batch[j];
+
+                    i += 8;
+                }
+                else
+                {
+                    ((char *) temp)[i] = (char) (t->buffered_samples[i] / t->owner->yscale);
+                    i++;
+                }
+            }
+
             break;
 
         case DT_SHORT:
@@ -166,8 +204,26 @@ int __append_trace_to_file(struct trace *t)
             temp = calloc(t->owner->num_samples, sizeof(short));
             if(!temp) break;
 
-            for(i = 0; i < ts_num_samples(t->owner); i++)
-                ((short *) temp)[i] = (short) (t->buffered_samples[i] / t->owner->yscale);
+            for(i = 0; i < ts_num_samples(t->owner);)
+            {
+                if(i + 8 < ts_num_samples(t->owner))
+                {
+                    curr = _mm256_loadu_ps(&t->buffered_samples[i]);
+                    curr = _mm256_div_ps(curr, scale);
+                    _mm256_storeu_ps(curr_batch, curr);
+
+                    for(j = 0; j < 8; j++)
+                        ((short *) temp)[i + j] = (short) curr_batch[j];
+
+                    i += 8;
+                }
+                else
+                {
+                    ((short *) temp)[i] = (short) (t->buffered_samples[i] / t->owner->yscale);
+                    i++;
+                }
+            }
+
             break;
 
         case DT_INT:
@@ -175,8 +231,26 @@ int __append_trace_to_file(struct trace *t)
             temp = calloc(t->owner->num_samples, sizeof(int));
             if(!temp) break;
 
-            for(i = 0; i < ts_num_samples(t->owner); i++)
-                ((int *) temp)[i] = (int) (t->buffered_samples[i] / t->owner->yscale);
+            for(i = 0; i < ts_num_samples(t->owner);)
+            {
+                if(i + 8 < ts_num_samples(t->owner))
+                {
+                    curr = _mm256_loadu_ps(&t->buffered_samples[i]);
+                    curr = _mm256_div_ps(curr, scale);
+                    _mm256_storeu_ps(curr_batch, curr);
+
+                    for(j = 0; j < 8; j++)
+                        ((int *) temp)[i + j] = (int) curr_batch[j];
+
+                    i += 8;
+                }
+                else
+                {
+                    ((int *) temp)[i] = (int) (t->buffered_samples[i] / t->owner->yscale);
+                    i++;
+                }
+            }
+
             break;
 
         case DT_FLOAT:
@@ -184,8 +258,26 @@ int __append_trace_to_file(struct trace *t)
             temp = calloc(t->owner->num_samples, sizeof(float));
             if(!temp) break;
 
-            for(i = 0; i < ts_num_samples(t->owner); i++)
-                ((float *) temp)[i] = t->buffered_samples[i] / t->owner->yscale;
+            for(i = 0; i < ts_num_samples(t->owner);)
+            {
+                if(i + 8 < ts_num_samples(t->owner))
+                {
+                    curr = _mm256_loadu_ps(&t->buffered_samples[i]);
+                    curr = _mm256_div_ps(curr, scale);
+                    _mm256_storeu_ps(curr_batch, curr);
+
+                    for(j = 0; j < 8; j++)
+                        ((float *) temp)[i + j] = curr_batch[j];
+
+                    i += 8;
+                }
+                else
+                {
+                    ((float *) temp)[i] = (t->buffered_samples[i] / t->owner->yscale);
+                    i++;
+                }
+            }
+
             break;
 
         case DT_NONE:
@@ -202,6 +294,7 @@ int __append_trace_to_file(struct trace *t)
 
     if(t->buffered_title)
     {
+        debug("Trace %li writing %li bytes of title\n", TRACE_IDX(t), t->owner->title_size);
         written = fwrite(t->buffered_title, 1, t->owner->title_size, t->owner->ts_file);
         if(written != t->owner->title_size)
         {
@@ -213,6 +306,7 @@ int __append_trace_to_file(struct trace *t)
 
     if(t->buffered_data)
     {
+        debug("Trace %li writing %li bytes of data\n", TRACE_IDX(t), t->owner->data_size);
         written = fwrite(t->buffered_data, 1, t->owner->data_size, t->owner->ts_file);
         if(written != t->owner->data_size)
         {
@@ -222,6 +316,7 @@ int __append_trace_to_file(struct trace *t)
         }
     }
 
+    debug("Trace %li writing %li bytes of samples\n", TRACE_IDX(t), temp_len);
     written = fwrite(temp, 1, temp_len, t->owner->ts_file);
     if(written != temp_len)
     {
@@ -230,8 +325,6 @@ int __append_trace_to_file(struct trace *t)
         goto __free_temp;
     }
 
-    fflush(t->owner->ts_file);
-
     ret = 0;
 __free_temp:
     free(temp);
@@ -239,21 +332,18 @@ __free_temp:
 
 }
 
-void print_commit(void *data)
-{
-    struct __commit_queue_entry *entry = data;
-    fprintf(stderr, " %li (%p)\n", entry->prev_index, entry->trace);
-}
-
 void *__commit_thread(void *arg)
 {
-    int ret;
-    size_t written = 0;
+    int ret, count;
+    size_t written = 0, prev_index;
+    bool sentinel_seen = false;
+
     struct __commit_queue *queue = arg;
     struct __commit_queue_entry *entry;
 
     struct trace *trace_to_commit;
-    struct list *node;
+    struct list *queue_head;
+    struct list *write_head;
 
     while(1)
     {
@@ -261,77 +351,147 @@ void *__commit_thread(void *arg)
         if(ret < 0)
         {
             err("Commit thread failed to wait on event signal\n");
+            queue->thread_ret = -errno;
             pthread_exit(NULL);
         }
 
-        while(1)
+        if(queue->ts == NULL)
         {
-            ret = sem_wait(&queue->list_lock);
+            debug("Commit thread exiting cleanly\n");
+            queue->thread_ret = 0;
+            pthread_exit(NULL);
+        }
+
+        // examine the commit list
+        ret = sem_wait(&queue->list_lock);
+        if(ret < 0)
+        {
+            err("Commit thread failed to wait on list lock\n");
+            queue->thread_ret = -errno;
+            pthread_exit(NULL);
+        }
+
+        count = 0;
+        while(queue->head)
+        {
+            queue_head = queue->head;
+            entry = list_get_data(queue->head);
+
+            if(entry->trace || entry->prev_index == -1)
+            {
+                count++;
+                list_unlink_single(&queue->head, queue_head);
+                list_link_single(&write_head, queue_head, index_order);
+            }
+            else break;
+        }
+
+        ret = sem_post(&queue->list_lock);
+        if(ret < 0)
+        {
+            err("Commit thread failed to post to list lock\n");
+            queue->thread_ret = -errno;
+            pthread_exit(NULL);
+        }
+
+        // write the collected batch
+        if(write_head)
+        {
+            debug("Committing %li -> %li (%i)\n", written, written + count, count);
+
+            ret = sem_wait(&queue->ts->file_lock);
             if(ret < 0)
             {
-                err("Commit thread failed to wait on list lock\n");
+                err("Failed to wait on trace set file lock\n");
+                queue->thread_ret = -errno;
                 pthread_exit(NULL);
             }
 
-            if(queue->head)
+            // initial fseek, all further writes are sequential
+            entry = list_get_data(write_head);
+            if(entry->trace)
             {
-                node = queue->head;
-                entry = list_get_data(queue->head);
+                entry->trace->start_offset = queue->ts->trace_start + written * queue->ts->trace_length;
+                ret = fseek(entry->trace->owner->ts_file, entry->trace->start_offset, SEEK_SET);
+                if(ret)
+                {
+                    err("Failed to seek to trace set file position\n");
+                    queue->thread_ret = ret;
+                    pthread_exit(NULL);
+                }
+            }
 
+            while(write_head)
+            {
+                queue_head = write_head;
+                entry = list_get_data(write_head);
+
+                prev_index = entry->prev_index;
                 trace_to_commit = entry->trace;
-                if(trace_to_commit)
+
+                list_unlink_single(&write_head, queue_head);
+                list_free_node(queue_head);
+                free(entry);
+
+                if(prev_index == -1)
                 {
-                    list_unlink_single(&queue->head, node);
-                    list_free_node(node);
-                    free(entry);
+                    debug("Encountered sentinel, setting num_traces %li\n",
+                             written);
+
+                    sentinel_seen = true;
+                    __atomic_store(&queue->ts->num_traces,
+                                   &written, __ATOMIC_RELEASE);
+
+                    ret = sem_post(&queue->sentinel);
+                    if(ret < 0)
+                    {
+                        err("Failed to post to sentinel signal\n");
+                        queue->thread_ret = -errno;
+                        pthread_exit(NULL);
+                    }
+                }
+                else
+                {
+                    if(!sentinel_seen)
+                    {
+                        if(trace_to_commit->owner != queue->ts)
+                        {
+                            err("Bad trace to commit -- unknown trace set\n");
+                            queue->thread_ret = -EINVAL;
+                            pthread_exit(NULL);
+                        }
+
+                        trace_to_commit->start_offset = queue->ts->trace_start + written * queue->ts->trace_length;
+                        ret = __append_trace_sequential(trace_to_commit);
+                        if(ret < 0)
+                        {
+                            err("Failed to append trace to file\n");
+                            queue->thread_ret = ret;
+                            pthread_exit(NULL);
+                        }
+
+                        trace_free_memory(trace_to_commit);
+                        written++;
+                    }
+                    else
+                    {
+                        err("Encountered trace to write after seeing sentinel\n");
+                        queue->thread_ret = -EINVAL;
+                        pthread_exit(NULL);
+                    }
                 }
             }
 
-            if(written % 10000 == 0)
-            {
-                list_dump(queue->head, print_commit);
-            }
+            // update global written counter
+            __atomic_store(&queue->ts->num_traces_written,
+                           &written, __ATOMIC_RELEASE);
 
-            ret = sem_post(&queue->list_lock);
+            ret = sem_post(&queue->ts->file_lock);
             if(ret < 0)
             {
-                err("Commit thread failed to post to list lock\n");
+                err("Failed to post to trace set file lock\n");
+                queue->thread_ret = -errno;
                 pthread_exit(NULL);
-            }
-
-            if(trace_to_commit)
-            {
-                ret = sem_wait(&trace_to_commit->owner->file_lock);
-                if(ret < 0)
-                {
-                    err("Failed to wait on trace set file lock\n");
-                    pthread_exit(NULL);
-                }
-
-                trace_to_commit->start_offset =
-                        trace_to_commit->owner->trace_start +
-                        written * trace_to_commit->owner->trace_length;
-
-                ret = __append_trace_to_file(trace_to_commit);
-                if(ret < 0)
-                {
-                    err("Failed to append trace to file\n");
-                    pthread_exit(NULL);
-                }
-
-                written++;
-                __atomic_store_n(&trace_to_commit->owner->num_traces_written,
-                                 written, __ATOMIC_RELEASE);
-
-                ret = sem_post(&trace_to_commit->owner->file_lock);
-                if(ret < 0)
-                {
-                    err("Failed to post to trace set file lock\n");
-                    pthread_exit(NULL);
-                }
-
-                trace_free_memory(trace_to_commit);
-                trace_to_commit = NULL;
             }
         }
     }
@@ -345,7 +505,7 @@ int __tfm_save_init(struct trace_set *ts)
     struct __commit_queue *queue;
 
     ts->num_samples = ts->prev->num_samples;
-    ts->num_traces = ts->prev->num_traces;
+    ts->num_traces = -1;
 
     ts->input_offs = ts->prev->input_offs;
     ts->input_len = ts->prev->input_len;
@@ -361,6 +521,7 @@ int __tfm_save_init(struct trace_set *ts)
 
     ts->num_traces_written = 0;
     ts->prev_next_trace = 0;
+
 
     ret = snprintf(fname, sizeof(fname), "%s_%li.trs",
                    tfm->prefix, ts->set_id);
@@ -423,6 +584,9 @@ int __tfm_save_init(struct trace_set *ts)
         goto __free_headers;
     }
 
+    queue->ts = ts;
+    queue->thread_ret = 0;
+
     ret = sem_init(&queue->event, 0, 0);
     if(ret < 0)
     {
@@ -430,11 +594,18 @@ int __tfm_save_init(struct trace_set *ts)
         goto __free_commit_queue;
     }
 
+    ret = sem_init(&queue->sentinel, 0, 0);
+    if(ret < 0)
+    {
+        err("Failed to initialize sentinel semaphore\n");
+        goto __destroy_queue_event;
+    }
+
     ret = sem_init(&queue->list_lock, 0, 1);
     if(ret < 0)
     {
         err("Failed to initialize queue list lock\n");
-        goto __destroy_queue_event;
+        goto __destroy_sentinel_event;
     }
 
     ret = pthread_create(&queue->handle, NULL,
@@ -450,6 +621,9 @@ int __tfm_save_init(struct trace_set *ts)
 
 __destroy_queue_list:
     sem_destroy(&queue->list_lock);
+
+__destroy_sentinel_event:
+    sem_destroy(&queue->sentinel);
 
 __destroy_queue_event:
     sem_destroy(&queue->event);
@@ -558,8 +732,25 @@ int __render_to_index(struct trace_set *ts, size_t index)
         debug("Checking prev_index %li\n", prev_index);
         if(prev_index >= ts_num_traces(ts->prev))
         {
-            err("Index %li out of bounds for previous trace set\n", prev_index);
-            return -EINVAL;
+            // send a sentinel down the pipeline
+            debug("Index %li out of bounds for previous trace set\n", prev_index);
+
+            ret = __list_create_entry(queue, &node, -1);
+            if(ret < 0)
+            {
+                err("Failed to add sentinel to synchronization list\n");
+                return ret;
+            }
+
+            ret = sem_post(&queue->event);
+            if(ret < 0)
+            {
+                err("Failed to post to commit thread event signal\n");
+                ret = -errno;
+                goto __fail_free_result;
+            }
+
+            return 1;
         }
 
         ret = __list_create_entry(queue, &node, prev_index);
@@ -600,6 +791,14 @@ int __render_to_index(struct trace_set *ts, size_t index)
         entry = list_get_data(node);
         entry->trace = t_result;
 
+        if(queue->thread_ret < 0)
+        {
+            err("Detected error in commit thread\n");
+            trace_free(t_result);
+            __list_remove_entry(queue, node);
+            return queue->thread_ret;
+        }
+
         ret = sem_post(&queue->event);
         if(ret < 0)
         {
@@ -619,7 +818,13 @@ __fail_free_result:
 int __tfm_save_title(struct trace *t, char **title)
 {
     int ret;
-    if(TRACE_IDX(t) >= t->owner->num_traces_written)
+
+    size_t written = __atomic_load_n(&t->owner->num_traces_written,
+                                             __ATOMIC_ACQUIRE);
+    struct __commit_queue *queue = t->owner->commit_data;
+
+    debug("Title for trace %li, written = %li\n", TRACE_IDX(t), written);
+    if(TRACE_IDX(t) >= written)
     {
         ret = __render_to_index(t->owner, TRACE_IDX(t));
         if(ret < 0)
@@ -627,22 +832,43 @@ int __tfm_save_title(struct trace *t, char **title)
             err("Failed to render trace set to index %li\n", TRACE_IDX(t));
             return ret;
         }
+        else if(ret == 1)
+        {
+            ret = sem_wait(&queue->sentinel);
+            if(ret < 0)
+            {
+                err("Failed to wait on sentinel signal\n");
+                return -errno;
+            }
+        }
     }
 
-    ret = __read_title_from_file(t, title);
-    if(ret < 0)
+    if(TRACE_IDX(t) < t->owner->num_traces)
     {
-        err("Failed to read title from file\n");
-        return ret;
+        ret = __read_title_from_file(t, title);
+        if(ret < 0)
+        {
+            err("Failed to read title from file for trace %li\n", TRACE_IDX(t));
+            return ret;
+        }
     }
-
+    else
+    {
+        debug("Setting trace %li title to null\n", TRACE_IDX(t));
+        *title = NULL;
+    }
     return 0;
 }
 
 int __tfm_save_data(struct trace *t, uint8_t **data)
 {
     int ret;
-    if(TRACE_IDX(t) >= t->owner->num_traces_written)
+    size_t written = __atomic_load_n(&t->owner->num_traces_written,
+                                     __ATOMIC_ACQUIRE);
+    struct __commit_queue *queue = t->owner->commit_data;
+
+    debug("Data for trace %li, written = %li\n", TRACE_IDX(t), written);
+    if(TRACE_IDX(t) >= written)
     {
         ret = __render_to_index(t->owner, TRACE_IDX(t));
         if(ret < 0)
@@ -650,22 +876,43 @@ int __tfm_save_data(struct trace *t, uint8_t **data)
             err("Failed to render trace set to index %li\n", TRACE_IDX(t));
             return ret;
         }
+        else if(ret == 1)
+        {
+            ret = sem_wait(&queue->sentinel);
+            if(ret < 0)
+            {
+                err("Failed to wait on sentinel signal\n");
+                return -errno;
+            }
+        }
     }
 
-    ret = __read_data_from_file(t, data);
-    if(ret < 0)
+    if(TRACE_IDX(t) < t->owner->num_traces)
     {
-        err("Failed to read data from file\n");
-        return ret;
+        ret = __read_data_from_file(t, data);
+        if(ret < 0)
+        {
+            err("Failed to read data from file for trace %li\n", TRACE_IDX(t));
+            return ret;
+        }
     }
-
+    else
+    {
+        debug("Setting trace %li data to null\n", TRACE_IDX(t));
+        *data = NULL;
+    }
     return 0;
 }
 
 int __tfm_save_samples(struct trace *t, float **samples)
 {
     int ret;
-    if(TRACE_IDX(t) >= t->owner->num_traces_written)
+    size_t written = __atomic_load_n(&t->owner->num_traces_written,
+                                     __ATOMIC_ACQUIRE);
+    struct __commit_queue *queue = t->owner->commit_data;
+
+    debug("Samples for trace %li, written = %li\n", TRACE_IDX(t), written);
+    if(TRACE_IDX(t) >= written)
     {
         ret = __render_to_index(t->owner, TRACE_IDX(t));
         if(ret < 0)
@@ -673,22 +920,88 @@ int __tfm_save_samples(struct trace *t, float **samples)
             err("Failed to render trace set to index %li\n", TRACE_IDX(t));
             return ret;
         }
+        else if(ret == 1)
+        {
+            ret = sem_wait(&queue->sentinel);
+            if(ret < 0)
+            {
+                err("Failed to wait on sentinel signal\n");
+                return -errno;
+            }
+        }
     }
 
-    ret = __read_samples_from_file(t, samples);
-    if(ret < 0)
+    if(TRACE_IDX(t) < t->owner->num_traces)
     {
-        err("Failed to read samples from file\n");
-        return ret;
+        ret = __read_samples_from_file(t, samples);
+        if(ret < 0)
+        {
+            err("Failed to read samples from file for trace %li\n", TRACE_IDX(t));
+            return ret;
+        }
     }
-
+    else
+    {
+        debug("Setting trace %li samples to null\n", TRACE_IDX(t));
+        *samples = NULL;
+    }
     return 0;
 }
 
 void __tfm_save_exit(struct trace_set *ts)
 {
-    // todo finalize headers
-    // todo close file
+    int ret;
+    struct __commit_queue *queue = ts->commit_data;
+
+    // first, wait for commit list to drain
+    while(1)
+    {
+        ret = sem_wait(&queue->list_lock);
+        if(ret < 0)
+        {
+            err("Failed to wait on commit queue list lock\n");
+            return;
+        }
+
+        if(!queue->head)
+        {
+            debug("Commit queue is drained\n");
+            break;
+        }
+
+        ret = sem_post(&queue->list_lock);
+        if(ret < 0)
+        {
+            err("Failed to post to commit queue list lock\n");
+            return;
+        }
+    }
+
+    // kill the commit thread
+    queue->ts = NULL;
+    sem_post(&queue->event);
+    pthread_join(queue->handle, NULL);
+
+    sem_destroy(&queue->list_lock);
+    sem_destroy(&queue->event);
+    free(queue);
+
+    ts->commit_data = NULL;
+
+    // finalize headers
+    ts->num_traces = ts->num_traces_written;
+
+    ret = finalize_headers(ts);
+    if(ret < 0)
+    {
+        err("Failed to finalize headers\n");
+        return;
+    }
+
+    // clean up file
+    sem_destroy(&ts->file_lock);
+    fclose(ts->ts_file);
+    ts->ts_file = NULL;
 }
 
 void __tfm_save_free_title(struct trace *t)

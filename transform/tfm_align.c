@@ -293,6 +293,8 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
         return ret;
     }
 
+    debug("got ref trace %p\n", ref_trace);
+
     ret = trace_samples(ref_trace, &ref_samples);
     if(ret < 0)
     {
@@ -302,6 +304,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
 
     if(!ref_samples)
     {
+        err("No samples for reference trace\n");
         *best_conf = 0;
         goto __free_ref;
     }

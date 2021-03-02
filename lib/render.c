@@ -183,21 +183,23 @@ __done:
 __kill_threads:
     for(j = 0; j < i; j++)
     {
-        args[i].ts = NULL;
+        args[j].ts = NULL;
 
-        ret = sem_post(&args[i].thread_signal);
+        ret = sem_post(&args[j].thread_signal);
         if(ret < 0)
         {
             err("Failed to post to thread %i signal\n", j);
             ret = -errno;
             goto __out;
         }
+
+        pthread_join(handles[j], NULL);
     }
 
     i = nthreads;
 __teardown_args:
     for(j = 0; j < i; j++)
-        sem_destroy(&args[i].thread_signal);
+        sem_destroy(&args[j].thread_signal);
     free(args);
 
 __free_handles:

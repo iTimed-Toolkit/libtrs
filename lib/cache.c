@@ -71,6 +71,83 @@ int __update_lru(struct trace_cache *cache, size_t set, size_t way, bool hit)
     return 0;
 }
 
+int __initialize_set(struct trace_cache *cache, size_t set)
+{
+    int ret, i;
+    struct tc_set *curr_set;
+
+    if(!cache || set >= cache->nsets)
+    {
+        err("Invalid cache or set index\n");
+        return -EINVAL;
+    }
+
+    debug("Initializing set %li\n", set);
+    curr_set = &cache->sets[set];
+
+    ret = sem_init(&curr_set->set_lock, 0, 1);
+    if(ret < 0)
+    {
+        err("Failed to initialize set lock semaphore: %s\n", strerror(errno));
+        return -errno;
+    }
+
+    curr_set->valid = calloc(cache->nways, sizeof(bool));
+    if(!curr_set->valid)
+    {
+        err("Failed to allocate set valid array\n");
+        ret = -ENOMEM;
+        goto __free_tc_set;
+    }
+
+    curr_set->lru = calloc(cache->nways, sizeof(uint8_t));
+    if(!curr_set->lru)
+    {
+        err("Failed to allocate set LRU array\n");
+        ret = -ENOMEM;
+        goto __free_tc_set;
+    }
+
+    curr_set->refcount = calloc(cache->nways, sizeof(uint8_t));
+    if(!curr_set->refcount)
+    {
+        err("Failed to allocate set refcount array\n");
+        ret = -ENOMEM;
+        goto __free_tc_set;
+    }
+
+    curr_set->traces = calloc(cache->nways, sizeof(struct strace *));
+    if(!curr_set->traces)
+    {
+        err("Failed to allocate set trace array\n");
+        ret = -ENOMEM;
+        goto __free_tc_set;
+    }
+
+    for(i = 0; i < cache->nways; i++)
+        curr_set->lru[i] = cache->nways - i - 1;
+
+    debug("done initializing set %li\n", set);
+    return 0;
+
+__free_tc_set:
+    sem_wait(&curr_set->set_lock);
+
+    if(curr_set->valid)
+        free(curr_set->valid);
+
+    if(curr_set->lru)
+        free(curr_set->lru);
+
+    if(curr_set->refcount)
+        free(curr_set->refcount);
+
+    if(curr_set->traces)
+        free(curr_set->traces);
+
+    return ret;
+}
+
 int ts_create_cache(struct trace_set *ts, size_t size_bytes, size_t assoc)
 {
     int ret;
@@ -160,7 +237,7 @@ int tc_free(struct trace_set *ts)
             for(j = 0; j < ts->cache->nways; j++)
             {
                 if(ts->cache->sets[i].valid[j])
-                    trace_free(ts->cache->sets[i].traces[j]);
+                    trace_free_memory(ts->cache->sets[i].traces[j]);
             }
 
             free(ts->cache->sets[i].valid);
@@ -205,24 +282,55 @@ int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace)
     debug("Trace set %li, cache access %li for index %li\n",
           ts->set_id, ts->cache->accesses, index);
 
-    if(ts->cache->accesses % 1000 == 0)
-    {
-        fprintf(stderr, "set %li cache accesses %li hits %li (%f) misses %li (%f)\n",
-                ts->set_id, ts->cache->accesses,
-                ts->cache->hits, (double) ts->cache->hits / ts->cache->accesses,
-                ts->cache->misses, (double) ts->cache->misses / ts->cache->accesses);
-    }
-
     set = index % ts->cache->nsets;
     curr_set = &ts->cache->sets[set];
+
+    ret = sem_wait(&ts->cache->cache_lock);
+    if(ret < 0)
+    {
+        err("Failed to wait on cache lock semaphore: %s\n", strerror(errno));
+        return -errno;
+    }
+
     if(!curr_set->initialized)
     {
+        ret = __initialize_set(ts->cache, set);
+        if(ret < 0)
+        {
+            err("Failed to initialize cache set %li\n", set);
+            return -errno;
+        }
+
+        curr_set->initialized = true;
         __sync_fetch_and_add(&ts->cache->misses, 1);
         *trace = NULL;
 
-        debug("Set %li is not initialized, cache miss (%li misses total)\n",
+        debug("Set %li was not initialized, cache miss (%li misses total)\n",
               set, ts->cache->misses);
+
+        // want to be holding set lock when we leave this
+        ret = sem_wait(&curr_set->set_lock);
+        if(ret < 0)
+        {
+            err("Failed to wait on set lock semaphore: %s\n", strerror(errno));
+            return -errno;
+        }
+
+        ret = sem_post(&ts->cache->cache_lock);
+        if(ret < 0)
+        {
+            err("Failed to post to cache lock semaphore: %s\n", strerror(errno));
+            return -errno;
+        }
+
         return 0;
+    }
+
+    ret = sem_post(&ts->cache->cache_lock);
+    if(ret < 0)
+    {
+        err("Failed to post to cache lock semaphore: %s\n", strerror(errno));
+        return -errno;
     }
 
     ret = sem_wait(&curr_set->set_lock);
@@ -236,29 +344,33 @@ int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace)
     for(i = 0; i < ts->cache->nways; i++)
     {
         // cache hit!
-        if(curr_set->valid[i] &&
-           (TRACE_IDX(curr_set->traces[i]) == index))
+        if(curr_set->valid[i])
         {
-            __update_lru(ts->cache, set, i, true);
-            curr_set->refcount[i]++;
+            if(TRACE_IDX(curr_set->traces[i]) == index)
+            {
+                __update_lru(ts->cache, set, i, true);
+                curr_set->refcount[i]++;
 
-            __sync_fetch_and_add(&ts->cache->hits, 1);
-            *trace = curr_set->traces[i];
+                ts->cache->hits++;
+                *trace = curr_set->traces[i];
 
-            debug("Cache hit in set %li for way %i (%li hits total)\n",
-                  set, i, ts->cache->hits);
-            break;
+                debug("Cache hit in set %li for way %i (%li hits total)\n",
+                      set, i, ts->cache->hits);
+                break;
+            }
         }
     }
 
-    ret = sem_post(&curr_set->set_lock);
-    if(ret < 0)
+    if(*trace)
     {
-        err("Failed to post to set lock semaphore: %s\n", strerror(errno));
-        return -errno;
+        ret = sem_post(&curr_set->set_lock);
+        if(ret < 0)
+        {
+            err("Failed to post to set lock semaphore: %s\n", strerror(errno));
+            return -errno;
+        }
     }
-
-    if(!*trace)
+    else
     {
         __sync_fetch_and_add(&ts->cache->misses, 1);
         debug("Cache miss (%li misses total)\n",
@@ -298,73 +410,39 @@ int tc_store(struct trace_set *ts, size_t index, struct trace *trace)
     set = index % ts->cache->nsets;
     curr_set = &ts->cache->sets[set];
 
+    ret = sem_wait(&ts->cache->cache_lock);
+    if(ret < 0)
+    {
+        err("Failed to wait on cache lock semaphore: %s\n", strerror(errno));
+        return -errno;
+    }
+
     if(!curr_set->initialized)
     {
-        debug("Initializing set %li\n", set);
-        ret = sem_wait(&ts->cache->cache_lock);
+        ret = __initialize_set(ts->cache, set);
         if(ret < 0)
         {
-            err("Failed to wait on cache lock semaphore: %s\n", strerror(errno));
+            err("Failed to initialize cache set %li\n", set);
             return -errno;
         }
 
-        ret = sem_init(&curr_set->set_lock, 0, 1);
-        if(ret < 0)
-        {
-            err("Failed to initialize set lock semaphore: %s\n", strerror(errno));
-            return -errno;
-        }
-
-        curr_set->valid = calloc(ts->cache->nways, sizeof(bool));
-        if(!curr_set->valid)
-        {
-            err("Failed to allocate set valid array\n");
-            ret = -ENOMEM;
-            goto __free_tc_set;
-        }
-
-        curr_set->lru = calloc(ts->cache->nways, sizeof(uint8_t));
-        if(!curr_set->lru)
-        {
-            err("Failed to allocate set LRU array\n");
-            ret = -ENOMEM;
-            goto __free_tc_set;
-        }
-
-        curr_set->refcount = calloc(ts->cache->nways, sizeof(uint8_t));
-        if(!curr_set->refcount)
-        {
-            err("Failed to allocate set refcount array\n");
-            ret = -ENOMEM;
-            goto __free_tc_set;
-        }
-
-        curr_set->traces = calloc(ts->cache->nways, sizeof(struct strace *));
-        if(!curr_set->traces)
-        {
-            err("Failed to allocate set trace array\n");
-            ret = -ENOMEM;
-            goto __free_tc_set;
-        }
-
-        for(i = 0; i < ts->cache->nways; i++)
-            curr_set->lru[i] = ts->cache->nways - i - 1;
         curr_set->initialized = true;
 
-        ret = sem_post(&ts->cache->cache_lock);
+        // go ahead and grab this lock
+        ret = sem_wait(&curr_set->set_lock);
         if(ret < 0)
         {
-            err("Failed to post to cache lock semaphore: %s\n", strerror(errno));
-            ret = -errno;
-            goto __free_tc_set;
+            err("Failed to wait on set lock semaphore: %s\n", strerror(errno));
+            return -errno;
         }
     }
 
-    ret = sem_wait(&curr_set->set_lock);
+    ret = sem_post(&ts->cache->cache_lock);
     if(ret < 0)
     {
-        err("Failed to wait on set lock semaphore: %s\n", strerror(errno));
-        return -errno;
+        err("Failed to post to cache lock semaphore: %s\n", strerror(errno));
+        ret = -errno;
+        goto __free_tc_set;
     }
 
     // first pass - look for empty slots, pick the one with highest lru value
@@ -415,7 +493,8 @@ int tc_store(struct trace_set *ts, size_t index, struct trace *trace)
 
     if(curr_set->valid[way])
     {
-        debug("Evicting way %i from cache set %li\n", way, set);
+        debug("Evicting trace %li, way %i from cache set %li\n",
+              TRACE_IDX(curr_set->traces[way]), way, set);
         trace_free_memory(curr_set->traces[way]);
         curr_set->traces[way] = NULL;
         curr_set->valid[way] = false;
@@ -486,10 +565,9 @@ int tc_deref(struct trace_set *ts, size_t index, struct trace *trace)
 
     if(!curr_set->initialized)
     {
-        warn("Current set is not initialized, freeing trace\n");
+        err("Current set is not initialized, freeing trace\n");
         trace_free_memory(trace);
-        return 0;
-        // todo this is a bug
+        return -EINVAL;
     }
 
     ret = sem_wait(&curr_set->set_lock);
@@ -505,12 +583,20 @@ int tc_deref(struct trace_set *ts, size_t index, struct trace *trace)
             if(trace == curr_set->traces[i])
             {
                 curr_set->refcount[i]--;
-                debug("Found trace, decremented refcount to %i\n", curr_set->refcount[i]);
+                debug("Found trace %li %p, decremented refcount to %i\n",
+                      index, curr_set->traces[i], curr_set->refcount[i]);
             }
             else
             {
-                warn("Correct trace found, but pointer does not match -- freeing\n");
+                err("Correct trace %li found, but pointer (%p vs %p) does not match -- freeing\n", index,
+                    trace, curr_set->traces[i]);
                 trace_free_memory(trace);
+
+                ret = sem_post(&curr_set->set_lock);
+                if(ret < 0)
+                    return -errno;
+
+                return -EINVAL;
             }
             break;
         }

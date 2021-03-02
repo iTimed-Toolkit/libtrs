@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.17)
 project(libtrs C)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_FLAGS "-O0 -Wall -mavx2")
+set(CMAKE_C_FLAGS "-O3 -Wall -Werror -mavx2")
 
 include_directories(include)
 
