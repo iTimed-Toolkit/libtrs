@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <semaphore.h>
 
+#define OPEN_WITH_MMAP  1
+
 struct list;
 
 struct trace_set
@@ -65,7 +67,7 @@ typedef enum
     CRITICAL
 } log_level_t;
 
-static log_level_t libtrs_log_level = ERR;
+static log_level_t libtrs_log_level = WARN;
 
 #define __first_arg(a, ...)     a
 #define __other_arg(a, ...)     , ## __VA_ARGS__
@@ -84,9 +86,9 @@ static log_level_t libtrs_log_level = ERR;
                             (t)->owner->trace_length)
 
 int trace_free_memory(struct trace *t);
-int __read_title_from_file(struct trace *t, char **title);
-int __read_samples_from_file(struct trace *t, float **samples);
-int __read_data_from_file(struct trace *t, uint8_t **data);
+int read_title_from_file(struct trace *t, char **title);
+int read_samples_from_file(struct trace *t, float **samples);
+int read_data_from_file(struct trace *t, uint8_t **data);
 
 int read_headers(struct trace_set *ts);
 int write_default_headers(struct trace_set *ts);

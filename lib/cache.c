@@ -177,7 +177,7 @@ int ts_create_cache(struct trace_set *ts, size_t size_bytes, size_t assoc)
     }
 
     res->ntraces = __find_num_traces(ts, size_bytes, 32);
-    res->ntraces -= (res->ntraces % assoc);
+    res->ntraces -= (res->ntraces % assoc); // round to even trace sets
 
     res->nsets = res->ntraces / assoc;
     res->nways = assoc;
@@ -326,6 +326,14 @@ int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace)
         return 0;
     }
 
+    if(ts->cache->accesses % 1000000 == 0)
+    {
+        warn("Cache for set %li: %li accesses\n\t\t%li hits (%.5f)\n\t\t%li misses (%.5f)\n",
+                ts->set_id, ts->cache->accesses,
+                ts->cache->hits, (float) ts->cache->hits / (float) ts->cache->accesses,
+                ts->cache->misses, (float) ts->cache->misses / (float) ts->cache->accesses);
+    }
+
     ret = sem_post(&ts->cache->cache_lock);
     if(ret < 0)
     {
@@ -351,7 +359,7 @@ int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace)
                 __update_lru(ts->cache, set, i, true);
                 curr_set->refcount[i]++;
 
-                ts->cache->hits++;
+                __sync_fetch_and_add(&ts->cache->hits, 1);
                 *trace = curr_set->traces[i];
 
                 debug("Cache hit in set %li for way %i (%li hits total)\n",

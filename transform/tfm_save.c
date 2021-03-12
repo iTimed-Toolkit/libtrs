@@ -10,6 +10,7 @@
 #include <immintrin.h>
 
 #define TFM_DATA(tfm)   ((struct tfm_save *) (tfm)->tfm_data)
+#define SENTINEL        SIZE_MAX
 
 struct tfm_save
 {
@@ -41,10 +42,10 @@ int index_order(void *node1, void *node2)
     struct __commit_queue_entry *entry1 = node1;
     struct __commit_queue_entry *entry2 = node2;
 
-    if(entry1->prev_index == -1)
+    if(entry1->prev_index == SENTINEL)
         return -1;
 
-    if(entry2->prev_index == -1)
+    if(entry2->prev_index == SENTINEL)
         return 1;
 
     return (int) entry2->prev_index - (int) entry1->prev_index;
@@ -377,7 +378,8 @@ void *__commit_thread(void *arg)
             queue_head = queue->head;
             entry = list_get_data(queue->head);
 
-            if(entry->trace || entry->prev_index == -1)
+            // todo: implement some kind of (efficient) list slice mechanism
+            if(entry->trace || entry->prev_index == SENTINEL)
             {
                 count++;
                 list_unlink_single(&queue->head, queue_head);
@@ -433,10 +435,10 @@ void *__commit_thread(void *arg)
                 list_free_node(queue_head);
                 free(entry);
 
-                if(prev_index == -1)
+                if(prev_index == SENTINEL)
                 {
                     debug("Encountered sentinel, setting num_traces %li\n",
-                             written);
+                          written);
 
                     sentinel_seen = true;
                     __atomic_store(&queue->ts->num_traces,
@@ -730,12 +732,13 @@ int __render_to_index(struct trace_set *ts, size_t index)
                                         1, __ATOMIC_RELAXED);
 
         debug("Checking prev_index %li\n", prev_index);
+        // todo this might be the bad condition for chained tfm_saves
         if(prev_index >= ts_num_traces(ts->prev))
         {
             // send a sentinel down the pipeline
             debug("Index %li out of bounds for previous trace set\n", prev_index);
 
-            ret = __list_create_entry(queue, &node, -1);
+            ret = __list_create_entry(queue, &node, SENTINEL);
             if(ret < 0)
             {
                 err("Failed to add sentinel to synchronization list\n");
@@ -820,7 +823,7 @@ int __tfm_save_title(struct trace *t, char **title)
     int ret;
 
     size_t written = __atomic_load_n(&t->owner->num_traces_written,
-                                             __ATOMIC_ACQUIRE);
+                                     __ATOMIC_ACQUIRE);
     struct __commit_queue *queue = t->owner->commit_data;
 
     debug("Title for trace %li, written = %li\n", TRACE_IDX(t), written);
@@ -845,7 +848,7 @@ int __tfm_save_title(struct trace *t, char **title)
 
     if(TRACE_IDX(t) < t->owner->num_traces)
     {
-        ret = __read_title_from_file(t, title);
+        ret = read_title_from_file(t, title);
         if(ret < 0)
         {
             err("Failed to read title from file for trace %li\n", TRACE_IDX(t));
@@ -889,7 +892,7 @@ int __tfm_save_data(struct trace *t, uint8_t **data)
 
     if(TRACE_IDX(t) < t->owner->num_traces)
     {
-        ret = __read_data_from_file(t, data);
+        ret = read_data_from_file(t, data);
         if(ret < 0)
         {
             err("Failed to read data from file for trace %li\n", TRACE_IDX(t));
@@ -933,7 +936,7 @@ int __tfm_save_samples(struct trace *t, float **samples)
 
     if(TRACE_IDX(t) < t->owner->num_traces)
     {
-        ret = __read_samples_from_file(t, samples);
+        ret = read_samples_from_file(t, samples);
         if(ret < 0)
         {
             err("Failed to read samples from file for trace %li\n", TRACE_IDX(t));

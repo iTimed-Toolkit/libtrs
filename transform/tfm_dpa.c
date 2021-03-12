@@ -20,7 +20,7 @@ struct tfm_dpa
 int __tfm_dpa_init(struct trace_set *ts)
 {
     ts->num_samples = ts->prev->num_samples;
-    ts->num_traces = 16 * 256;
+    ts->num_traces = 32;
 
     ts->input_offs = ts->input_len =
     ts->output_offs = ts->output_len =
@@ -28,8 +28,8 @@ int __tfm_dpa_init(struct trace_set *ts)
 
     ts->title_size = strlen("Key X = XX") + 1;
     ts->data_size = 0;
-    ts->datatype = DT_BYTE;
-    ts->yscale = 1.0f / 256.0f;
+    ts->datatype = DT_FLOAT;
+    ts->yscale = 1.0f;
     return 0;
 }
 
@@ -77,9 +77,15 @@ int __tfm_dpa_samples(struct trace *t, float **samples)
     uint8_t *curr_data;
     float *curr_samples, *result = NULL;
 
-    float pm, pm_sum, pm_sq;
-    float *tr_sum = NULL, *tr_sq = NULL;
+    float count;
+    float pm, pm_sum_f, pm_sq_f, pm_avg_f, pm_dev_f;
+    float tr_avg_f, tr_dev_f, prod_f;
+    float *tr_sum_f = NULL, *tr_sq_f = NULL;
+
     __m256 curr_batch, curr_pm;
+    __m256 curr_count, curr_prod;
+    __m256 tr_sum, tr_sq, tr_avg, tr_dev;
+    __m256 pm_sum, pm_avg, pm_dev;
 
     struct tfm_dpa *tfm = TFM_DATA(t->owner->tfm);
 
@@ -91,38 +97,39 @@ int __tfm_dpa_samples(struct trace *t, float **samples)
         goto __free_temp;
     }
 
-    tr_sum = calloc(t->owner->num_samples, sizeof(float));
-    if(!tr_sum)
+    tr_sum_f = calloc(t->owner->num_samples, sizeof(float));
+    if(!tr_sum_f)
     {
         err("Failed to allocate memory for temporary sum array\n");
         ret = -ENOMEM;
         goto __free_temp;
     }
 
-    tr_sq = calloc(t->owner->num_samples, sizeof(float));
-    if(!tr_sq)
+    tr_sq_f = calloc(t->owner->num_samples, sizeof(float));
+    if(!tr_sq_f)
     {
         err("Failed to allocate memory for temporary square array\n");
         ret = -ENOMEM;
         goto __free_temp;
     }
 
-    pm_sum = pm_sq = 0;
+    pm_sum_f = pm_sq_f = 0;
     for(i = 0; i < ts_num_traces(t->owner->prev); i++)
     {
-        warn("DPA working on trace %i\n", i);
+        if(i % 100000 == 0)
+            warn("DPA working on trace %i\n", i);
         ret = trace_get(t->owner->prev, &curr, i, true);
         if(ret < 0)
         {
             err("Failed to get trace at index %i\n", i);
-            goto __out;
+            goto __free_temp;
         }
 
         ret = trace_data_all(curr, &curr_data);
         if(ret < 0)
         {
             err("Failed to get trace data at index %i\n", i);
-            goto __out;
+            goto __free_trace;
         }
 
         if(curr_data)
@@ -131,15 +138,17 @@ int __tfm_dpa_samples(struct trace *t, float **samples)
             if(ret < 0)
             {
                 err("Failed to get trace samples at index %i\n", i);
-                goto __out;
+                goto __free_trace;
             }
         }
 
         if(curr_samples && curr_data)
         {
+            count++;
+
             pm = tfm->power_model(curr_data, TRACE_IDX(t));
-            pm_sum += pm;
-            pm_sq += pow(pm, 2);
+            pm_sum_f += pm;
+            pm_sq_f += powf(pm, 2);
 
             curr_pm = _mm256_broadcast_ss(&pm);
             for(j = 0; j < ts_num_samples(t->owner->prev);)
@@ -147,13 +156,13 @@ int __tfm_dpa_samples(struct trace *t, float **samples)
                 if(j + 8 < ts_num_samples(t->owner->prev))
                 {
                     curr_batch = _mm256_loadu_ps(&curr_samples[j]);
-                    _mm256_storeu_ps(&tr_sum[j],
+                    _mm256_storeu_ps(&tr_sum_f[j],
                                      _mm256_add_ps(
-                                             _mm256_loadu_ps(&tr_sum[j]),
+                                             _mm256_loadu_ps(&tr_sum_f[j]),
                                              curr_batch));
-                    _mm256_storeu_ps(&tr_sq[j],
+                    _mm256_storeu_ps(&tr_sq_f[j],
                                      _mm256_add_ps(
-                                             _mm256_loadu_ps(&tr_sq[j]),
+                                             _mm256_loadu_ps(&tr_sq_f[j]),
                                              _mm256_mul_ps(curr_batch, curr_batch)));
                     _mm256_storeu_ps(&result[j],
                                      _mm256_add_ps(
@@ -163,25 +172,84 @@ int __tfm_dpa_samples(struct trace *t, float **samples)
                 }
                 else
                 {
-                    tr_sum[j] += curr_samples[j];
-                    tr_sq[j] += pow(curr_samples[j], 2);
+                    tr_sum_f[j] += curr_samples[j];
+                    tr_sq_f[j] += powf(curr_samples[j], 2);
                     result[j] += (pm * curr_samples[j]);
                     j++;
                 }
             }
         }
-        else debug("No samples or data for index %i, skipping\n", i);
+        else warn("No samples or data for index %i, skipping\n", i);
 
         trace_free(curr);
+        curr = NULL;
     }
 
-__out:
-__free_temp:
-    if(tr_sq)
-        free(tr_sq);
+    pm_avg_f = pm_sum_f / count;
+    pm_dev_f = pm_sq_f / count;
+    pm_dev_f -= (pm_avg_f * pm_avg_f);
+    pm_dev_f = sqrtf(pm_dev_f);
 
-    if(tr_sum)
-        free(tr_sum);
+    curr_count = _mm256_broadcast_ss(&count);
+    pm_sum = _mm256_broadcast_ss(&pm_sum_f);
+    pm_avg = _mm256_broadcast_ss(&pm_avg_f);
+    pm_dev = _mm256_broadcast_ss(&pm_dev_f);
+
+    for(i = 0; i < ts_num_samples(t->owner);)
+    {
+        if(i + 8 < ts_num_samples(t->owner))
+        {
+            tr_sum = _mm256_loadu_ps(&tr_sum_f[i]);
+            tr_sq = _mm256_loadu_ps(&tr_sq_f[i]);
+            curr_prod = _mm256_loadu_ps(&result[i]);
+
+            tr_avg = _mm256_div_ps(tr_sum, curr_count);
+            tr_dev = _mm256_div_ps(tr_sq, curr_count);
+            tr_dev = _mm256_sub_ps(tr_dev, _mm256_mul_ps(tr_avg, tr_avg));
+            tr_dev = _mm256_sqrt_ps(tr_dev);
+
+            curr_prod = _mm256_sub_ps(curr_prod, _mm256_mul_ps(pm_sum, tr_avg));
+            curr_prod = _mm256_sub_ps(curr_prod, _mm256_mul_ps(tr_sum, pm_avg));
+            curr_prod = _mm256_add_ps(curr_prod, _mm256_mul_ps(curr_count,
+                                                               _mm256_mul_ps(tr_avg,
+                                                                             pm_avg)));
+            curr_prod = _mm256_div_ps(curr_prod, _mm256_mul_ps(curr_count,
+                                                               _mm256_mul_ps(tr_dev,
+                                                                             pm_dev)));
+            _mm256_storeu_ps(&result[i], curr_prod);
+            i += 8;
+        }
+        else
+        {
+            tr_avg_f = tr_sum_f[i] / count;
+            tr_dev_f = tr_sq_f[i] / count;
+            tr_dev_f -= (tr_avg_f * tr_avg_f);
+            tr_dev_f = sqrtf(tr_dev_f);
+
+            prod_f = result[i];
+            prod_f -= pm_sum_f * tr_avg_f;
+            prod_f -= tr_sum_f[i] * pm_avg_f;
+            prod_f += (count * tr_avg_f * pm_avg_f);
+            prod_f /= (count * tr_dev_f * pm_dev_f);
+
+            result[i] = prod_f;
+            i++;
+        }
+    }
+
+    *samples = result;
+    result = NULL;
+
+__free_trace:
+    if(curr)
+        trace_free(curr);
+
+__free_temp:
+    if(tr_sq_f)
+        free(tr_sq_f);
+
+    if(tr_sum_f)
+        free(tr_sum_f);
 
     if(result)
         free(result);
@@ -245,12 +313,14 @@ static inline int hamming_distance(unsigned char n, unsigned char p)
 
 float power_model(uint8_t *data, int index)
 {
-    int byte_index = index / 16, byte_guess = index % 256;
+//    int byte_index = index / 16, byte_guess = index % 256;
+//
+//    uint8_t state = data[16 + byte_index] ^(uint8_t) byte_guess;
+//    state = sbox_inv[state >> 4][state & 0xF];
+//
+//    return (float) hamming_distance(state, data[16 + ((byte_index + 4 * (byte_index % 4)) % 16)]);
 
-    uint8_t state = data[16 + byte_index] ^(uint8_t) byte_guess;
-    state = sbox_inv[state >> 4][state & 0xF];
-
-    return (float) hamming_distance(state, data[16 + ((byte_index + 4 * (byte_index % 4)) % 16)]);
+    return (float) hamming_weight(data[index]);
 }
 
 int tfm_dpa(struct tfm **tfm)

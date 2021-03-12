@@ -141,7 +141,7 @@ int trace_free(struct trace *t)
     }
 }
 
-int __read_title_from_file(struct trace *t, char **title)
+int read_title_from_file(struct trace *t, char **title)
 {
     int ret;
     size_t read;
@@ -196,7 +196,7 @@ __free_result:
     return ret;
 }
 
-int __read_samples_from_file(struct trace *t, float **samples)
+int read_samples_from_file(struct trace *t, float **samples)
 {
     int ret, i;
     size_t read;
@@ -294,7 +294,7 @@ __free_temp:
     return ret;
 }
 
-int __read_data_from_file(struct trace *t, uint8_t **data)
+int read_data_from_file(struct trace *t, uint8_t **data)
 {
     int ret;
     size_t read;
@@ -378,7 +378,7 @@ int trace_title(struct trace *t, char **title)
     }
     else
     {
-        ret = __read_title_from_file(t, &result);
+        ret = read_title_from_file(t, &result);
         if(ret < 0)
         {
             err("Failed to read title from file\n");
@@ -407,7 +407,7 @@ int __trace_buffer_data(struct trace *t)
     }
     else
     {
-        ret = __read_data_from_file(t, &result);
+        ret = read_data_from_file(t, &result);
         if(ret < 0)
         {
             err("Failed to read data from file\n");
@@ -525,7 +525,7 @@ size_t trace_samples(struct trace *t, float **samples)
     }
     else
     {
-        ret = __read_samples_from_file(t, &result);
+        ret = read_samples_from_file(t, &result);
         if(ret < 0)
         {
             err("Failed to read samples from file\n");

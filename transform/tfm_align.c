@@ -405,7 +405,7 @@ int __tfm_static_align_data(struct trace *t, uint8_t **data)
 
 int __tfm_static_align_samples(struct trace *t, float **samples)
 {
-    int ret;
+    int ret, i;
     double best_conf = 0;
     int best_shift = 0;
     float *result = NULL, *shift;
@@ -420,7 +420,9 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
         goto __out;
     }
 
-    warn("Trace %li, best confidence %f for shift %i\n", TRACE_IDX(t), best_conf, best_shift);
+    if(TRACE_IDX(t) % 1000 == 0)
+        warn("Trace %li, best confidence %f for shift %i\n", TRACE_IDX(t), best_conf, best_shift);
+
     if(best_conf >= tfm->confidence)
     {
         result = calloc(ts_num_samples(t->owner), sizeof(float));
@@ -457,28 +459,38 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
             goto __free_prev_trace;
         }
 
-        if(best_shift < 0)
+        for(i = 0; i < ts_num_samples(t->owner); i++)
         {
-            memcpy(&result[0], &shift[-best_shift],
-                   (ts_num_samples(t->owner) + best_shift - 1) *
-                   sizeof(float));
-
-            memcpy(&result[-best_shift], &shift[0],
-                   -best_shift * sizeof(float));
+            if(i + best_shift < 0)
+                result[i] = shift[i + best_shift + ts_num_samples(t->owner)];
+            else if(i + best_shift >= ts_num_samples(t->owner))
+                result[i] = shift[i + best_shift - ts_num_samples(t->owner)];
+            else
+                result[i] = shift[i + best_shift];
         }
-        else if(best_shift > 0)
-        {
-            memcpy(&result[0],
-                   &shift[ts_num_samples(t->owner) - best_shift - 1],
-                   best_shift * sizeof(float));
 
-            memcpy(&result[best_shift], &shift[0],
-                   (ts_num_samples(t->owner) - best_shift - 1) *
-                   sizeof(float));
-        }
-        else
-            memcpy(result, shift,
-                   ts_num_samples(t->owner) * sizeof(float));
+//        if(best_shift < 0)
+//        {
+//            memcpy(&result[0], &shift[-best_shift],
+//                   (ts_num_samples(t->owner) + best_shift - 1) *
+//                   sizeof(float));
+//
+//            memcpy(&result[-best_shift], &shift[0],
+//                   -best_shift * sizeof(float));
+//        }
+//        else if(best_shift > 0)
+//        {
+//            memcpy(&result[0],
+//                   &shift[ts_num_samples(t->owner) - best_shift - 1],
+//                   best_shift * sizeof(float));
+//
+//            memcpy(&result[best_shift], &shift[0],
+//                   (ts_num_samples(t->owner) - best_shift - 1) *
+//                   sizeof(float));
+//        }
+//        else
+//            memcpy(result, shift,
+//                   ts_num_samples(t->owner) * sizeof(float));
     }
     else goto __out;
 
