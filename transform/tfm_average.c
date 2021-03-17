@@ -1,8 +1,8 @@
 #include "transform.h"
-#include "libtrs.h"
+#include "libtrace.h"
 
 #include "__tfm_internal.h"
-#include "__libtrs_internal.h"
+#include "__trace_internal.h"
 
 #include <stdlib.h>
 #include <string.h>

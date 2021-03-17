@@ -1,8 +1,8 @@
 #include "transform.h"
-#include "libtrs.h"
+#include "libtrace.h"
 
 #include "__tfm_internal.h"
-#include "__libtrs_internal.h"
+#include "__trace_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -82,6 +82,7 @@ int __accumulate_avx(struct trace *t, const float *ref_samples,
 
     for(c = 0; c < ts_num_samples(t->owner); c++)
     {
+        // todo this is vulnerable to rounding errors, although not big ones (like CPA)
         curr_sum = _mm256_broadcast_ss(&curr_samples[c]);
         curr_sq = _mm256_mul_ps(curr_sum, curr_sum);
         _mm256_storeu_ps(batch_curr, curr_sum);

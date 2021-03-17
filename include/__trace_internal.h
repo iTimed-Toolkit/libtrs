@@ -1,5 +1,5 @@
-#ifndef LIBTRS___LIBTRS_INTERNAL_H
-#define LIBTRS___LIBTRS_INTERNAL_H
+#ifndef LIBTRS___TRACE_INTERNAL_H
+#define LIBTRS___TRACE_INTERNAL_H
 
 #include <stdio.h>
 #include <stdint.h>
@@ -119,4 +119,4 @@ int list_lookup_single(struct list *head, struct list *node);
 void *list_get_data(struct list *node);
 int list_dump(struct list *head, list_print_t f);
 
-#endif //LIBTRS___LIBTRS_INTERNAL_H
+#endif //LIBTRS___TRACE_INTERNAL_H

@@ -1,5 +1,5 @@
-#include "libtrs.h"
-#include "__libtrs_internal.h"
+#include "libtrace.h"
+#include "__trace_internal.h"
 
 #include <errno.h>
 #include <stdlib.h>

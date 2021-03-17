@@ -1,6 +1,6 @@
-#include "libtrs.h"
+#include "libtrace.h"
 
-#include "__libtrs_internal.h"
+#include "__trace_internal.h"
 
 #include <stdlib.h>
 #include <errno.h>

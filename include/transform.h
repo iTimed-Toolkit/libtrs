@@ -34,8 +34,9 @@ int tfm_static_align(struct tfm **tfm, double confidence,
 // Correlation
 
 int tfm_cpa(struct tfm **tfm,
-            float (*power_model)(uint8_t *, int),
+            int (*power_model)(uint8_t *, int, float *),
             int (*consumer_init)(struct trace_set *, void *),
+            int (*consumer_exit)(struct trace_set *, void *),
             void *init_args);
 
 int tfm_io_correlation(struct tfm **tfm, int granularity, int num);

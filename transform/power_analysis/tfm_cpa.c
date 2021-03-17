@@ -1,8 +1,8 @@
 #include "transform.h"
-#include "libtrs.h"
+#include "libtrace.h"
 
 #include "__tfm_internal.h"
-#include "__libtrs_internal.h"
+#include "__trace_internal.h"
 
 #include <string.h>
 #include <errno.h>
@@ -14,10 +14,10 @@
 
 struct tfm_cpa
 {
-    float (*power_model)(uint8_t *data, int index);
+    int (*power_model)(uint8_t *data, int index, float *res);
 
     int (*consumer_init)(struct trace_set *, void *);
-
+    int (*consumer_exit)(struct trace_set *, void *);
     void *init_args;
 };
 
@@ -37,7 +37,6 @@ int __tfm_cpa_init(struct trace_set *ts)
 
     // consumers are expected to set this
     ts->num_traces = -1;
-
     tfm->consumer_init(ts, tfm->init_args);
     return 0;
 }
@@ -143,7 +142,12 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
         if(curr_samples && curr_data)
         {
             count++;
-            pm = tfm->power_model(curr_data, TRACE_IDX(t));
+            ret = tfm->power_model(curr_data, TRACE_IDX(t), &pm);
+            if(ret < 0)
+            {
+                err("Failed to calculate power model\n");
+                goto __free_trace;
+            }
 
             curr_pm = _mm256_broadcast_ss(&pm);
             curr_count = _mm256_broadcast_ss(&count);
@@ -287,7 +291,10 @@ __free_temp:
 }
 
 void __tfm_cpa_exit(struct trace_set *ts)
-{}
+{
+    struct tfm_cpa *tfm = TFM_DATA(ts->tfm);
+    tfm->consumer_exit(ts, tfm->init_args);
+}
 
 void __tfm_cpa_free_title(struct trace *t)
 {}
@@ -301,8 +308,9 @@ void __tfm_cpa_free_samples(struct trace *t)
 }
 
 int tfm_cpa(struct tfm **tfm,
-            float (*power_model)(uint8_t *, int),
+            int (*power_model)(uint8_t *, int, float *),
             int (*consumer_init)(struct trace_set *, void *),
+            int (*consumer_exit)(struct trace_set *, void *),
             void *init_args)
 {
     struct tfm *res;
@@ -328,6 +336,7 @@ int tfm_cpa(struct tfm **tfm,
 
     TFM_DATA(res)->power_model = power_model;
     TFM_DATA(res)->consumer_init = consumer_init;
+    TFM_DATA(res)->consumer_exit = consumer_exit;
     TFM_DATA(res)->init_args = init_args;
 
     *tfm = res;

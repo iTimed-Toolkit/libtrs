@@ -1,20 +1,20 @@
 #include "transform.h"
 #include "__tfm_internal.h"
 
-#include "__libtrs_internal.h"
+#include "__trace_internal.h"
 
 #include <errno.h>
-#include <string.h>
 
 static inline uint8_t hamming_weight(uint8_t n)
 {
+//    return __builtin_popcount(n);
     n = ((n & 0xAAu) >> 1u) + (n & 0x55u);
     n = ((n & 0xCCu) >> 2u) + (n & 0x33u);
     n = ((n & 0xF0u) >> 4u) + (n & 0x0Fu);
     return n;
 }
 
-static inline float pm_generic(uint8_t *data, int index, int div)
+static inline int pm_generic(uint8_t *data, int index, int div, float *res)
 {
     int i;
     float sum = 0;
@@ -22,27 +22,34 @@ static inline float pm_generic(uint8_t *data, int index, int div)
     for(i = 0; i < div; i++)
         sum += (float) hamming_weight(data[div * index + i]);
 
-    return sum;
+    *res = sum;
+    return 0;
 }
 
-float pm_8bit(uint8_t *data, int index)
+int pm_8bit(uint8_t *data, int index, float *res)
 {
-    return (float) hamming_weight(data[index]);
+    *res = (float) hamming_weight(data[index]);
+    return 0;
 }
 
-float pm_16bit(uint8_t *data, int index)
+int pm_16bit(uint8_t *data, int index, float *res)
 {
-    return pm_generic(data, index, 2);
+    return pm_generic(data, index, 2, res);
 }
 
-float pm_32bit(uint8_t *data, int index)
+int pm_32bit(uint8_t *data, int index, float *res)
 {
-    return pm_generic(data, index, 4);
+    return pm_generic(data, index, 4, res);
 }
 
-float pm_64bit(uint8_t *data, int index)
+int pm_64bit(uint8_t *data, int index, float *res)
 {
-    return pm_generic(data, index, 8);
+    return pm_generic(data, index, 8, res);
+}
+
+int pm_128bit(uint8_t *data, int index, float *res)
+{
+    return pm_generic(data, index, 16, res);
 }
 
 struct tfm_io_correlation_arg
@@ -65,10 +72,50 @@ int tfm_io_correlation_init(struct trace_set *ts, void *arg)
     return 0;
 }
 
+int tfm_io_correlation_exit(struct trace_set *ts, void *arg)
+{
+    if(!ts || !arg)
+    {
+        err("Invalid trace set or init arg\n");
+        return -EINVAL;
+    }
+
+    free(arg);
+    return 0;
+}
+
 int tfm_io_correlation(struct tfm **tfm, int granularity, int num)
 {
     int ret;
     struct tfm_io_correlation_arg *arg;
+    int (*model)(uint8_t *, int, float *);
+
+    switch(granularity)
+    {
+        case 8:
+            model = pm_8bit;
+            break;
+
+        case 16:
+            model = pm_16bit;
+            break;
+
+        case 32:
+            model = pm_32bit;
+            break;
+
+        case 64:
+            model = pm_64bit;
+            break;
+
+        case 128:
+            model = pm_128bit;
+            break;
+
+        default:
+            err("Unsupported granularity\n");
+            return -EINVAL;
+    }
 
     arg = calloc(1, sizeof(struct tfm_io_correlation_arg));
     if(!arg)
@@ -80,36 +127,13 @@ int tfm_io_correlation(struct tfm **tfm, int granularity, int num)
     arg->granularity = granularity;
     arg->num = num;
 
-    switch(granularity)
-    {
-        case 8:
-            ret = tfm_cpa(tfm, pm_8bit,
-                          tfm_io_correlation_init, arg);
-            break;
-
-        case 16:
-            ret = tfm_cpa(tfm, pm_16bit,
-                          tfm_io_correlation_init, arg);
-            break;
-
-        case 32:
-            ret = tfm_cpa(tfm, pm_32bit,
-                          tfm_io_correlation_init, arg);
-            break;
-
-        case 64:
-            ret = tfm_cpa(tfm, pm_64bit,
-                          tfm_io_correlation_init, arg);
-            break;
-
-        default:
-            err("Unsupported granularity\n");
-            return -EINVAL;
-    }
-
+    ret = tfm_cpa(tfm, model,
+                  tfm_io_correlation_init,
+                  tfm_io_correlation_exit, arg);
     if(ret < 0)
     {
         err("Failed to initialize generic CPA transform\n");
+        free(arg);
         return ret;
     }
 
