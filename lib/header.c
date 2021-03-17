@@ -380,8 +380,8 @@ int __parse_headers(struct trace_set *ts)
         return -EINVAL;
     }
 
-    ts->num_traces = 0;
-    ts->num_samples = 0;
+    ts->num_traces = -1;
+    ts->num_samples = -1;
     ts->title_size = 0;
     ts->data_size = 0;
     ts->datatype = DT_NONE;
@@ -468,6 +468,9 @@ int __parse_headers(struct trace_set *ts)
         {
             ts->datatype = ts->headers[i].val.integer;
             debug("Found sample coding = %i\n", ts->datatype);
+
+            if(ts->datatype == DT_FLOAT)
+                ts->yscale = 1.0f;
         }
         else if(tag == INPUT_OFFSET)
         {
@@ -507,7 +510,7 @@ int __parse_headers(struct trace_set *ts)
     }
 
     // others are okay to not have
-    if(ts->num_traces == 0 || ts->num_samples == 0 ||
+    if(ts->num_traces == -1 || ts->num_samples == -1 ||
        ts->datatype == DT_NONE)
     {
         err("Failed to read all required tag types from trace file\n");

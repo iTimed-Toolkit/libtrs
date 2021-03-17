@@ -13,8 +13,8 @@ target_link_libraries(libtrs pthread)
 
 add_library(libtfm transform/tfm.c transform/tfm_align.c
         transform/tfm_average.c transform/tfm_split_tvla.c
-        transform/tfm_dpa.c transform/tfm_nop.c transform/tfm_save.c
-        lib/list.c)
+        transform/power_analysis/tfm_cpa.c transform/tfm_nop.c transform/tfm_save.c
+        lib/list.c transform/power_analysis/tfm_io_correlation.c transform/tfm_narrow.c)
 target_link_libraries(libtfm pthread m)
 
 add_executable(libtrs_test_cpu test.c aes.c)

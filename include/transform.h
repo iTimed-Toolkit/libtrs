@@ -2,8 +2,10 @@
 #define LIBTRS_TRANSFORM_H
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stddef.h>
 
+struct trace_set;
 struct tfm;
 
 #define PER_SAMPLE      true
@@ -20,6 +22,9 @@ int tfm_average(struct tfm **tfm, bool per_sample);
 
 // Traces
 int tfm_split_tvla(struct tfm **tfm, bool which);
+int tfm_narrow(struct tfm **tfm,
+               int first_trace, int num_traces,
+               int first_sample, int num_samples);
 
 // Align
 int tfm_static_align(struct tfm **tfm, double confidence,
@@ -28,16 +33,11 @@ int tfm_static_align(struct tfm **tfm, double confidence,
 
 // Correlation
 
-typedef enum
-{
-    AES128_HW_
-} dpa_cipher_model_t;
+int tfm_cpa(struct tfm **tfm,
+            float (*power_model)(uint8_t *, int),
+            int (*consumer_init)(struct trace_set *, void *),
+            void *init_args);
 
-typedef enum
-{
-    HD_PT_K0,
-} dpa_model_t;
-
-int tfm_dpa(struct tfm **tfm);
+int tfm_io_correlation(struct tfm **tfm, int granularity, int num);
 
 #endif //LIBTRS_TRANSFORM_H

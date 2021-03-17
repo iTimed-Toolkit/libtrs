@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 extern void expand_key(uint8_t key[16], uint8_t key_sched[176], int n);
 
@@ -106,57 +107,43 @@ int verify_data(char *path)
 
 int main()
 {
-    struct tfm *tfm_align, *tfm_differential, *tfm_write;
-    struct trace_set *source,
-            *broken,
-            *written;
+    struct trace_set *source, *narrowed, *broken, *written;
+    struct tfm *tfm_reduce,  *tfm_io, *tfm_write;
 
-    int lower[] = {2759};
-    int upper[] = {2759 + 1045};
-
-    tfm_static_align(&tfm_align,
-                     0.95, 1000, 6,
-                     1, lower, upper);
-    tfm_dpa(&tfm_differential);
-    tfm_save(&tfm_write, "/mnt/raid0/Data/test/out");
+    tfm_io_correlation(&tfm_io, 32, 8);
+    tfm_save(&tfm_write, "/tmp/io_test");
 
     ts_open(&source, "/mnt/raid0/Data/em/rand_50M_pos1_cpu2_arm_ce_aligned.trs");
-    ts_transform(&broken, source, tfm_differential);
+
+    tfm_narrow(&tfm_reduce, 0, 5000000, 0, ts_num_samples(source));
+
+    ts_transform(&narrowed, source, tfm_reduce);
+    ts_transform(&broken, narrowed, tfm_io);
     ts_transform(&written, broken, tfm_write);
 
-    ts_create_cache(source, 512ull * 1024 * 1024, 16);
-    ts_render(written, 16);
+    ts_create_cache(narrowed, 1ull * 1024 * 1024 * 1024, 16);
+
+    ts_render(written, 8);
 
     ts_close(source);
+    ts_close(narrowed);
     ts_close(broken);
     ts_close(written);
 
-//    struct trace_set *source;
-//    ts_open(&source, "/mnt/raid0/Data/test/out_2.trs");
-//    ts_dump_headers(source);
-
-//    verify_data("/mnt/raid0/Data/em/rand_50M_pos1_cpu2_arm_ce.trs");
-
-    int i, j;
-    struct trace *trace;
-
-    char *title;
-    float *samples;
-
-    ts_open(&source, "/mnt/raid0/Data/test/out_2.trs");
-    fprintf(stderr, "%li\n", ts_num_traces(source));
-
-    for(i = 0; i < 32; i++)
-    {
-        trace_get(source, &trace, i, false);
-        trace_title(trace, &title);
-        trace_samples(trace, &samples);
-
-        fprintf(stderr, "%s: ", title);
-        for(j = 0; j < ts_num_samples(source); j++)
-            fprintf(stderr, "%.5f ", samples[j]);
-
-        fprintf(stderr, "\n");
-        trace_free(trace);
-    }
+//    int i, j;
+//    struct trace_set *result;
+//    struct trace *t;
+//    float *s;
+//
+//    ts_open(&result, "/mnt/raid0/Data/test/io_test_2.trs");
+//
+//    for(i = 0; i < ts_num_traces(result); i++)
+//    {
+//        trace_get(result, &t, i, true);
+//        trace_samples(t, &s);
+//
+//        for(j = 0; j < ts_num_samples(result); j++)
+//            fprintf(stderr, "%.3f ", s[j]);
+//        fprintf(stderr, "\n");
+//    }
 }

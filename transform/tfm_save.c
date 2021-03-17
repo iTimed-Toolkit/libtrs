@@ -507,7 +507,7 @@ int __tfm_save_init(struct trace_set *ts)
     struct __commit_queue *queue;
 
     ts->num_samples = ts->prev->num_samples;
-    ts->num_traces = -1;
+    ts->num_traces = -2; // header.c detects this as invalid
 
     ts->input_offs = ts->prev->input_offs;
     ts->input_len = ts->prev->input_len;
