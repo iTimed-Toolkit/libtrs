@@ -1,4 +1,4 @@
-#include "../include/libtrace.h"
+#include "../include/trace_set.h"
 
 #include <stdio.h>
 #include <string.h>

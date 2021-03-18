@@ -41,7 +41,7 @@ bool __verify_aes128(uint8_t *data)
     EVP_EncryptInit_ex(en_ctx, EVP_aes_128_ecb(), NULL, &data[32], NULL);
 
     EVP_EncryptUpdate(en_ctx, enc, &olen, &data[0], 16);
-//    EVP_EncryptFinal_ex(en_ctx, enc + olen, &olen);
+    EVP_EncryptFinal_ex(en_ctx, enc + olen, &olen);
     EVP_CIPHER_CTX_free(en_ctx);
 
     return memcmp(enc, &data[16], 16) == 0;

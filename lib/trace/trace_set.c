@@ -1,4 +1,4 @@
-#include "libtrace.h"
+#include "trace.h"
 #include "__trace_internal.h"
 #include "__tfm_internal.h"
 

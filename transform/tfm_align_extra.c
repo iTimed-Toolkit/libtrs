@@ -1,5 +1,5 @@
 #include "transform.h"
-#include "libtrace.h"
+#include "trace_set.h"
 
 #include "__tfm_internal.h"
 #include "__trace_internal.h"

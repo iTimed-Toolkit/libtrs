@@ -1,5 +1,5 @@
-#ifndef LIBTRS_LIBTRACE_H
-#define LIBTRS_LIBTRACE_H
+#ifndef LIBTRS_TRACE_SET_H
+#define LIBTRS_TRACE_SET_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -186,4 +186,4 @@ int trace_data_key(struct trace *t, uint8_t **data);
  */
 size_t trace_samples(struct trace *t, float **samples);
 
-#endif //LIBTRS_LIBTRACE_H
+#endif //LIBTRS_TRACE_SET_H
