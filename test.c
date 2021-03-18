@@ -107,68 +107,21 @@ int verify_data(char *path)
 
 int main()
 {
-    int i, j;
-    struct trace_set *source, *narrowed, *broken, *written, *correct;
-    struct trace *mine, *corr;
-    float *mine_samples, *corr_samples;
+    struct trace_set *source, *broken, *written;
+    struct tfm *tfm_break, *tfm_write;
 
-    struct tfm *tfm_reduce,  *tfm_io, *tfm_write;
-    tfm_io_correlation(&tfm_io, 32, 8);
-    tfm_save(&tfm_write, "/mnt/usb/io_test");
+    tfm_analyze_aes(&tfm_break, true, AES128_ROUND10_HW_SBOXOUT);
+    tfm_save(&tfm_write, "/tmp/aes");
 
     ts_open(&source, "/mnt/usb/rand_50M_pos1_cpu2_arm_ce_aligned.trs");
-    ts_open(&correct, "/mnt/usb/rand_50M_pos1_cpu2_arm_ce_aligned_corr32.trs");
-
-    tfm_narrow(&tfm_reduce, 0, 5000000, 0, ts_num_samples(source));
-
-//    ts_transform(&narrowed, source, tfm_reduce);
-    ts_transform(&broken, source, tfm_io);
+    ts_transform(&broken, source, tfm_break);
     ts_transform(&written, broken, tfm_write);
 
-    ts_create_cache(source, 1ull * 1024 * 1024 * 1024, 16);
-    ts_create_cache(broken, 1ull * 1024 * 1024 * 1024, 16);
-    ts_render(written, 8);
-
-//    for(i = 0; i < ts_num_traces(broken); i++)
-//    {
-//        trace_get(broken, &mine, i, false);
-//        trace_get(correct, &corr, i, false);
-
-//        trace_samples(mine, &mine_samples);
-//        trace_samples(corr, &corr_samples);
-
-//        for(j = 0; j < ts_num_samples(broken); j++)
-//        {
-//            if(fabsf(mine_samples[j] - corr_samples[j]) > 0.00001)
-//            {
-//                fprintf(stderr, "mismatch trace %i index %i got %f expected %f\n",
-//                        i, j, mine_samples[j], corr_samples[j]);
-//            }
-//        }
-
-//        trace_free(mine);
-//        trace_free(corr);
-//    }
+    ts_create_cache(source, 4ull * 1024 * 1024 * 1024, 16);
+    ts_create_cache(broken, 4ull * 1024 * 1024 * 1024, 16);
+    ts_render(written, 32);
 
     ts_close(source);
-//    ts_close(narrowed);
     ts_close(broken);
     ts_close(written);
-
-//    int i, j;
-//    struct trace_set *result;
-//    struct trace *t;
-//    float *s;
-//
-//    ts_open(&result, "/mnt/raid0/Data/test/io_test_2.trs");
-//
-//    for(i = 0; i < ts_num_traces(result); i++)
-//    {
-//        trace_get(result, &t, i, true);
-//        trace_samples(t, &s);
-//
-//        for(j = 0; j < ts_num_samples(result); j++)
-//            fprintf(stderr, "%.3f ", s[j]);
-//        fprintf(stderr, "\n");
-//    }
 }

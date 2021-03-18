@@ -67,12 +67,12 @@ typedef enum
     CRITICAL
 } log_level_t;
 
-static log_level_t libtrs_log_level = WARN;
+static log_level_t libtrace_log_level = WARN;
 
 #define __first_arg(a, ...)     a
 #define __other_arg(a, ...)     , ## __VA_ARGS__
-#define __msg(level, ...)       if(level >= libtrs_log_level) {                 \
-                                     fprintf(stderr, "libtrs >>> %s @ %i: "     \
+#define __msg(level, ...)       if(level >= libtrace_log_level) {               \
+                                     fprintf(stderr, "libtrace >>> %s @ %i: "   \
                                         __first_arg(__VA_ARGS__), __FUNCTION__, \
                                         __LINE__ __other_arg(__VA_ARGS__));     \
                                         fflush(stderr); }

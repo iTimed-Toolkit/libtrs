@@ -23,7 +23,9 @@ struct tfm_cpa
 
 int __tfm_cpa_init(struct trace_set *ts)
 {
+    int ret;
     struct tfm_cpa *tfm = TFM_DATA(ts->tfm);
+
     ts->num_samples = ts->prev->num_samples;
 
     ts->input_offs = ts->input_len =
@@ -37,7 +39,13 @@ int __tfm_cpa_init(struct trace_set *ts)
 
     // consumers are expected to set this
     ts->num_traces = -1;
-    tfm->consumer_init(ts, tfm->init_args);
+    ret = tfm->consumer_init(ts, tfm->init_args);
+    if(ret < 0 || ts->num_traces == -1)
+    {
+        err("Failed to initialize consumer\n");
+        return ret;
+    }
+
     return 0;
 }
 
@@ -113,7 +121,7 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
     for(i = 0; i < ts_num_traces(t->owner->prev); i++)
     {
         if(i % 100000 == 0)
-            warn("CPA working on trace %i\n", i);
+            warn("CPA %li working on trace %i\n", TRACE_IDX(t), i);
 
         ret = trace_get(t->owner->prev, &curr, i, true);
         if(ret < 0)
@@ -145,7 +153,7 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
             ret = tfm->power_model(curr_data, TRACE_IDX(t), &pm);
             if(ret < 0)
             {
-                err("Failed to calculate power model\n");
+                err("Failed to calculate power model for trace %i\n", i);
                 goto __free_trace;
             }
 

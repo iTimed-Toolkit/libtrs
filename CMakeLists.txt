@@ -15,7 +15,7 @@ add_library(transform transform/tfm.c transform/tfm_align.c
         transform/tfm_average.c transform/tfm_split_tvla.c
         transform/power_analysis/tfm_cpa.c transform/tfm_nop.c transform/tfm_save.c
         lib/list.c transform/power_analysis/tfm_io_correlation.c transform/tfm_narrow.c transform/power_analysis/tfm_analyze_aes.c)
-target_link_libraries(transform pthread m)
+target_link_libraries(transform pthread crypto m)
 
 add_executable(libtrs_test_cpu test.c aes.c)
 target_link_libraries(libtrs_test_cpu trace transform)
