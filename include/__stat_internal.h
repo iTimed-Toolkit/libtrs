@@ -3,6 +3,72 @@
 
 #include <immintrin.h>
 
+// structs
+
+struct accumulator
+{
+    enum
+    {
+        ACC_SINGLE,
+        ACC_DUAL,
+        ACC_SINGLE_ARRAY,
+        ACC_DUAL_ARRAY
+    } acc_type;
+
+    int dim0, dim1;
+    float acc_count;
+
+    union
+    {
+        float f;
+        float *a;
+    } acc_m;
+
+    union
+    {
+        float f;
+        float *a;
+    } acc_s;
+
+    union
+    {
+        float f;
+        float *a;
+    } acc_cov;
+};
+
+int __get_mean_single(struct accumulator *acc, int index, float *res);
+int __get_mean_dual(struct accumulator *acc, int index, float *res);
+int __get_mean_single_array(struct accumulator *acc, int index, float *res);
+int __get_mean_dual_array(struct accumulator *acc, int index, float *res);
+
+int __get_dev_single(struct accumulator *acc, int index, float *res);
+int __get_dev_dual(struct accumulator *acc, int index, float *res);
+int __get_dev_single_array(struct accumulator *acc, int index, float *res);
+int __get_dev_dual_array(struct accumulator *acc, int index, float *res);
+
+int __get_cov_dual(struct accumulator *acc, int index, float *res);
+int __get_cov_dual_array(struct accumulator *acc, int index, float *res);
+
+int __get_pearson_dual(struct accumulator *acc, int index, float *res);
+int __get_pearson_dual_array(struct accumulator *acc, int index, float *res);
+
+int __get_mean_single_all(struct accumulator *acc, float **res);
+int __get_mean_dual_all(struct accumulator *acc,  float **res);
+int __get_mean_single_array_all(struct accumulator *acc,  float **res);
+int __get_mean_dual_array_all(struct accumulator *acc,  float **res);
+
+int __get_dev_single_all(struct accumulator *acc,  float **res);
+int __get_dev_dual_all(struct accumulator *acc,  float **res);
+int __get_dev_single_array_all(struct accumulator *acc,  float **res);
+int __get_dev_dual_array_all(struct accumulator *acc,  float **res);
+
+int __get_cov_dual_all(struct accumulator *acc,  float **res);
+int __get_cov_dual_array_all(struct accumulator *acc,  float **res);
+
+int __get_pearson_dual_all(struct accumulator *acc,  float **res);
+int __get_pearson_dual_array_all(struct accumulator *acc,  float **res);
+
 // loop wrapper macros
 
 #if __AVX2__ && !__AVX__
@@ -15,7 +81,7 @@
 
 #if __AVX512F__
 #define LOOP_HAVE_512(i, bound, ...)  \
-    if((i) + 16 < (bound))          \
+    if((i) + 16 <= (bound))          \
     {                               \
         __VA_ARGS__;                \
         (i) += 16; continue;        \
@@ -31,7 +97,7 @@
 
 #if __AVX2__
 #define LOOP_HAVE_256(i, bound, ...)  \
-    if((i) + 8 < (bound))           \
+    if((i) + 8 <= (bound))           \
     {                               \
         __VA_ARGS__;               \
         (i) += 8; continue;         \
@@ -46,7 +112,7 @@
 
 #if __AVX__
 #define LOOP_HAVE_128(i, bound, ...)  \
-    if((i) + 4 < (bound))           \
+    if((i) + 4 <= (bound))           \
     {                               \
         __VA_ARGS__;                \
         (i) += 4; continue;         \
@@ -84,7 +150,7 @@
     __defer_avx_func(type, add_ps, arg1, arg2)
 
 #define avx_sub_ps(type, arg1, arg2) \
-    __defer_avx_func(type, div_ps, arg1, arg2)
+    __defer_avx_func(type, sub_ps, arg1, arg2)
 
 #define avx_mul_ps(type, arg1, arg2) \
     __defer_avx_func(type, mul_ps, arg1, arg2)
@@ -94,6 +160,9 @@
 
 #define avx_setzero_ps(type) \
     __defer_avx_func(type, setzero_ps,)
+
+#define avx_sqrt_ps(type, arg) \
+    __defer_avx_func(type, sqrt_ps, arg)
 
 // high-level components
 
@@ -122,10 +191,10 @@
         avx_add_ps(type,                                \
             avx_var(type, m_name),                      \
             avx_div_ps(type,                            \
-                avx_div_ps(type,                        \
-                    avx_var(type, val_name),            \
-                    avx_var(type, cnt_name)),           \
-                avx_var(type, cnt_name)));
+                    avx_sub_ps(type,                    \
+                        avx_var(type, val_name),        \
+                        avx_var(type, m_name)),         \
+                    avx_var(type, cnt_name)))           \
 
 #define calc_new_s(type, m_name, s_name, val_name)      \
     avx_var(type, s_name ## _new) =                     \
@@ -153,7 +222,36 @@
                     avx_loadu_ps(type, val1_ptr),       \
                     avx_loadu_ps(type, m1_ptr))));
 
+#define reduce_dev(type, s_ptr, d_ptr, cnt_name)        \
+    avx_storeu_ps(type,                                 \
+        d_ptr,                                          \
+        avx_sqrt_ps(type,                               \
+            avx_div_ps(type,                            \
+                avx_loadu_ps(type, s_ptr),              \
+                avx_var(type, cnt_name))))
 
+#define reduce_cov(type, s_ptr, d_ptr, cnt_name)        \
+    avx_storeu_ps(type,                                 \
+        d_ptr,                                          \
+        avx_div_ps(type,                                \
+            avx_loadu_ps(type, s_ptr),                  \
+            avx_var(type, cnt_name)))
+
+#define reduce_pearson(type, cov_ptr,                   \
+                        s0_ptr, dev1_name,              \
+                        d_ptr, cnt_name)                \
+    avx_storeu_ps(type,                                 \
+        d_ptr,                                          \
+        avx_div_ps(type,                                \
+            avx_loadu_ps(type, cov_ptr),                \
+            avx_mul_ps(type,                            \
+                avx_var(type, cnt_name),                \
+                avx_mul_ps(type,                        \
+                    avx_sqrt_ps(type,                   \
+                        avx_div_ps(type,                \
+                            avx_loadu_ps(type, s0_ptr),  \
+                            avx_var(type, cnt_name))),  \
+                    avx_var(type, dev1_name)))))
 
 // entire functions
 
