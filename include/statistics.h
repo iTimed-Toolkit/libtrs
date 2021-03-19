@@ -7,6 +7,7 @@ int stat_create_single(struct accumulator **acc);
 int stat_create_single_array(struct accumulator **acc, int num);
 int stat_create_dual(struct accumulator **acc);
 int stat_create_dual_array(struct accumulator **acc, int num0, int num1);
+int stat_free_accumulator(struct accumulator *acc);
 
 int stat_accumulate_single(struct accumulator *acc, float val);
 int stat_accumulate_single_array(struct accumulator *acc, float *val, int len);

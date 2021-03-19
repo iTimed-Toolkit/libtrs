@@ -1,5 +1,6 @@
 #include "transform.h"
 #include "trace.h"
+#include "statistics.h"
 
 #include "__tfm_internal.h"
 #include "__trace_internal.h"
@@ -8,7 +9,6 @@
 #include <errno.h>
 #include <math.h>
 
-#include <immintrin.h>
 
 #define TFM_DATA(tfm)   ((struct tfm_cpa *) (tfm)->tfm_data)
 
@@ -68,56 +68,22 @@ int __tfm_cpa_data(struct trace *t, uint8_t **data)
 
 int __tfm_cpa_samples(struct trace *t, float **samples)
 {
-    int i, j, ret = 0;
+    int i, ret;
 
     struct trace *curr;
     uint8_t *curr_data;
-    float *curr_samples, *result = NULL;
+    float pm, *curr_samples;
 
-    float count = 0;
-    float pm, pm_m_f, pm_m_new_f, pm_s_f, tr_m_new_f;
-    float *tr_m_f = NULL, *tr_s_f = NULL, *cov_f = NULL;
-
-    __m256 curr_pm, curr_count, curr_batch,
-            curr_m, curr_m_new,
-            curr_s, curr_s_new,
-            curr_cov, curr_cov_new;
-
+    struct accumulator *acc;
     struct tfm_cpa *tfm = TFM_DATA(t->owner->tfm);
 
-    result = calloc(t->owner->num_samples, sizeof(float));
-    if(!result)
+    ret = stat_create_dual_array(&acc, ts_num_samples(t->owner->prev), 1);
+    if(ret < 0)
     {
-        err("Failed to allocate memory for result samples\n");
-        ret = -ENOMEM;
-        goto __free_temp;
+        err("Failed to create accumulator\n");
+        return ret;
     }
 
-    tr_m_f = calloc(t->owner->num_samples, sizeof(float));
-    if(!tr_m_f)
-    {
-        err("Failed to allocate memory for temporary sum array\n");
-        ret = -ENOMEM;
-        goto __free_temp;
-    }
-
-    tr_s_f = calloc(t->owner->num_samples, sizeof(float));
-    if(!tr_s_f)
-    {
-        err("Failed to allocate memory for temporary square array\n");
-        ret = -ENOMEM;
-        goto __free_temp;
-    }
-
-    cov_f = calloc(t->owner->num_samples, sizeof(float));
-    if(!cov_f)
-    {
-        err("Failed to allocate memory for temporary product array\n");
-        ret = -ENOMEM;
-        goto __free_temp;
-    }
-
-    pm_m_f = pm_s_f = 0;
     for(i = 0; i < ts_num_traces(t->owner->prev); i++)
     {
         if(i % 100000 == 0)
@@ -127,7 +93,7 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
         if(ret < 0)
         {
             err("Failed to get trace at index %i\n", i);
-            goto __free_temp;
+            goto __free_accumulator;
         }
 
         ret = trace_data_all(curr, &curr_data);
@@ -149,7 +115,6 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
 
         if(curr_samples && curr_data)
         {
-            count++;
             ret = tfm->power_model(curr_data, TRACE_IDX(t), &pm);
             if(ret < 0)
             {
@@ -157,84 +122,12 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
                 goto __free_trace;
             }
 
-            curr_pm = _mm256_broadcast_ss(&pm);
-            curr_count = _mm256_broadcast_ss(&count);
-
-            if(count == 1)
+            ret = stat_accumulate_dual_array(acc, curr_samples, &pm,
+                                             ts_num_samples(t->owner->prev), 1);
+            if(ret < 0)
             {
-                pm_m_f = pm;
-                pm_s_f = 0;
-
-                for(j = 0; j < ts_num_samples(t->owner->prev);)
-                {
-                    if(j + 8 < ts_num_samples(t->owner->prev))
-                    {
-                        curr_batch = _mm256_loadu_ps(&curr_samples[j]);
-
-                        _mm256_storeu_ps(&tr_m_f[j], curr_batch);
-                        _mm256_storeu_ps(&tr_s_f[j], _mm256_setzero_ps());
-                        _mm256_storeu_ps(&cov_f[j], _mm256_setzero_ps());
-
-                        j += 8;
-                    }
-                    else
-                    {
-                        tr_m_f[j] = curr_samples[j];
-                        tr_s_f[j] = 0;
-                        cov_f[j] = 0;
-
-                        j++;
-                    }
-                }
-            }
-            else
-            {
-                pm_m_new_f = pm_m_f + (pm - pm_m_f) / count;
-                pm_s_f += ((pm - pm_m_f) * (pm - pm_m_new_f));
-                pm_m_f = pm_m_new_f;
-
-                for(j = 0; j < ts_num_samples(t->owner->prev);)
-                {
-                    if(j + 8 < ts_num_samples(t->owner->prev))
-                    {
-                        curr_batch = _mm256_loadu_ps(&curr_samples[j]);
-                        curr_m = _mm256_loadu_ps(&tr_m_f[j]);
-                        curr_s = _mm256_loadu_ps(&tr_s_f[j]);
-                        curr_cov = _mm256_loadu_ps(&cov_f[j]);
-
-                        curr_m_new = _mm256_add_ps(curr_m,
-                                                   _mm256_div_ps(
-                                                           _mm256_sub_ps(curr_batch, curr_m),
-                                                           curr_count
-                                                   ));
-
-                        curr_s_new = _mm256_add_ps(curr_s,
-                                                   _mm256_mul_ps(
-                                                           _mm256_sub_ps(curr_batch, curr_m),
-                                                           _mm256_sub_ps(curr_batch, curr_m_new)
-                                                   ));
-
-                        curr_cov_new = _mm256_add_ps(curr_cov,
-                                                     _mm256_mul_ps(
-                                                             _mm256_sub_ps(curr_batch, curr_m),
-                                                             _mm256_sub_ps(curr_pm, _mm256_broadcast_ss(&pm_m_new_f))
-                                                     ));
-
-                        _mm256_storeu_ps(&tr_m_f[j], curr_m_new);
-                        _mm256_storeu_ps(&tr_s_f[j], curr_s_new);
-                        _mm256_storeu_ps(&cov_f[j], curr_cov_new);
-                        j += 8;
-                    }
-                    else
-                    {
-                        tr_m_new_f = tr_m_f[j] + (curr_samples[j] - tr_m_f[j]) / count;
-                        tr_s_f[j] += ((curr_samples[j] - tr_m_f[j]) * (curr_samples[j] - tr_m_new_f));
-                        cov_f[j] += ((curr_samples[j] - tr_m_f[j]) * (pm - pm_m_new_f));
-
-                        tr_m_f[j] = tr_m_new_f;
-                        j++;
-                    }
-                }
+                err("Failed to accumulate index %i\n", i);
+                goto __free_trace;
             }
         }
         else warn("No samples or data for index %i, skipping\n", i);
@@ -243,58 +136,19 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
         curr = NULL;
     }
 
-    count--;
-    pm_s_f = sqrtf(pm_s_f / count);
-
-    curr_count = _mm256_broadcast_ss(&count);
-    curr_s = _mm256_broadcast_ss(&pm_s_f);
-
-    for(i = 0; i < ts_num_samples(t->owner->prev);)
+    ret = stat_get_pearson_all(acc, samples);
+    if(ret < 0)
     {
-        if(i + 8 < ts_num_samples(t->owner->prev))
-        {
-            // whew
-            _mm256_storeu_ps(&result[i],
-                             _mm256_div_ps(
-                                     _mm256_loadu_ps(&cov_f[i]),
-                                     _mm256_mul_ps(curr_count,
-                                                   _mm256_mul_ps(
-                                                           _mm256_sqrt_ps(
-                                                                   _mm256_div_ps(
-                                                                           _mm256_loadu_ps(&tr_s_f[i]),
-                                                                           curr_count)),
-                                                           curr_s))));
-            i += 8;
-        }
-        else
-        {
-            result[i] = cov_f[i] / (count *
-                                    sqrtf(tr_s_f[i] / count) *
-                                    pm_s_f);
-            i++;
-        }
+        err("Failed to get all pearson values from accumulator\n");
+        *samples = NULL;
     }
-
-    *samples = result;
-    result = NULL;
 
 __free_trace:
     if(curr)
         trace_free(curr);
 
-__free_temp:
-    if(tr_s_f)
-        free(tr_s_f);
-
-    if(tr_m_f)
-        free(tr_m_f);
-
-    if(cov_f)
-        free(cov_f);
-
-    if(result)
-        free(result);
-
+__free_accumulator:
+    stat_free_accumulator(acc);
     return ret;
 }
 

@@ -7,21 +7,38 @@
 
 int main()
 {
-    struct trace_set *source, *broken, *written;
-    struct tfm *tfm_break, *tfm_write;
+    struct trace_set *source, *aligned, *narrowed, *written;
+    struct tfm *tfm_align, *tfm_small, *tfm_write;
 
-    tfm_analyze_aes(&tfm_break, true, AES128_ROUND10_HW_SBOXOUT);
-    tfm_save(&tfm_write, "/mnt/raid0/Data/test/aes");
+//    int lower[] = {464};
+//    int upper[] = {464 + 729};
 
-    ts_open(&source, "/mnt/raid0/Data/em/rand_50M_pos1_cpu2_arm_ce_aligned.trs");
-    ts_transform(&broken, source, tfm_break);
-    ts_transform(&written, broken, tfm_write);
+    int lower[] = {2884};
+    int upper[] = {2884 + 911};
 
-    ts_create_cache(source, 2ull * 1024 * 1024 * 1024, 16);
-    ts_create_cache(broken, 2ull * 1024 * 1024 * 1024, 16);
-    ts_render(written, 64);
+    tfm_static_align(&tfm_align, 0.95, 1000, 3,
+                     1, lower, upper);
+    tfm_save(&tfm_write, "/mnt/raid0/Data/test/align");
 
-    ts_close(source);
-    ts_close(broken);
+    ts_open(&source, "/mnt/raid0/Data/em/rand_50M_pos1_cpu2_arm_ce.trs");
+    tfm_narrow(&tfm_small, 0, 10000, 0, ts_num_samples(source));
+
+    ts_transform(&aligned, source, tfm_align);
+    ts_transform(&narrowed, aligned, tfm_small);
+    ts_transform(&written, narrowed, tfm_write);
+
+    ts_create_cache(source, 1ull * 1024 * 1024 * 1024, 16);
+
+    ts_render(written, 4);
+
     ts_close(written);
+    ts_close(narrowed);
+    ts_close(aligned);
+    ts_close(source);
+
+//    for(i = 0; i < 10000; i++)
+//    {
+//        trace_get(aligned, &out, i, true);
+//        trace_free(out);
+//    }
 }

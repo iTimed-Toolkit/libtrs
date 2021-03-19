@@ -6,6 +6,34 @@
 #include <errno.h>
 #include <math.h>
 
+int stat_free_accumulator(struct accumulator *acc)
+{
+    if(!acc)
+    {
+        err("Invalid accumulator\n");
+        return -EINVAL;
+    }
+
+    switch(acc->acc_type)
+    {
+        case ACC_DUAL_ARRAY:
+            free(acc->acc_cov.a);
+
+        case ACC_DUAL:
+        case ACC_SINGLE_ARRAY:
+            free(acc->acc_m.a);
+            free(acc->acc_s.a);
+
+        case ACC_SINGLE:
+            free(acc);
+            return 0;
+
+        default:
+            err("Unknown accumulator type\n");
+            return -EINVAL;
+    }
+}
+
 int stat_get_mean(struct accumulator *acc, int index, float *res)
 {
     if(!acc || !res)
