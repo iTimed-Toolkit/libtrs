@@ -41,7 +41,7 @@ bool __verify_aes128(uint8_t *data)
     EVP_EncryptInit_ex(en_ctx, EVP_aes_128_ecb(), NULL, &data[32], NULL);
 
     EVP_EncryptUpdate(en_ctx, enc, &olen, &data[0], 16);
-    EVP_EncryptFinal_ex(en_ctx, enc + olen, &olen);
+//    EVP_EncryptFinal_ex(en_ctx, enc + olen, &olen);
     EVP_CIPHER_CTX_free(en_ctx);
 
     return memcmp(enc, &data[16], 16) == 0;
@@ -56,16 +56,18 @@ static inline uint8_t hamming_weight(uint8_t n)
     return n;
 }
 
-int aes128_round10_hw_sbox_out(uint8_t *data, int index, float *res)
+int aes128_round10_hw_sbox_in(uint8_t *data, int index, float *res)
 {
     int key_index = (index / 256);
-    uint8_t key_guess = (index % 256);
+    uint8_t key_guess = (index % 256), state;
 
-    *res = (float) hamming_weight(data[16 + key_index] ^ key_guess);
+    state = data[16 + key_index] ^ key_guess;
+
+    *res = (float) hamming_weight(sbox_inv[state >> 4u][state & 0xFu]);
     return 0;
 }
 
-int aes128_round10_hw_sbox_out_verify(uint8_t *data, int index, float *res)
+int aes128_round10_hw_sbox_in_verify(uint8_t *data, int index, float *res)
 {
     if(!__verify_aes128(data))
     {
@@ -73,7 +75,7 @@ int aes128_round10_hw_sbox_out_verify(uint8_t *data, int index, float *res)
         return -EINVAL;
     }
 
-    return aes128_round10_hw_sbox_out(data, index, res);
+    return aes128_round10_hw_sbox_in(data, index, res);
 }
 
 struct tfm_analyze_aes_arg
@@ -93,8 +95,9 @@ int tfm_analyze_aes_init(struct trace_set *ts, void *arg)
 
     switch(aes_arg->leakage_model)
     {
-        case AES128_ROUND10_HW_SBOXOUT:
-            ts->num_traces = 16 * 256;
+        case AES128_R10_HW_SBOXIN:
+            ts->num_traces = 16;
+            ts->num_samples = ts->prev->num_samples * 256;
             break;
 
         default:
@@ -125,9 +128,9 @@ int tfm_analyze_aes(struct tfm **tfm, bool verify_data, aes_leakage_t leakage_mo
 
     switch(leakage_model)
     {
-        case AES128_ROUND10_HW_SBOXOUT:
-            if(verify_data) model = aes128_round10_hw_sbox_out_verify;
-            else model = aes128_round10_hw_sbox_out;
+        case AES128_R10_HW_SBOXIN:
+            if(verify_data) model = aes128_round10_hw_sbox_in_verify;
+            else model = aes128_round10_hw_sbox_in;
             break;
 
         default:

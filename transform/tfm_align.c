@@ -48,7 +48,7 @@ size_t __tfm_static_align_trace_size(struct trace_set *ts)
 
 int __do_align(struct trace *t, double *best_conf, int *best_shift)
 {
-    int ret, r, i, j;
+    int ret, r, i;
     int shift_valid_lower, shift_valid_upper;
     float *ref_samples, *curr_samples, *pearson, *temp;
 
@@ -198,7 +198,7 @@ int __tfm_static_align_data(struct trace *t, uint8_t **data)
 
 int __tfm_static_align_samples(struct trace *t, float **samples)
 {
-    int ret, i;
+    int ret;
     double best_conf = 0;
     int best_shift = 0;
     float *result = NULL, *shift;

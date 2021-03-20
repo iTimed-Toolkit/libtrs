@@ -43,7 +43,7 @@ int tfm_io_correlation(struct tfm **tfm, int granularity, int num);
 
 typedef enum
 {
-    AES128_ROUND10_HW_SBOXOUT,
+    AES128_R10_HW_SBOXIN,
 } aes_leakage_t;
 
 int tfm_analyze_aes(struct tfm **tfm, bool verify_data, aes_leakage_t leakage_model);

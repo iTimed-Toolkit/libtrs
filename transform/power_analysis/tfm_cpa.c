@@ -15,6 +15,7 @@
 struct tfm_cpa
 {
     int (*power_model)(uint8_t *data, int index, float *res);
+    uint64_t num_indices;
 
     int (*consumer_init)(struct trace_set *, void *);
     int (*consumer_exit)(struct trace_set *, void *);
@@ -25,8 +26,6 @@ int __tfm_cpa_init(struct trace_set *ts)
 {
     int ret;
     struct tfm_cpa *tfm = TFM_DATA(ts->tfm);
-
-    ts->num_samples = ts->prev->num_samples;
 
     ts->input_offs = ts->input_len =
     ts->output_offs = ts->output_len =
@@ -39,11 +38,24 @@ int __tfm_cpa_init(struct trace_set *ts)
 
     // consumers are expected to set this
     ts->num_traces = -1;
+    ts->num_samples = -1;
+
     ret = tfm->consumer_init(ts, tfm->init_args);
-    if(ret < 0 || ts->num_traces == -1)
+    if(ret < 0 || ts->num_traces == -1 || ts->num_samples == -1)
     {
         err("Failed to initialize consumer\n");
         return ret;
+    }
+
+    if(ts->num_samples == ts->prev->num_samples)
+        tfm->num_indices = 1;
+    else if(ts->num_samples % ts->prev->num_samples == 0)
+        tfm->num_indices = (ts->num_samples / ts->prev->num_samples);
+    else
+    {
+        err("Invalid number of multi-indices provided by consumer\n");
+        tfm->consumer_exit(ts, tfm->init_args);
+        return -EINVAL;
     }
 
     return 0;
@@ -68,20 +80,27 @@ int __tfm_cpa_data(struct trace *t, uint8_t **data)
 
 int __tfm_cpa_samples(struct trace *t, float **samples)
 {
-    int i, ret;
+    int i, j, ret;
 
     struct trace *curr;
     uint8_t *curr_data;
-    float pm, *curr_samples;
+    float *pm, *curr_samples;
 
     struct accumulator *acc;
     struct tfm_cpa *tfm = TFM_DATA(t->owner->tfm);
 
-    ret = stat_create_dual_array(&acc, ts_num_samples(t->owner->prev), 1);
+    pm = calloc(tfm->num_indices, sizeof(float));
+    if(!pm)
+    {
+        err("Failed to allocate power model array\n");
+        return -ENOMEM;
+    }
+
+    ret = stat_create_dual_array(&acc, ts_num_samples(t->owner->prev), tfm->num_indices);
     if(ret < 0)
     {
         err("Failed to create accumulator\n");
-        return ret;
+        goto __free_pm;
     }
 
     for(i = 0; i < ts_num_traces(t->owner->prev); i++)
@@ -115,15 +134,18 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
 
         if(curr_samples && curr_data)
         {
-            ret = tfm->power_model(curr_data, TRACE_IDX(t), &pm);
-            if(ret < 0)
+            for(j = 0; j < tfm->num_indices; j++)
             {
-                err("Failed to calculate power model for trace %i\n", i);
-                goto __free_trace;
+                ret = tfm->power_model(curr_data, TRACE_IDX(t) + j, &pm[j]);
+                if(ret < 0)
+                {
+                    err("Failed to calculate power model for trace %i\n", i);
+                    goto __free_trace;
+                }
             }
 
-            ret = stat_accumulate_dual_array(acc, curr_samples, &pm,
-                                             ts_num_samples(t->owner->prev), 1);
+            ret = stat_accumulate_dual_array(acc, curr_samples, pm,
+                                             ts_num_samples(t->owner->prev), j);
             if(ret < 0)
             {
                 err("Failed to accumulate index %i\n", i);
@@ -149,6 +171,9 @@ __free_trace:
 
 __free_accumulator:
     stat_free_accumulator(acc);
+
+__free_pm:
+    free(pm);
     return ret;
 }
 
