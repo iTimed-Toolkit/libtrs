@@ -24,43 +24,42 @@ int stat_create_single_array(struct accumulator **acc, int num)
         return -ENOMEM;
     }
 
-    res->acc_type = ACC_SINGLE_ARRAY;
+    res->type = ACC_SINGLE_ARRAY;
     res->dim0 = num;
     res->dim1 = 0;
-    res->acc_count = 0;
+    res->count = 0;
 
-    res->acc_m.a = calloc(num, sizeof(float));
-    if(!res->acc_m.a)
+    res->m.a = calloc(num, sizeof(float));
+    if(!res->m.a)
     {
         err("Failed to allocate single m array\n");
         goto __free_acc;
     }
 
-    res->acc_s.a = calloc(num, sizeof(float));
-    if(!res->acc_s.a)
+    res->s.a = calloc(num, sizeof(float));
+    if(!res->s.a)
     {
         err("Failed to allocate single s array\n");
         goto __free_acc;
     }
 
-    res->acc_cov.f = 0;
+    res->cov.f = 0;
 
     *acc = res;
     return 0;
 
 __free_acc:
-    if(res->acc_m.a)
-        free(res->acc_m.a);
+    if(res->m.a)
+        free(res->m.a);
 
-    if(res->acc_s.a)
-        free(res->acc_s.a);
+    if(res->s.a)
+        free(res->s.a);
 
     free(res);
     return -ENOMEM;
 }
 
-
-int stat_accumulate_single_array(struct accumulator *acc, float *val, int len)
+int __accumulate_single_array(struct accumulator *acc, float *val, int len)
 {
     int i;
     float m_new_scalar;
@@ -69,13 +68,70 @@ int stat_accumulate_single_array(struct accumulator *acc, float *val, int len)
     IF_HAVE_256(__m256 curr_256, count_256, m_256, m_new_256, s_256, s_new_256);
     IF_HAVE_128(__m128 curr_, count_, m_, m_new_, s_, s_new_);
 
+    acc->count++;
+    if(acc->count == 1)
+    {
+        for(i = 0; i < len;)
+        {
+            LOOP_HAVE_512(i, len,
+                          init_m(AVX512, &acc->m.a[i], &val[i]));
+
+            LOOP_HAVE_256(i, len,
+                          init_m(AVX256, &acc->m.a[i], &val[i]));
+
+            LOOP_HAVE_128(i, len,
+                          init_m(AVX128, &acc->m.a[i], &val[i]))
+
+            acc->m.a[i] = val[i];
+            acc->s.a[i] = 0;
+            i++;
+        }
+    }
+    else
+    {
+        IF_HAVE_128(count_ = _mm_broadcast_ss(&acc->count));
+        IF_HAVE_256(count_256 = _mm256_broadcast_ss(&acc->count));
+        IF_HAVE_512(count_512 = _mm512_broadcastss_ps(count_));
+
+        for(i = 0; i < len;)
+        {
+            LOOP_HAVE_512(i, len, accumulate(AVX512, m, s, curr, count,
+                                             &acc->m.a[i],
+                                             &acc->s.a[i],
+                                             &val[i])
+            );
+
+            LOOP_HAVE_256(i, len, accumulate(AVX256, m, s, curr, count,
+                                             &acc->m.a[i],
+                                             &acc->s.a[i],
+                                             &val[i])
+            );
+
+            LOOP_HAVE_128(i, len, accumulate(AVX128, m, s, curr, count,
+                                             &acc->m.a[i],
+                                             &acc->s.a[i],
+                                             &val[i])
+            );
+
+            m_new_scalar = acc->m.a[i] + (val[i] - acc->m.a[i]) / acc->count;
+            acc->s.a[i] += ((val[i] - acc->m.a[i]) * (val[i] - m_new_scalar));
+            acc->m.a[i] = m_new_scalar;
+            i++;
+        }
+    }
+
+    return 0;
+}
+
+int stat_accumulate_single_array(struct accumulator *acc, float *val, int len)
+{
     if(!acc || !val)
     {
         err("Invalid accumulator or data array\n");
         return -EINVAL;
     }
 
-    if(acc->acc_type != ACC_SINGLE_ARRAY)
+    if(acc->type != ACC_SINGLE_ARRAY)
     {
         err("Invalid accumulator type\n");
         return -EINVAL;
@@ -87,55 +143,38 @@ int stat_accumulate_single_array(struct accumulator *acc, float *val, int len)
         return -EINVAL;
     }
 
-    acc->acc_count++;
-    if(acc->acc_count == 1)
+    return __accumulate_single_array(acc, val, len);
+}
+
+int stat_accumulate_single_array_many(struct accumulator *acc, float *val, int len, int num)
+{
+    int i, ret;
+
+    if(!acc || !val)
     {
-        for(i = 0; i < len;)
-        {
-            LOOP_HAVE_512(i, len,
-                          init_m(AVX512, &acc->acc_m.a[i], &val[i]));
-
-            LOOP_HAVE_256(i, len,
-                          init_m(AVX256, &acc->acc_m.a[i], &val[i]));
-
-            LOOP_HAVE_128(i, len,
-                          init_m(AVX128, &acc->acc_m.a[i], &val[i]))
-
-            acc->acc_m.a[i] = val[i];
-            acc->acc_s.a[i] = 0;
-            i++;
-        }
+        err("Invalid accumulator or data array\n");
+        return -EINVAL;
     }
-    else
+
+    if(acc->type != ACC_SINGLE_ARRAY)
     {
-        IF_HAVE_128(count_ = _mm_broadcast_ss(&acc->acc_count));
-        IF_HAVE_256(count_256 = _mm256_broadcast_ss(&acc->acc_count));
-        IF_HAVE_512(count_512 = _mm512_broadcastss_ps(count_));
+        err("Invalid accumulator type\n");
+        return -EINVAL;
+    }
 
-        for(i = 0; i < len;)
+    if(acc->dim0 != len)
+    {
+        err("Invalid data dimension\n");
+        return -EINVAL;
+    }
+
+    for(i = 0; i < num; i++)
+    {
+        ret = __accumulate_single_array(acc, &val[len * i], len);
+        if(ret < 0)
         {
-            LOOP_HAVE_512(i, len, accumulate(AVX512, m, s, curr, count,
-                                             &acc->acc_m.a[i],
-                                             &acc->acc_s.a[i],
-                                             &val[i])
-            );
-
-            LOOP_HAVE_256(i, len, accumulate(AVX256, m, s, curr, count,
-                                             &acc->acc_m.a[i],
-                                             &acc->acc_s.a[i],
-                                             &val[i])
-            );
-
-            LOOP_HAVE_128(i, len, accumulate(AVX128, m, s, curr, count,
-                                             &acc->acc_m.a[i],
-                                             &acc->acc_s.a[i],
-                                             &val[i])
-            );
-
-            m_new_scalar = acc->acc_m.a[i] + (val[i] - acc->acc_m.a[i]) / acc->acc_count;
-            acc->acc_s.a[i] += ((val[i] - acc->acc_m.a[i]) * (val[i] - m_new_scalar));
-            acc->acc_m.a[i] = m_new_scalar;
-            i++;
+            err("Failed to accumulate at index %i\n", i);
+            return ret;
         }
     }
 
@@ -150,7 +189,7 @@ int __get_mean_single_array(struct accumulator *acc, int index, float *res)
         return -EINVAL;
     }
 
-    *res = acc->acc_m.a[index];
+    *res = acc->m.a[index];
     return 0;
 }
 
@@ -162,7 +201,7 @@ int __get_dev_single_array(struct accumulator *acc, int index, float *res)
         return -EINVAL;
     }
 
-    *res = sqrtf(acc->acc_s.a[index] / (acc->acc_count - 1));
+    *res = sqrtf(acc->s.a[index] / (acc->count - 1));
     return 0;
 }
 
@@ -175,7 +214,7 @@ int __get_mean_single_array_all(struct accumulator *acc, float **res)
         return -ENOMEM;
     }
 
-    memcpy(result, acc->acc_m.a, acc->dim0 * sizeof(float));
+    memcpy(result, acc->m.a, acc->dim0 * sizeof(float));
     *res = result;
     return 0;
 }
@@ -196,7 +235,7 @@ int __get_dev_single_array_all(struct accumulator *acc, float **res)
         return -ENOMEM;
     }
 
-    count = acc->acc_count - 1;
+    count = acc->count - 1;
     IF_HAVE_128(count_ = _mm_broadcast_ss(&count));
     IF_HAVE_256(count_256 = _mm256_broadcast_ss(&count));
     IF_HAVE_512(count_512 = _mm512_broadcastss_ps(count_));
@@ -204,21 +243,21 @@ int __get_dev_single_array_all(struct accumulator *acc, float **res)
     for(i = 0; i < acc->dim0;)
     {
         LOOP_HAVE_512(i, acc->dim0,
-                      reduce_dev(AVX512, &acc->acc_s.a[i],
+                      reduce_dev(AVX512, &acc->s.a[i],
                                  &result[i], count);
         );
 
         LOOP_HAVE_256(i, acc->dim0,
-                      reduce_dev(AVX256, &acc->acc_s.a[i],
+                      reduce_dev(AVX256, &acc->s.a[i],
                                  &result[i], count);
         );
 
         LOOP_HAVE_128(i, acc->dim0,
-                      reduce_dev(AVX128, &acc->acc_s.a[i],
+                      reduce_dev(AVX128, &acc->s.a[i],
                                  &result[i], count);
         );
 
-        result[i] = sqrtf(acc->acc_s.a[i] / count);
+        result[i] = sqrtf(acc->s.a[i] / count);
         i++;
     }
 

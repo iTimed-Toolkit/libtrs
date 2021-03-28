@@ -31,6 +31,13 @@ static const uint8_t sbox_inv[16][16] =
                 {0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d}
         };
 
+static const uint8_t shift_rows_inv[16] = {
+        [0] = 0x0, [1] = 0xD, [2] = 0xA, [3] = 0x7,
+        [4] = 0x4, [5] = 0x1, [6] = 0xE, [7] = 0xB,
+        [8] = 0x8, [9] = 0x5, [10] = 0x2, [11] = 0xF,
+        [12] = 0xC, [13] = 0x9, [14] = 0x6, [15] = 0x3
+};
+
 bool __verify_aes128(uint8_t *data)
 {
     int olen;
@@ -61,7 +68,7 @@ int aes128_round10_hw_sbox_in(uint8_t *data, int index, float *res)
     int key_index = (index / 256);
     uint8_t key_guess = (index % 256), state;
 
-    state = data[16 + key_index] ^ key_guess;
+    state = data[16 + shift_rows_inv[key_index]] ^ key_guess;
 
     *res = (float) hamming_weight(sbox_inv[state >> 4u][state & 0xFu]);
     return 0;

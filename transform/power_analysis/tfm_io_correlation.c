@@ -7,11 +7,11 @@
 
 static inline uint8_t hamming_weight(uint8_t n)
 {
-//    return __builtin_popcount(n);
-    n = ((n & 0xAAu) >> 1u) + (n & 0x55u);
-    n = ((n & 0xCCu) >> 2u) + (n & 0x33u);
-    n = ((n & 0xF0u) >> 4u) + (n & 0x0Fu);
-    return n;
+    return __builtin_popcount(n);
+//    n = ((n & 0xAAu) >> 1u) + (n & 0x55u);
+//    n = ((n & 0xCCu) >> 2u) + (n & 0x33u);
+//    n = ((n & 0xF0u) >> 4u) + (n & 0x0Fu);
+//    return n;
 }
 
 static inline int pm_generic(uint8_t *data, int index, int div, float *res)
@@ -69,6 +69,7 @@ int tfm_io_correlation_init(struct trace_set *ts, void *arg)
     }
 
     ts->num_traces = io_arg->num;
+    ts->num_samples = ts->prev->num_samples;
     return 0;
 }
 

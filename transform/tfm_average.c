@@ -1,5 +1,6 @@
 #include "transform.h"
 #include "trace.h"
+#include "statistics.h"
 
 #include "__tfm_internal.h"
 #include "__trace_internal.h"
@@ -40,6 +41,12 @@ int __tfm_average_init(struct trace_set *ts)
     return 0;
 }
 
+int __tfm_average_init_waiter(struct trace_set *ts, int port)
+{
+    err("No ports to register\n");
+    return -EINVAL;
+}
+
 size_t __tfm_average_trace_size(struct trace_set *ts)
 {
     return ts_trace_size(ts->prev);
@@ -59,51 +66,76 @@ int __tfm_average_data(struct trace *t, uint8_t **data)
 
 int __tfm_average_samples(struct trace *t, float **samples)
 {
-    int i, j, ret;
-    struct trace *curr;
-    struct tfm_average *tfm = TFM_DATA(t->owner->tfm);
-    float *result = calloc(ts_num_samples(t->owner), sizeof(float)),
-            *curr_samples, count = 0;
+    int i, ret;
+    float *result = NULL, *curr_samples;
 
-    if(!result)
-    {
-        err("Failed to allocate buffer for accumulating average\n");
-        return -ENOMEM;
-    }
+    struct trace *curr;
+    struct accumulator *acc;
+    struct tfm_average *tfm = TFM_DATA(t->owner->tfm);
 
     if(tfm->per_sample)
     {
+        ret = stat_create_single_array(&acc, ts_num_samples(t->owner->prev));
+        if(ret < 0)
+        {
+            err("Failed to create accumulator\n");
+            return ret;
+        }
+
         for(i = 0; i < ts_num_traces(t->owner->prev); i++)
         {
             ret = trace_get(t->owner->prev, &curr, i, false);
             if(ret < 0)
             {
                 err("Failed to get trace from previous trace set\n");
-                goto __free_result;
+                goto __free_accumulator;
             }
 
             ret = trace_samples(curr, &curr_samples);
             if(ret < 0)
             {
                 err("Failed to get samples to average from trace\n");
-                goto __free_trace;
+                goto __free_accumulator;
             }
 
             if(curr_samples)
             {
-                count++;
-                for(j = 0; j < ts_num_samples(t->owner->prev); j++)
-                    result[j] += curr_samples[j];
+                ret = stat_accumulate_single_array(acc, curr_samples,
+                                                   ts_num_samples(t->owner->prev));
+                if(ret < 0)
+                {
+                    err("Failed to accumulate trace %li\n", TRACE_IDX(curr));
+                    goto __free_accumulator;
+                }
             }
 
             trace_free(curr);
+            curr = NULL;
         }
 
-        for(i = 0; i < ts_num_samples(t->owner->prev); i++)
-            result[i] /= count;
+        ret = stat_get_mean_all(acc, samples);
+        if(ret < 0)
+        {
+            err("Failed to get mean from accumulator\n");
+            goto __free_accumulator;
+        }
     }
     else
     {
+        ret = stat_create_single(&acc);
+        if(ret < 0)
+        {
+            err("Failed to create accumulator\n");
+            return ret;
+        }
+
+        result = calloc(ts_num_traces(t->owner), sizeof(float));
+        if(!result)
+        {
+            err("Failed to allocate buffer for accumulating average\n");
+            goto __free_result;
+        }
+
         for(i = 0; i < ts_num_traces(t->owner->prev); i++)
         {
             ret = trace_get(t->owner->prev, &curr, i, false);
@@ -122,24 +154,42 @@ int __tfm_average_samples(struct trace *t, float **samples)
 
             if(curr_samples)
             {
-                for(j = 0; j < ts_num_samples(t->owner->prev); j++)
-                    result[i] += curr_samples[j];
-                result[i] /= ts_num_samples(t->owner->prev);
+                ret = stat_accumulate_single_many(acc, curr_samples,
+                                                  ts_num_samples(t->owner->prev));
+                if(ret < 0)
+                {
+                    err("Failed to accumulate trace %li\n", TRACE_IDX(curr));
+                    goto __free_accumulator;
+                }
+
+                ret = stat_get_mean(acc, 0, &result[i]);
+                if(ret < 0)
+                {
+                    err("Failed to get mean for trace %li\n", TRACE_IDX(curr));
+                    goto __free_accumulator;
+                }
+
+                stat_reset_accumulator(acc);
             }
 
             trace_free(curr);
         }
+
+        *samples = result;
+        result = NULL;
     }
 
-    *samples = result;
-    return 0;
+__free_accumulator:
+    stat_free_accumulator(acc);
 
 __free_trace:
-    trace_free(curr);
+    if(curr)
+        trace_free(curr);
 
 __free_result:
-    free(result);
-    *samples = NULL;
+    if(result)
+        free(result);
+
     return ret;
 }
 

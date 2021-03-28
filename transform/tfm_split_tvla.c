@@ -37,6 +37,12 @@ int __tfm_split_tvla_init(struct trace_set *ts)
     return 0;
 }
 
+int __tfm_split_tvla_init_waiter(struct trace_set *ts, int port)
+{
+    err("No ports to register\n");
+    return -EINVAL;
+}
+
 size_t __tfm_split_tvla_trace_size(struct trace_set *ts)
 {
     // about half the time, we won't actually be storing samples
@@ -45,9 +51,7 @@ size_t __tfm_split_tvla_trace_size(struct trace_set *ts)
 }
 
 void __tfm_split_tvla_exit(struct trace_set *ts)
-{
-
-}
+{}
 
 int __get_trace_type(struct trace *t, bool *type)
 {

@@ -10,6 +10,12 @@ struct trace_set;
 struct trace;
 struct tfm;
 
+struct render;
+
+// configuration
+
+#define COHESIVE_CACHES     1
+
 /* trace set operations */
 
 /**
@@ -53,6 +59,25 @@ int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *
  * @return 0 on success, or a standard errno error code on failure.
  */
 int ts_render(struct trace_set *ts, size_t nthreads);
+
+/**
+ * Fully render a trace set, but begin the rendering process in a background controller thread (with
+ * the specified worker threads).
+ * 
+ * @param ts The trace set to render
+ * @param nthreads The number of (worker) threads to use when rendering.
+ * @param render Where to place metadata about the render.
+ * @return 0 on success, or a standard errno error code on failure
+ */
+int ts_render_async(struct trace_set *ts, size_t nthreads, struct render **render);
+
+/**
+ * Wait until an earlier async render has completed.
+ *
+ * @param render Metadata about the render from ts_render_async().
+ * @return 0 on success, or a standard errno error code on failure
+ */
+int ts_render_join(struct render *render);
 
 /**
  * Create a trace cache for the given cache set. The specified size

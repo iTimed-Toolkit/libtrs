@@ -1,10 +1,10 @@
 #ifndef LIBTRS___STAT_INTERNAL_H
 #define LIBTRS___STAT_INTERNAL_H
 
+#include "statistics.h"
 #include <immintrin.h>
 
 // structs
-
 struct accumulator
 {
     enum
@@ -13,28 +13,32 @@ struct accumulator
         ACC_DUAL,
         ACC_SINGLE_ARRAY,
         ACC_DUAL_ARRAY
-    } acc_type;
+    } type;
 
     int dim0, dim1;
-    float acc_count;
+    float count;
 
     union
     {
         float f;
         float *a;
-    } acc_m;
+    } m;
 
     union
     {
         float f;
         float *a;
-    } acc_s;
+    } s;
 
     union
     {
         float f;
         float *a;
-    } acc_cov;
+    } cov;
+
+#if USE_GPU
+    float *m_gpu, *s_gpu, *cov_gpu;
+#endif
 };
 
 int __get_mean_single(struct accumulator *acc, int index, float *res);
@@ -76,7 +80,7 @@ int __get_pearson_dual_array_all(struct accumulator *acc,  float **res);
 #endif
 
 #if __AVX512F__ && !__AVX2__
-#error "Found AVX512 but not AVX"
+#error "Found AVX512 but not AVX2"
 #endif
 
 #if __AVX512F__

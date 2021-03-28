@@ -41,6 +41,12 @@ int __tfm_static_align_init(struct trace_set *ts)
     return 0;
 }
 
+int __tfm_static_align_init_waiter(struct trace_set *ts, int port)
+{
+    err("No ports to register\n");
+    return -EINVAL;
+}
+
 size_t __tfm_static_align_trace_size(struct trace_set *ts)
 {
     return ts_trace_size(ts->prev);

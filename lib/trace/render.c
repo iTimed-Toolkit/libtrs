@@ -29,14 +29,14 @@ void *__ts_render_func(void *thread_arg)
         {
             err("Thread %i failed to wait on signal\n", arg->thread_index);
             arg->ret = ret;
-            pthread_exit(NULL);
+            return NULL;
         }
 
         // exit condition
         if(arg->ts == NULL)
         {
             arg->ret = 0;
-            pthread_exit(NULL);
+            return NULL;
         }
 
         ret = trace_get(arg->ts, &trace, arg->trace_index, true);
@@ -53,7 +53,7 @@ void *__ts_render_func(void *thread_arg)
                 arg->ret = -errno;
             }
 
-            pthread_exit(NULL);
+            return NULL;
         }
 
         trace_free(trace);
@@ -68,8 +68,16 @@ void *__ts_render_func(void *thread_arg)
     }
 }
 
+struct render
+{
+    pthread_t handle;
+    int ret;
 
-int ts_render(struct trace_set *ts, size_t nthreads)
+    struct trace_set *ts;
+    size_t nthreads;
+};
+
+void *__ts_render_controller(void *controller_arg)
 {
     int i, j, ret;
     size_t curr_index = 0;
@@ -77,21 +85,17 @@ int ts_render(struct trace_set *ts, size_t nthreads)
 
     pthread_t *handles;
     struct __ts_render_arg *args;
+    struct render *arg = controller_arg;
 
-    if(!ts || nthreads == 0)
-    {
-        err("Invalid trace set or number of threads\n");
-        return -EINVAL;
-    }
-
-    ret = sem_init(&done_signal, 0, nthreads);
+    ret = sem_init(&done_signal, 0, arg->nthreads);
     if(ret < 0)
     {
         err("Failed to initialize done semaphore\n");
-        return -errno;
+        arg->ret = -errno;
+        return NULL;
     }
 
-    handles = calloc(nthreads, sizeof(pthread_t));
+    handles = calloc(arg->nthreads, sizeof(pthread_t));
     if(!handles)
     {
         err("Unable to allocate pthread handles\n");
@@ -99,7 +103,7 @@ int ts_render(struct trace_set *ts, size_t nthreads)
         goto __destroy_done_signal;
     }
 
-    args = calloc(nthreads, sizeof(struct __ts_render_arg));
+    args = calloc(arg->nthreads, sizeof(struct __ts_render_arg));
     if(!args)
     {
         err("Unable to allocate pthread args\n");
@@ -107,11 +111,11 @@ int ts_render(struct trace_set *ts, size_t nthreads)
         goto __free_handles;
     }
 
-    for(i = 0; i < nthreads; i++)
+    for(i = 0; i < arg->nthreads; i++)
     {
         args[i].thread_index = i;
         args[i].done_signal = &done_signal;
-        args[i].ts = ts;
+        args[i].ts = arg->ts;
         args[i].trace_index = 0;
         args[i].ret = 1;
 
@@ -124,7 +128,7 @@ int ts_render(struct trace_set *ts, size_t nthreads)
         }
     }
 
-    for(i = 0; i < nthreads; i++)
+    for(i = 0; i < arg->nthreads; i++)
     {
         ret = pthread_create(&handles[i], NULL, __ts_render_func, &args[i]);
         if(ret < 0)
@@ -135,7 +139,7 @@ int ts_render(struct trace_set *ts, size_t nthreads)
         }
     }
 
-    while(curr_index < ts_num_traces(ts))
+    while(curr_index < ts_num_traces(arg->ts))
     {
         debug("Waiting for worker thread\n");
         ret = sem_wait(&done_signal);
@@ -146,13 +150,13 @@ int ts_render(struct trace_set *ts, size_t nthreads)
             goto __done;
         }
 
-        for(i = 0; i < nthreads; i++)
+        for(i = 0; i < arg->nthreads; i++)
         {
             if(args[i].ret == 1)
             {
                 debug("Dispatching index %li to thread %i\n", curr_index, i);
 
-                args[i].trace_index = curr_index;
+                args[i].trace_index = curr_index++;
                 args[i].ret = 0;
 
                 ret = sem_post(&args[i].thread_signal);
@@ -172,13 +176,11 @@ int ts_render(struct trace_set *ts, size_t nthreads)
                 goto __done;
             }
         }
-
-        curr_index++;
     }
 
     ret = 0;
 __done:
-    i = nthreads;
+    i = arg->nthreads;
 __kill_threads:
     for(j = 0; j < i; j++)
     {
@@ -195,7 +197,7 @@ __kill_threads:
         pthread_join(handles[j], NULL);
     }
 
-    i = nthreads;
+    i = arg->nthreads;
 __teardown_args:
     for(j = 0; j < i; j++)
         sem_destroy(&args[j].thread_signal);
@@ -208,5 +210,74 @@ __destroy_done_signal:
     sem_destroy(&done_signal);
 
 __out:
+    arg->ret = ret;
+    return NULL;
+}
+
+int ts_render(struct trace_set *ts, size_t nthreads)
+{
+    struct render arg = {
+            .ret = 0,
+            .ts = ts,
+            .nthreads = nthreads
+    };
+
+    if(!ts || nthreads == 0)
+    {
+        err("Invalid trace set or number of threads\n");
+        return -EINVAL;
+    }
+
+    __ts_render_controller(&arg);
+    return arg.ret;
+}
+
+int ts_render_async(struct trace_set *ts, size_t nthreads, struct render **render)
+{
+    int ret;
+    struct render *res;
+
+    if(!ts || nthreads == 0)
+    {
+        err("Invalid trace set or number of threads\n");
+        return -EINVAL;
+    }
+
+    res = calloc(1, sizeof(struct render));
+    if(!res)
+    {
+        err("Failed to allocate render struct\n");
+        return -ENOMEM;
+    }
+
+    res->ret = 0;
+    res->ts = ts;
+    res->nthreads = nthreads;
+
+    ret = pthread_create(&res->handle, NULL, __ts_render_controller, res);
+    if(ret < 0)
+    {
+        err("Failed to create controller pthread\n");
+        free(res);
+        return -EINVAL;
+    }
+
+    *render = res;
+    return 0;
+}
+
+int ts_render_join(struct render *render)
+{
+    int ret;
+    if(!render)
+    {
+        err("Invalid render struct\n");
+        return -EINVAL;
+    }
+
+    pthread_join(render->handle, NULL);
+    ret = render->ret;
+
+    free(render);
     return ret;
 }

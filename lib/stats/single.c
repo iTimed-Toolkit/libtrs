@@ -23,43 +23,76 @@ int stat_create_single(struct accumulator **acc)
         return -ENOMEM;
     }
 
-    res->acc_type = ACC_SINGLE;
-    res->acc_count = 0;
-    res->acc_m.f = 0;
-    res->acc_s.f = 0;
-    res->acc_cov.f = 0;
+    res->type = ACC_SINGLE;
+    res->count = 0;
+    res->m.f = 0;
+    res->s.f = 0;
+    res->cov.f = 0;
 
     *acc = res;
     return 0;
 }
 
-int stat_accumulate_single(struct accumulator *acc, float val)
+int __accumulate_single(struct accumulator *acc, float val)
 {
     float m_new;
 
+    acc->count++;
+    if(acc->count == 1)
+    {
+        acc->m.f = val;
+        acc->s.f = 0;
+    }
+    else
+    {
+        m_new = acc->m.f + (val - acc->m.f) / acc->count;
+        acc->s.f += ((val - acc->m.f) * (val - m_new));
+        acc->m.f = m_new;
+    }
+
+    return 0;
+}
+
+int stat_accumulate_single(struct accumulator *acc, float val)
+{
     if(!acc)
     {
         err("Invalid accumulator\n");
         return -EINVAL;
     }
 
-    if(acc->acc_type != ACC_SINGLE)
+    if(acc->type != ACC_SINGLE)
     {
         err("Invalid accumulator type\n");
         return -EINVAL;
     }
 
-    acc->acc_count++;
-    if(acc->acc_count == 1)
+    return __accumulate_single(acc, val);
+}
+
+int stat_accumulate_single_many(struct accumulator *acc, float *val, int num)
+{
+    int i, ret;
+    if(!acc)
     {
-        acc->acc_m.f = val;
-        acc->acc_s.f = 0;
+        err("Invalid accumulator\n");
+        return -EINVAL;
     }
-    else
+
+    if(acc->type != ACC_SINGLE)
     {
-        m_new = acc->acc_m.f + (val - acc->acc_m.f) / acc->acc_count;
-        acc->acc_s.f += ((val - acc->acc_m.f) * (val - m_new));
-        acc->acc_m.f = m_new;
+        err("Invalid accumulator type\n");
+        return -EINVAL;
+    }
+
+    for(i = 0; i < num; i++)
+    {
+        ret = __accumulate_single(acc, val[i]);
+        if(ret < 0)
+        {
+            err("Failed to accumulate at index %i\n", i);
+            return ret;
+        }
     }
 
     return 0;
@@ -73,7 +106,7 @@ int __get_mean_single(struct accumulator *acc, int index, float *res)
         return -EINVAL;
     }
 
-    *res = acc->acc_m.f;
+    *res = acc->m.f;
     return 0;
 }
 
@@ -85,7 +118,7 @@ int __get_dev_single(struct accumulator *acc, int index, float *res)
         return -EINVAL;
     }
 
-    *res = sqrtf(acc->acc_s.f / (acc->acc_count - 1));
+    *res = sqrtf(acc->s.f / (acc->count - 1));
     return 0;
 }
 

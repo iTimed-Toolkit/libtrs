@@ -7,10 +7,10 @@
 
 #include <string.h>
 #include <errno.h>
-#include <math.h>
-
 
 #define TFM_DATA(tfm)   ((struct tfm_cpa *) (tfm)->tfm_data)
+#define CPA_REPORT_INTERVAL     100000
+#define CPA_REPORT_TITLE_SIZE   128
 
 struct tfm_cpa
 {
@@ -61,6 +61,39 @@ int __tfm_cpa_init(struct trace_set *ts)
     return 0;
 }
 
+int __tfm_cpa_init_waiter(struct trace_set *ts, int port)
+{
+    if(!ts)
+    {
+        err("Invalid trace set\n");
+        return -EINVAL;
+    }
+
+    switch(port)
+    {
+        case PORT_CPA_PROGRESS:
+            ts->input_offs = ts->input_len =
+            ts->output_offs = ts->output_len =
+            ts->key_offs = ts->key_len = 0;
+
+            ts->title_size = CPA_REPORT_TITLE_SIZE;
+            ts->data_size = 0;
+            ts->datatype = DT_FLOAT;
+            ts->yscale = 1.0f;
+
+            ts->num_traces = ts_num_traces(ts->prev) *
+                             ts_num_traces(ts->prev->prev) / CPA_REPORT_INTERVAL;
+            ts->num_samples = ts_num_samples(ts->prev);
+            break;
+
+        default:
+            err("Invalid port specified: %i\n", port);
+            return -EINVAL;
+    }
+
+    return 0;
+}
+
 size_t __tfm_cpa_trace_size(struct trace_set *ts)
 {
     return ts->title_size + ts->num_samples * sizeof(float);
@@ -81,10 +114,12 @@ int __tfm_cpa_data(struct trace *t, uint8_t **data)
 int __tfm_cpa_samples(struct trace *t, float **samples)
 {
     int i, j, ret;
+    int count = 0;
 
     struct trace *curr;
     uint8_t *curr_data;
-    float *pm, *curr_samples;
+    float *pm, *curr_samples, *progress;
+    char progress_title[CPA_REPORT_TITLE_SIZE];
 
     struct accumulator *acc;
     struct tfm_cpa *tfm = TFM_DATA(t->owner->tfm);
@@ -105,7 +140,7 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
 
     for(i = 0; i < ts_num_traces(t->owner->prev); i++)
     {
-        if(i % 100000 == 0)
+        if(i % CPA_REPORT_INTERVAL == 0)
             warn("CPA %li working on trace %i\n", TRACE_IDX(t), i);
 
         ret = trace_get(t->owner->prev, &curr, i, true);
@@ -150,6 +185,40 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
             {
                 err("Failed to accumulate index %i\n", i);
                 goto __free_trace;
+            }
+
+            count++;
+            if(count % CPA_REPORT_INTERVAL == 0)
+            {
+                if(t->owner->tfm_next)
+                {
+                    ret = stat_get_pearson_all(acc, &progress);
+                    if(ret < 0)
+                    {
+                        err("Failed to get all pearson values from accumulator\n");
+                        goto __free_trace;
+                    }
+
+                    debug("CPA %li pushing intermediate %li\n", TRACE_IDX(t),
+                             TRACE_IDX(t) + ts_num_traces(t->owner) *
+                                            (count / CPA_REPORT_INTERVAL - 1));
+
+                    memset(progress_title, 0, CPA_REPORT_TITLE_SIZE * sizeof(char));
+                    snprintf(progress_title,CPA_REPORT_TITLE_SIZE,
+                             "CPA %li (%i traces)", TRACE_IDX(t), count);
+
+                    ret = t->owner->tfm_next(t->owner->tfm_next_arg, PORT_CPA_PROGRESS, 4,
+                                             TRACE_IDX(t) + ts_num_traces(t->owner) *
+                                                            (count / CPA_REPORT_INTERVAL - 1),
+                                             progress_title, NULL, progress);
+
+                    free(progress);
+                    if(ret < 0)
+                    {
+                        err("Failed to push progress to consumer\n");
+                        goto __free_trace;
+                    }
+                }
             }
         }
         else warn("No samples or data for index %i, skipping\n", i);

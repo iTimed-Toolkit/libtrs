@@ -52,9 +52,13 @@ int ts_open(struct trace_set **ts, const char *path)
         goto __free_headers;
     }
 
+    ts_result->cache = NULL;
+
     ts_result->prev = NULL;
     ts_result->tfm = NULL;
-    ts_result->cache = NULL;
+    ts_result->tfm_data = NULL;
+    ts_result->tfm_next = NULL;
+    ts_result->tfm_next_arg = NULL;
 
     *ts = ts_result;
     return 0;
@@ -132,8 +136,12 @@ int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *
     // link previous set
     ts_result->set_id = __atomic_fetch_add(&gbl_set_index, 1, __ATOMIC_RELAXED);
     ts_result->cache = NULL;
+
     ts_result->prev = prev;
     ts_result->tfm = transform;
+    ts_result->tfm_data = NULL;
+    ts_result->tfm_next = NULL;
+    ts_result->tfm_next_arg = NULL;
 
     debug("Creating transformed trace set with ID %li\n", ts_result->set_id);
 

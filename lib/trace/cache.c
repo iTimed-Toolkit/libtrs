@@ -308,6 +308,7 @@ int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace)
         debug("Set %li was not initialized, cache miss (%li misses total)\n",
               set, ts->cache->misses);
 
+#if COHESIVE_CACHES
         // want to be holding set lock when we leave this
         ret = sem_wait(&curr_set->set_lock);
         if(ret < 0)
@@ -315,6 +316,7 @@ int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace)
             err("Failed to wait on set lock semaphore: %s\n", strerror(errno));
             return -errno;
         }
+#endif
 
         ret = sem_post(&ts->cache->cache_lock);
         if(ret < 0)
@@ -329,9 +331,9 @@ int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace)
     if(ts->cache->accesses % 1000000 == 0)
     {
         warn("Cache for set %li: %li accesses\n\t\t%li hits (%.5f)\n\t\t%li misses (%.5f)\n",
-                ts->set_id, ts->cache->accesses,
-                ts->cache->hits, (float) ts->cache->hits / (float) ts->cache->accesses,
-                ts->cache->misses, (float) ts->cache->misses / (float) ts->cache->accesses);
+             ts->set_id, ts->cache->accesses,
+             ts->cache->hits, (float) ts->cache->hits / (float) ts->cache->accesses,
+             ts->cache->misses, (float) ts->cache->misses / (float) ts->cache->accesses);
     }
 
     ret = sem_post(&ts->cache->cache_lock);
@@ -383,6 +385,15 @@ int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace)
         __sync_fetch_and_add(&ts->cache->misses, 1);
         debug("Cache miss (%li misses total)\n",
               ts->cache->misses);
+
+#if !COHESIVE_CACHES
+        ret = sem_post(&curr_set->set_lock);
+        if(ret < 0)
+        {
+            err("Failed to post to set lock semaphore: %s\n", strerror(errno));
+            return -errno;
+        }
+#endif
     }
 
     return 0;
@@ -452,6 +463,15 @@ int tc_store(struct trace_set *ts, size_t index, struct trace *trace)
         ret = -errno;
         goto __free_tc_set;
     }
+
+#if !COHESIVE_CACHES
+    ret = sem_wait(&curr_set->set_lock);
+    if(ret < 0)
+    {
+        err("Failed to wait on set lock semaphore: %s\n", strerror(errno));
+        return -errno;
+    }
+#endif
 
     // first pass - look for empty slots, pick the one with highest lru value
     way = -1;
@@ -596,15 +616,19 @@ int tc_deref(struct trace_set *ts, size_t index, struct trace *trace)
             }
             else
             {
-                err("Correct trace %li found, but pointer (%p vs %p) does not match -- freeing\n", index,
-                    trace, curr_set->traces[i]);
+                critical("Correct trace %li found, but pointer (%p vs %p) does not match -- freeing\n", index,
+                         trace, curr_set->traces[i]);
                 trace_free_memory(trace);
 
                 ret = sem_post(&curr_set->set_lock);
                 if(ret < 0)
                     return -errno;
 
+#if COHESIVE_CACHES
                 return -EINVAL;
+#else
+                return 0;
+#endif
             }
             break;
         }

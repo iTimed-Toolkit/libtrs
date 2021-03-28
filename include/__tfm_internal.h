@@ -9,6 +9,7 @@ struct trace;
 
 #define ASSIGN_TFM_FUNCS(res, name)                     \
         (res)->init = name ## _init;                    \
+        (res)->init_waiter = name ## _init_waiter;      \
         (res)->trace_size = name ## _trace_size;        \
         (res)->title = name ## _title;                  \
         (res)->data = name ## _data;                    \
@@ -16,11 +17,12 @@ struct trace;
         (res)->exit = name ## _exit;                    \
         (res)->free_title = name ## _free_title;        \
         (res)->free_data = name ## _free_data;          \
-        (res)->free_samples = name ## _free_samples;    \
+        (res)->free_samples = name ## _free_samples;
 
 struct tfm
 {
     int (*init)(struct trace_set *ts);
+    int (*init_waiter)(struct trace_set *ts, int port);
     size_t (*trace_size)(struct trace_set *ts);
 
     int (*title)(struct trace *t, char **title);

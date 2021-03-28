@@ -5,9 +5,8 @@
 #include <stdint.h>
 #include <semaphore.h>
 
-#define OPEN_WITH_MMAP  1
-
-struct list;
+struct trace_set;
+struct trace;
 
 struct trace_set
 {
@@ -18,11 +17,7 @@ struct trace_set
     // size params
     size_t set_id;
     size_t num_samples, num_traces;
-
-    // for new trace sets
-    size_t num_traces_written;
-    size_t prev_next_trace;
-    void *commit_data;
+    size_t trace_start, trace_length;
 
     // commonly used, buffered headers
     size_t title_size, data_size;
@@ -37,16 +32,18 @@ struct trace_set
     } datatype;
     float yscale;
 
-    size_t trace_start, trace_length;
-
     size_t num_headers;
     struct th_data *headers;
+    struct trace_cache *cache;
 
     // for transformations
     struct trace_set *prev;
     struct tfm *tfm;
 
-    struct trace_cache *cache;
+    void *tfm_data;
+    int (*tfm_next)(void *, int port,
+                    int nargs, ...);
+    void *tfm_next_arg;
 };
 
 struct trace
@@ -85,38 +82,24 @@ static log_level_t libtrace_log_level = WARN;
 #define TRACE_IDX(t)  (((t)->start_offset - (t)->owner->trace_start)  / \
                             (t)->owner->trace_length)
 
+/* Trace interface */
 int trace_free_memory(struct trace *t);
+int trace_copy(struct trace **res, struct trace *prev);
 int read_title_from_file(struct trace *t, char **title);
 int read_samples_from_file(struct trace *t, float **samples);
 int read_data_from_file(struct trace *t, uint8_t **data);
 
+/* Header interface */
 int read_headers(struct trace_set *ts);
 int write_default_headers(struct trace_set *ts);
 int write_inherited_headers(struct trace_set *ts);
 int finalize_headers(struct trace_set *ts);
 int free_headers(struct trace_set *ts);
 
+/* Cache interface */
 int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace);
 int tc_store(struct trace_set *ts, size_t index, struct trace *trace);
 int tc_deref(struct trace_set *ts, size_t index, struct trace *trace);
 int tc_free(struct trace_set *ts);
-
-typedef int (*list_comparison_t)(void *node1, void *node2);
-typedef void (*list_print_t)(void *data);
-
-int list_create_node(struct list **node, void *data);
-int list_free_node(struct list *node);
-
-/**
- * list_comparison_t(void *, void *): compare the data from two
- *      different list nodes for ordering purposes. Return positive
- *      if node1 should go before node2, negative if node1 should go
- *      after node2, or 0 if don't care
- */
-int list_link_single(struct list **head, struct list *node, list_comparison_t f);
-int list_unlink_single(struct list **head, struct list *node);
-int list_lookup_single(struct list *head, struct list *node);
-void *list_get_data(struct list *node);
-int list_dump(struct list *head, list_print_t f);
 
 #endif //LIBTRS___TRACE_INTERNAL_H

@@ -14,8 +14,15 @@ struct tfm;
 #define TVLA_FIXED      true
 #define TVLA_RANDOM     false
 
-// IO
+enum
+{
+    PORT_ECHO = 0,
+    PORT_CPA_PROGRESS
+};
+
+// System
 int tfm_save(struct tfm **tfm, char *path_prefix);
+int tfm_wait_on(struct tfm **tfm, int port);
 
 // Analysis
 int tfm_average(struct tfm **tfm, bool per_sample);
@@ -32,7 +39,6 @@ int tfm_static_align(struct tfm **tfm, double confidence,
                      int *ref_samples_lower, int *ref_samples_higher);
 
 // Correlation
-
 int tfm_cpa(struct tfm **tfm,
             int (*power_model)(uint8_t *, int, float *),
             int (*consumer_init)(struct trace_set *, void *),

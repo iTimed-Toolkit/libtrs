@@ -3,8 +3,25 @@
 #include "trace.h"
 #include "__trace_internal.h"
 
+#include "list.h"
+
 #include <string.h>
 #include <errno.h>
+
+int tfm_destroy(struct tfm *tfm)
+{
+    if(!tfm)
+    {
+        err("Invalid transformation\n");
+        return -EINVAL;
+    }
+
+    if(tfm->tfm_data)
+        free(tfm->tfm_data);
+
+    free(tfm);
+    return 0;
+}
 
 int passthrough_title(struct trace *trace, char **title)
 {
