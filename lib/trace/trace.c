@@ -63,7 +63,7 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuff
     if(ts->cache)
     {
         debug("Looking up in cache\n");
-        ret = tc_lookup(ts, index, &t_result);
+        ret = tc_lookup(ts->cache, index, &t_result);
         if(ret < 0)
         {
             err("Failed to lookup trace in cache\n");
@@ -108,7 +108,7 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuff
     if(cache_missed)
     {
         debug("Storing trace %li in the cache\n", index);
-        ret = tc_store(ts, index, t_result);
+        ret = tc_store(ts->cache, index, t_result);
         if(ret < 0)
         {
             err("Failed to store result trace in cache\n");
@@ -188,7 +188,7 @@ int trace_free(struct trace *t)
     {
         debug("Dereferencing trace in cache\n");
         // this will cause a free if it needs to
-        return tc_deref(t->owner, TRACE_IDX(t), t);
+        return tc_deref(t->owner->cache, TRACE_IDX(t), t);
     }
     else
     {

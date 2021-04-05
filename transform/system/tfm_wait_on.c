@@ -13,7 +13,7 @@
 
 struct tfm_wait_on
 {
-    int port;
+    port_t port;
 };
 
 struct __trace_entry
@@ -43,14 +43,14 @@ struct __waiter_entry
     struct list_head list;
     sem_t lock;
 
-    int port;
+    port_t port;
     struct trace_set *set;
 
     struct list_head traces_available;
     struct list_head traces_wanted;
 };
 
-int __tfm_wait_on_push(void *arg, int port, int nargs, ...)
+int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
 {
     int ret;
     va_list arg_list;
@@ -225,7 +225,7 @@ int __tfm_wait_on_init(struct trace_set *ts)
             return -EINVAL;
         }
 
-        queue = ts->tfm_data;
+        queue = ts->prev->tfm_next_arg;
     }
     else
     {
@@ -276,7 +276,7 @@ __free_entry:
     return ret;
 }
 
-int __tfm_wait_on_init_waiter(struct trace_set *ts, int port)
+int __tfm_wait_on_init_waiter(struct trace_set *ts, port_t port)
 {
     err("No ports to register\n");
     return -EINVAL;
@@ -288,7 +288,7 @@ size_t __tfm_wait_on_trace_size(struct trace_set *ts)
 }
 
 int __search_for_entry(struct list_head *queue,
-                       int port, struct trace_set *ts, int index,
+                       port_t port, struct trace_set *ts, int index,
                        struct __trace_entry **res)
 {
     int ret;
@@ -516,7 +516,7 @@ typedef enum
 } tfm_wait_on_kind_t;
 
 int __deref_and_free_entry(struct list_head *queue,
-                           int port, struct trace_set *ts, int index,
+                           port_t port, struct trace_set *ts, int index,
                            tfm_wait_on_kind_t kind)
 {
     int ret;
@@ -656,7 +656,7 @@ void __tfm_wait_on_free_samples(struct trace *t)
         err("Failed to deref and free trace title\n");
 }
 
-int tfm_wait_on(struct tfm **tfm, int port)
+int tfm_wait_on(struct tfm **tfm, port_t port)
 {
     struct tfm *res;
     res = calloc(1, sizeof(struct tfm));

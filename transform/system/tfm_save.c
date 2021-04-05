@@ -315,6 +315,7 @@ int __append_trace_sequential(struct trace *t)
         goto __free_temp;
     }
 
+    fflush(t->owner->ts_file);
     ret = 0;
 __free_temp:
     free(temp);
@@ -464,6 +465,7 @@ void *__commit_thread(void *arg)
                 }
             }
 
+            // todo: sometimes crash here when using tfm_wait and debugging?
             // update global written counter
             __atomic_store(&tfm_data->num_traces_written, &written, __ATOMIC_RELEASE);
 
@@ -630,7 +632,7 @@ __close_ts_file:
     return ret;
 }
 
-int __tfm_save_init_waiter(struct trace_set *ts, int port)
+int __tfm_save_init_waiter(struct trace_set *ts, port_t port)
 {
     err("No ports to register\n");
     return -EINVAL;

@@ -14,18 +14,45 @@ struct tfm;
 #define TVLA_FIXED      true
 #define TVLA_RANDOM     false
 
-enum
+typedef enum
+{
+    BLOCK_MAX,
+    BLOCK_MIN,
+    BLOCK_MAXABS,
+    BLOCK_MINABS
+} block_t;
+
+typedef enum
 {
     PORT_ECHO = 0,
-    PORT_CPA_PROGRESS
+    PORT_CPA_PROGRESS,
+    PORT_CPA_SPLIT_PM,
+    PORT_CPA_SPLIT_PM_PROGRESS
+} port_t;
+
+struct viz_args
+{
+    int rows, cols, plots, samples;
+    float rate;
+
+    enum
+    {
+        ROWS,
+        COLS,
+        PLOTS
+    } fill_order[3];
 };
 
 // System
 int tfm_save(struct tfm **tfm, char *path_prefix);
-int tfm_wait_on(struct tfm **tfm, int port);
+int tfm_wait_on(struct tfm **tfm, port_t port);
+int tfm_visualize(struct tfm **tfm, struct viz_args *args);
 
 // Analysis
 int tfm_average(struct tfm **tfm, bool per_sample);
+
+int tfm_block_maxabs(struct tfm **tfm, bool per_sample, int blocksize);
+int tfm_block_select(struct tfm **tfm, int blocksize, block_t block);
 
 // Traces
 int tfm_split_tvla(struct tfm **tfm, bool which);
@@ -49,6 +76,8 @@ int tfm_io_correlation(struct tfm **tfm, int granularity, int num);
 
 typedef enum
 {
+    AES128_R0_R1_HD_NOMC,
+    AES128_R0_HW_SBOXOUT,
     AES128_R10_HW_SBOXIN,
 } aes_leakage_t;
 

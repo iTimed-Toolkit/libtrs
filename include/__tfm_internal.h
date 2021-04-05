@@ -4,6 +4,8 @@
 struct trace_set;
 struct trace;
 
+#include "transform.h"
+
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -22,7 +24,7 @@ struct trace;
 struct tfm
 {
     int (*init)(struct trace_set *ts);
-    int (*init_waiter)(struct trace_set *ts, int port);
+    int (*init_waiter)(struct trace_set *ts, port_t port);
     size_t (*trace_size)(struct trace_set *ts);
 
     int (*title)(struct trace *t, char **title);

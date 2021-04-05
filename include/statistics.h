@@ -1,7 +1,7 @@
 #ifndef LIBTRS_STATISTICS_H
 #define LIBTRS_STATISTICS_H
 
-#define USE_GPU     0
+/* accumulators */
 struct accumulator;
 
 int stat_create_single(struct accumulator **acc);
@@ -31,5 +31,9 @@ int stat_get_mean_all(struct accumulator *acc, float **res);
 int stat_get_dev_all(struct accumulator *acc, float **res);
 int stat_get_cov_all(struct accumulator *acc, float **res);
 int stat_get_pearson_all(struct accumulator *acc, float **res);
+
+/* oneshot */
+int stat_oneshot_max(float *max, float *val, int len);
+int stat_oneshot_min(float *min, float *val, int len);
 
 #endif //LIBTRS_STATISTICS_H

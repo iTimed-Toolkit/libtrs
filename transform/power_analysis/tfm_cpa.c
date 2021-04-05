@@ -10,12 +10,12 @@
 
 #define TFM_DATA(tfm)   ((struct tfm_cpa *) (tfm)->tfm_data)
 #define CPA_REPORT_INTERVAL     100000
-#define CPA_REPORT_TITLE_SIZE   128
+#define CPA_TITLE_SIZE          128
 
 struct tfm_cpa
 {
     int (*power_model)(uint8_t *data, int index, float *res);
-    uint64_t num_indices;
+    int num_models;
 
     int (*consumer_init)(struct trace_set *, void *);
     int (*consumer_exit)(struct trace_set *, void *);
@@ -48,9 +48,9 @@ int __tfm_cpa_init(struct trace_set *ts)
     }
 
     if(ts->num_samples == ts->prev->num_samples)
-        tfm->num_indices = 1;
+        tfm->num_models = 1;
     else if(ts->num_samples % ts->prev->num_samples == 0)
-        tfm->num_indices = (ts->num_samples / ts->prev->num_samples);
+        tfm->num_models = (int) (ts->num_samples / ts->prev->num_samples);
     else
     {
         err("Invalid number of multi-indices provided by consumer\n");
@@ -61,14 +61,16 @@ int __tfm_cpa_init(struct trace_set *ts)
     return 0;
 }
 
-int __tfm_cpa_init_waiter(struct trace_set *ts, int port)
+int __tfm_cpa_init_waiter(struct trace_set *ts, port_t port)
 {
+    struct tfm_cpa *tfm;
     if(!ts)
     {
         err("Invalid trace set\n");
         return -EINVAL;
     }
 
+    tfm = TFM_DATA(ts->prev->tfm);
     switch(port)
     {
         case PORT_CPA_PROGRESS:
@@ -76,7 +78,7 @@ int __tfm_cpa_init_waiter(struct trace_set *ts, int port)
             ts->output_offs = ts->output_len =
             ts->key_offs = ts->key_len = 0;
 
-            ts->title_size = CPA_REPORT_TITLE_SIZE;
+            ts->title_size = CPA_TITLE_SIZE;
             ts->data_size = 0;
             ts->datatype = DT_FLOAT;
             ts->yscale = 1.0f;
@@ -84,6 +86,35 @@ int __tfm_cpa_init_waiter(struct trace_set *ts, int port)
             ts->num_traces = ts_num_traces(ts->prev) *
                              ts_num_traces(ts->prev->prev) / CPA_REPORT_INTERVAL;
             ts->num_samples = ts_num_samples(ts->prev);
+            break;
+
+        case PORT_CPA_SPLIT_PM:
+            ts->input_offs = ts->input_len =
+            ts->output_offs = ts->output_len =
+            ts->key_offs = ts->key_len = 0;
+
+            ts->title_size = CPA_TITLE_SIZE;
+            ts->data_size = 0;
+            ts->datatype = DT_FLOAT;
+            ts->yscale = 1.0f;
+
+            ts->num_traces = tfm->num_models * ts_num_traces(ts->prev);
+            ts->num_samples = ts_num_samples(ts->prev) / tfm->num_models;
+            break;
+
+        case PORT_CPA_SPLIT_PM_PROGRESS:
+            ts->input_offs = ts->input_len =
+            ts->output_offs = ts->output_len =
+            ts->key_offs = ts->key_len = 0;
+
+            ts->title_size = CPA_TITLE_SIZE;
+            ts->data_size = 0;
+            ts->datatype = DT_FLOAT;
+            ts->yscale = 1.0f;
+
+            ts->num_traces = tfm->num_models * ts_num_traces(ts->prev) *
+                             ts_num_traces(ts->prev->prev) / CPA_REPORT_INTERVAL;
+            ts->num_samples = ts_num_samples(ts->prev) / tfm->num_models;
             break;
 
         default:
@@ -118,20 +149,20 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
 
     struct trace *curr;
     uint8_t *curr_data;
-    float *pm, *curr_samples, *progress;
-    char progress_title[CPA_REPORT_TITLE_SIZE];
+    float *pm, *curr_samples, *pearson;
+    char title[CPA_TITLE_SIZE];
 
     struct accumulator *acc;
     struct tfm_cpa *tfm = TFM_DATA(t->owner->tfm);
 
-    pm = calloc(tfm->num_indices, sizeof(float));
+    pm = calloc(tfm->num_models, sizeof(float));
     if(!pm)
     {
         err("Failed to allocate power model array\n");
         return -ENOMEM;
     }
 
-    ret = stat_create_dual_array(&acc, ts_num_samples(t->owner->prev), tfm->num_indices);
+    ret = stat_create_dual_array(&acc, ts_num_samples(t->owner->prev), tfm->num_models);
     if(ret < 0)
     {
         err("Failed to create accumulator\n");
@@ -169,9 +200,11 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
 
         if(curr_samples && curr_data)
         {
-            for(j = 0; j < tfm->num_indices; j++)
+            for(j = 0; j < tfm->num_models; j++)
             {
-                ret = tfm->power_model(curr_data, TRACE_IDX(t) + j, &pm[j]);
+                ret = tfm->power_model(curr_data,
+                                       (size_t) (tfm->num_models *
+                                                 TRACE_IDX(t) + j), &pm[j]);
                 if(ret < 0)
                 {
                     err("Failed to calculate power model for trace %i\n", i);
@@ -192,7 +225,7 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
             {
                 if(t->owner->tfm_next)
                 {
-                    ret = stat_get_pearson_all(acc, &progress);
+                    ret = stat_get_pearson_all(acc, &pearson);
                     if(ret < 0)
                     {
                         err("Failed to get all pearson values from accumulator\n");
@@ -200,24 +233,43 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
                     }
 
                     debug("CPA %li pushing intermediate %li\n", TRACE_IDX(t),
-                             TRACE_IDX(t) + ts_num_traces(t->owner) *
-                                            (count / CPA_REPORT_INTERVAL - 1));
+                          TRACE_IDX(t) + ts_num_traces(t->owner) *
+                                         (count / CPA_REPORT_INTERVAL - 1));
 
-                    memset(progress_title, 0, CPA_REPORT_TITLE_SIZE * sizeof(char));
-                    snprintf(progress_title,CPA_REPORT_TITLE_SIZE,
+                    memset(title, 0, CPA_TITLE_SIZE * sizeof(char));
+                    snprintf(title, CPA_TITLE_SIZE,
                              "CPA %li (%i traces)", TRACE_IDX(t), count);
 
                     ret = t->owner->tfm_next(t->owner->tfm_next_arg, PORT_CPA_PROGRESS, 4,
                                              TRACE_IDX(t) + ts_num_traces(t->owner) *
                                                             (count / CPA_REPORT_INTERVAL - 1),
-                                             progress_title, NULL, progress);
-
-                    free(progress);
+                                             title, NULL, pearson);
                     if(ret < 0)
                     {
-                        err("Failed to push progress to consumer\n");
+                        err("Failed to push pearson to consumer\n");
                         goto __free_trace;
                     }
+
+                    for(j = 0; j < tfm->num_models; j++)
+                    {
+                        memset(title, 0, CPA_TITLE_SIZE * sizeof(char));
+                        snprintf(title, CPA_TITLE_SIZE,
+                                 "CPA %li pm %02X (%i traces)", TRACE_IDX(t), j, count);
+
+                        ret = t->owner->tfm_next(t->owner->tfm_next_arg, PORT_CPA_SPLIT_PM_PROGRESS, 4,
+                                                 tfm->num_models * ts_num_traces(t->owner) *
+                                                 (count / CPA_REPORT_INTERVAL - 1) +
+                                                 tfm->num_models * TRACE_IDX(t) + j,
+                                                 title, NULL,
+                                                 &pearson[j * ts_num_samples(t->owner) / tfm->num_models]);
+                        if(ret < 0)
+                        {
+                            err("Failed to push pearson to consumer\n");
+                            goto __free_trace;
+                        }
+                    }
+
+                    free(pearson);
                 }
             }
         }
@@ -227,11 +279,31 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
         curr = NULL;
     }
 
-    ret = stat_get_pearson_all(acc, samples);
+    ret = stat_get_pearson_all(acc, &pearson);
     if(ret < 0)
     {
         err("Failed to get all pearson values from accumulator\n");
         *samples = NULL;
+    }
+    else
+    {
+        for(j = 0; j < tfm->num_models; j++)
+        {
+            memset(title, 0, CPA_TITLE_SIZE * sizeof(char));
+            snprintf(title, CPA_TITLE_SIZE,
+                     "CPA %li pm %02X", TRACE_IDX(t), j);
+
+            ret = t->owner->tfm_next(t->owner->tfm_next_arg, PORT_CPA_SPLIT_PM, 4,
+                                     tfm->num_models * TRACE_IDX(t) + j,
+                                     title, NULL, &pearson[j * ts_num_samples(t->owner) / tfm->num_models]);
+            if(ret < 0)
+            {
+                err("Failed to push pearson to consumer\n");
+                goto __free_trace;
+            }
+        }
+
+        *samples = pearson;
     }
 
 __free_trace:

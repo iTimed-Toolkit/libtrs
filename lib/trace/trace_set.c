@@ -98,7 +98,7 @@ int ts_close(struct trace_set *ts)
     }
 
     if(ts->cache)
-        tc_free(ts);
+        tc_free(ts->cache);
 
     if(ts->headers)
         free_headers(ts);

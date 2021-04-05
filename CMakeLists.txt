@@ -10,20 +10,31 @@ add_library(trace lib/trace/trace_set.c lib/trace/cache.c
         lib/trace/header.c lib/trace/trace.c lib/trace/render.c)
 target_link_libraries(trace pthread)
 
+set(STATS_USE_GPU   0)
 add_library(stats lib/stats/single.c lib/stats/dual.c
-        lib/stats/single_array.c lib/stats/dual_array.c
-        lib/stats/stats.c
-        lib/stats/single_array_gpu.cu)
+            lib/stats/single_array.c lib/stats/dual_array.c
+            lib/stats/stats.c lib/stats/oneshot.c)
+
+if(${STATS_USE_GPU} EQUAL 1)
+    target_sources(stats PRIVATE lib/stats/gpu_single_array.cu
+                    lib/stats/gpu_dual_array.cu)
+endif()
+
+target_compile_options(stats PRIVATE "-DUSE_GPU=${STATS_USE_GPU}")
 target_link_libraries(stats m)
 
 add_library(transform transform/tfm.c transform/tfm_align.c
         transform/tfm_average.c transform/tfm_split_tvla.c
         transform/power_analysis/tfm_cpa.c transform/tfm_nop.c transform/system/tfm_save.c
         transform/power_analysis/tfm_io_correlation.c transform/tfm_narrow.c
-        transform/power_analysis/tfm_analyze_aes.c transform/system/tfm_wait_on.c)
+        transform/power_analysis/tfm_analyze_aes.c transform/system/tfm_wait_on.c transform/system/tfm_visualize.c
+        transform/block/tfm_block_maxabs.c transform/block/tfm_block_select.c)
 target_link_libraries(transform pthread crypto m stats)
 
-add_executable(libtrs_test_cpu test.c aes.c include/list.h)
+add_executable(libtrace_evaluate main.c)
+target_link_libraries(libtrace_evaluate trace transform)
+
+add_executable(libtrs_test_cpu test.c aes.c)
 target_link_libraries(libtrs_test_cpu trace transform)
 
 add_executable(test_accumulate test_accumulators.c)

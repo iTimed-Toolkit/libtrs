@@ -10,6 +10,7 @@
 
 int stat_create_single_array(struct accumulator **acc, int num)
 {
+    int ret;
     struct accumulator *res;
     if(!acc)
     {
@@ -33,6 +34,7 @@ int stat_create_single_array(struct accumulator **acc, int num)
     if(!res->m.a)
     {
         err("Failed to allocate single m array\n");
+        ret = -ENOMEM;
         goto __free_acc;
     }
 
@@ -40,10 +42,20 @@ int stat_create_single_array(struct accumulator **acc, int num)
     if(!res->s.a)
     {
         err("Failed to allocate single s array\n");
+        ret = -ENOMEM;
         goto __free_acc;
     }
 
     res->cov.f = 0;
+
+#if USE_GPU
+    ret = __init_single_array_gpu(res, num);
+    if(ret < 0)
+    {
+        err("Failed to init GPU variables\n");
+        goto __free_acc;
+    }
+#endif
 
     *acc = res;
     return 0;
@@ -56,7 +68,7 @@ __free_acc:
         free(res->s.a);
 
     free(res);
-    return -ENOMEM;
+    return ret;
 }
 
 int __accumulate_single_array(struct accumulator *acc, float *val, int len)
@@ -143,7 +155,11 @@ int stat_accumulate_single_array(struct accumulator *acc, float *val, int len)
         return -EINVAL;
     }
 
+#if USE_GPU
+    __accumulate_single_array_gpu(acc, val, len);
+#else
     return __accumulate_single_array(acc, val, len);
+#endif
 }
 
 int stat_accumulate_single_array_many(struct accumulator *acc, float *val, int len, int num)
@@ -189,6 +205,10 @@ int __get_mean_single_array(struct accumulator *acc, int index, float *res)
         return -EINVAL;
     }
 
+#if USE_GPU
+    __sync_single_array_gpu(acc);
+#endif
+
     *res = acc->m.a[index];
     return 0;
 }
@@ -200,6 +220,10 @@ int __get_dev_single_array(struct accumulator *acc, int index, float *res)
         err("Invalid index for accumulator\n");
         return -EINVAL;
     }
+
+#if USE_GPU
+    __sync_single_array_gpu(acc);
+#endif
 
     *res = sqrtf(acc->s.a[index] / (acc->count - 1));
     return 0;
@@ -213,6 +237,10 @@ int __get_mean_single_array_all(struct accumulator *acc, float **res)
         err("Failed to allocate result\n");
         return -ENOMEM;
     }
+
+#if USE_GPU
+    __sync_single_array_gpu(acc);
+#endif
 
     memcpy(result, acc->m.a, acc->dim0 * sizeof(float));
     *res = result;
@@ -234,6 +262,10 @@ int __get_dev_single_array_all(struct accumulator *acc, float **res)
         err("Failed to allocate result\n");
         return -ENOMEM;
     }
+
+#if USE_GPU
+    __sync_single_array_gpu(acc);
+#endif
 
     count = acc->count - 1;
     IF_HAVE_128(count_ = _mm_broadcast_ss(&count));

@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <semaphore.h>
 
+struct trace_cache;
 struct trace_set;
 struct trace;
 
@@ -97,9 +98,10 @@ int finalize_headers(struct trace_set *ts);
 int free_headers(struct trace_set *ts);
 
 /* Cache interface */
-int tc_lookup(struct trace_set *ts, size_t index, struct trace **trace);
-int tc_store(struct trace_set *ts, size_t index, struct trace *trace);
-int tc_deref(struct trace_set *ts, size_t index, struct trace *trace);
-int tc_free(struct trace_set *ts);
+int tc_cache_manual(struct trace_cache **cache, size_t id, size_t nsets, size_t nways);
+int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace);
+int tc_store(struct trace_cache *cache, size_t index, struct trace *trace);
+int tc_deref(struct trace_cache *cache, size_t index, struct trace *trace);
+int tc_free(struct trace_cache *cache);
 
 #endif //LIBTRS___TRACE_INTERNAL_H

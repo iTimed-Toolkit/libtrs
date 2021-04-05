@@ -37,7 +37,7 @@ int __tfm_split_tvla_init(struct trace_set *ts)
     return 0;
 }
 
-int __tfm_split_tvla_init_waiter(struct trace_set *ts, int port)
+int __tfm_split_tvla_init_waiter(struct trace_set *ts, port_t port)
 {
     err("No ports to register\n");
     return -EINVAL;

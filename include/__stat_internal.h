@@ -4,6 +4,12 @@
 #include "statistics.h"
 #include <immintrin.h>
 
+#define ACCUMULATOR(name)   \
+    union {                 \
+        float f;            \
+        float *a;           \
+    } name;
+
 // structs
 struct accumulator
 {
@@ -18,26 +24,14 @@ struct accumulator
     int dim0, dim1;
     float count;
 
-    union
-    {
-        float f;
-        float *a;
-    } m;
-
-    union
-    {
-        float f;
-        float *a;
-    } s;
-
-    union
-    {
-        float f;
-        float *a;
-    } cov;
+    ACCUMULATOR(m);
+    ACCUMULATOR(s);
+    ACCUMULATOR(cov);
+    ACCUMULATOR(max);
+    ACCUMULATOR(min);
 
 #if USE_GPU
-    float *m_gpu, *s_gpu, *cov_gpu;
+    void *gpu_vars;
 #endif
 };
 
@@ -53,7 +47,6 @@ int __get_dev_dual_array(struct accumulator *acc, int index, float *res);
 
 int __get_cov_dual(struct accumulator *acc, int index, float *res);
 int __get_cov_dual_array(struct accumulator *acc, int index, float *res);
-
 int __get_pearson_dual(struct accumulator *acc, int index, float *res);
 int __get_pearson_dual_array(struct accumulator *acc, int index, float *res);
 
@@ -69,9 +62,18 @@ int __get_dev_dual_array_all(struct accumulator *acc,  float **res);
 
 int __get_cov_dual_all(struct accumulator *acc,  float **res);
 int __get_cov_dual_array_all(struct accumulator *acc,  float **res);
-
 int __get_pearson_dual_all(struct accumulator *acc,  float **res);
 int __get_pearson_dual_array_all(struct accumulator *acc,  float **res);
+
+#if USE_GPU
+int __init_single_array_gpu(struct accumulator *acc, int num);
+int __accumulate_single_array_gpu(struct accumulator *acc, float *val, int len);
+int __sync_single_array_gpu(struct accumulator *acc);
+
+int __init_dual_array_gpu(struct accumulator *acc, int num);
+int __accumulate_dual_array_gpu(struct accumulator *acc, float *val, int len);
+int __sync_dual_array_gpu(struct accumulator *acc);
+#endif
 
 // loop wrapper macros
 
@@ -167,6 +169,12 @@ int __get_pearson_dual_array_all(struct accumulator *acc,  float **res);
 
 #define avx_sqrt_ps(type, arg) \
     __defer_avx_func(type, sqrt_ps, arg)
+
+#define avx_max_ps(type, arg1, arg2) \
+    __defer_avx_func(type, max_ps, arg1, arg2)
+
+#define avx_min_ps(type, arg1, arg2) \
+    __defer_avx_func(type, min_ps, arg1, arg2)
 
 // high-level components
 
@@ -278,5 +286,29 @@ int __get_pearson_dual_array_all(struct accumulator *acc,  float **res);
     calc_new_cov(type, cov_name, val0_name, m0_name,    \
                     val1_ptr, m1_ptr)                   \
     store_cov(type, cov_name, cov_ptr)
+
+#define accumulate_max(type, val_name, val_ptr,         \
+                            max_name, max_ptr)          \
+    avx_var(type, val_name) =                           \
+        avx_loadu_ps(type, val_ptr);                    \
+    avx_var(type, max_name) =                           \
+        avx_loadu_ps(type, max_ptr);                    \
+    avx_var(type, max_name) =                           \
+        avx_max_ps(type, avx_var(type, max_name),       \
+                    avx_var(type, val_name));           \
+    avx_storeu_ps(type, max_ptr,                        \
+                    avx_var(type, max_name));
+
+#define accumulate_min(type, val_name, val_ptr,         \
+                            min_name, min_ptr)          \
+    avx_var(type, val_name) =                           \
+        avx_loadu_ps(type, val_ptr);                    \
+    avx_var(type, min_name) =                           \
+        avx_loadu_ps(type, min_ptr);                    \
+    avx_var(type, min_name) =                           \
+        avx_min_ps(type, avx_var(type, min_name),       \
+                    avx_var(type, val_name));           \
+    avx_storeu_ps(type, min_ptr,                        \
+                    avx_var(type, min_name));
 
 #endif //LIBTRS___STAT_INTERNAL_H
