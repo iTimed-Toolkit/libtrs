@@ -91,6 +91,15 @@ int tfm_io_correlation(struct tfm **tfm, int granularity, int num)
     struct tfm_io_correlation_arg *arg;
     int (*model)(uint8_t *, int, float *);
 
+    struct cpa_args cpa_args = {
+            .power_model = NULL,
+            .num_models = 1,
+            .consumer_init = tfm_io_correlation_init,
+            .consumer_exit = tfm_io_correlation_exit,
+            .progress_title = NULL,
+            .init_args = NULL
+    };
+
     switch(granularity)
     {
         case 8:
@@ -128,9 +137,10 @@ int tfm_io_correlation(struct tfm **tfm, int granularity, int num)
     arg->granularity = granularity;
     arg->num = num;
 
-    ret = tfm_cpa(tfm, model,
-                  tfm_io_correlation_init,
-                  tfm_io_correlation_exit, arg);
+    cpa_args.power_model = model;
+    cpa_args.init_args = arg;
+
+    ret = tfm_cpa(tfm, &cpa_args);
     if(ret < 0)
     {
         err("Failed to initialize generic CPA transform\n");

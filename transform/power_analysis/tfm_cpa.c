@@ -8,24 +8,14 @@
 #include <string.h>
 #include <errno.h>
 
-#define TFM_DATA(tfm)   ((struct tfm_cpa *) (tfm)->tfm_data)
+#define TFM_DATA(tfm)   ((struct cpa_args *) (tfm)->tfm_data)
 #define CPA_REPORT_INTERVAL     100000
 #define CPA_TITLE_SIZE          128
-
-struct tfm_cpa
-{
-    int (*power_model)(uint8_t *data, int index, float *res);
-    int num_models;
-
-    int (*consumer_init)(struct trace_set *, void *);
-    int (*consumer_exit)(struct trace_set *, void *);
-    void *init_args;
-};
 
 int __tfm_cpa_init(struct trace_set *ts)
 {
     int ret;
-    struct tfm_cpa *tfm = TFM_DATA(ts->tfm);
+    struct cpa_args *tfm = TFM_DATA(ts->tfm);
 
     ts->input_offs = ts->input_len =
     ts->output_offs = ts->output_len =
@@ -63,7 +53,7 @@ int __tfm_cpa_init(struct trace_set *ts)
 
 int __tfm_cpa_init_waiter(struct trace_set *ts, port_t port)
 {
-    struct tfm_cpa *tfm;
+    struct cpa_args *tfm;
     if(!ts)
     {
         err("Invalid trace set\n");
@@ -153,7 +143,7 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
     char title[CPA_TITLE_SIZE];
 
     struct accumulator *acc;
-    struct tfm_cpa *tfm = TFM_DATA(t->owner->tfm);
+    struct cpa_args *tfm = TFM_DATA(t->owner->tfm);
 
     pm = calloc(tfm->num_models, sizeof(float));
     if(!pm)
@@ -253,8 +243,10 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
                     for(j = 0; j < tfm->num_models; j++)
                     {
                         memset(title, 0, CPA_TITLE_SIZE * sizeof(char));
-                        snprintf(title, CPA_TITLE_SIZE,
-                                 "CPA %li pm %02X (%i traces)", TRACE_IDX(t), j, count);
+
+                        tfm->progress_title(title, CPA_TITLE_SIZE,
+                                            tfm->num_models * TRACE_IDX(t) + j,
+                                            count);
 
                         ret = t->owner->tfm_next(t->owner->tfm_next_arg, PORT_CPA_SPLIT_PM_PROGRESS, 4,
                                                  tfm->num_models * ts_num_traces(t->owner) *
@@ -273,7 +265,7 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
                 }
             }
         }
-        else warn("No samples or data for index %i, skipping\n", i);
+        else debug("No samples or data for index %i, skipping\n", i);
 
         trace_free(curr);
         curr = NULL;
@@ -290,8 +282,10 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
         for(j = 0; j < tfm->num_models; j++)
         {
             memset(title, 0, CPA_TITLE_SIZE * sizeof(char));
-            snprintf(title, CPA_TITLE_SIZE,
-                     "CPA %li pm %02X", TRACE_IDX(t), j);
+
+            tfm->progress_title(title, CPA_TITLE_SIZE,
+                                tfm->num_models * TRACE_IDX(t) + j,
+                                count);
 
             ret = t->owner->tfm_next(t->owner->tfm_next_arg, PORT_CPA_SPLIT_PM, 4,
                                      tfm->num_models * TRACE_IDX(t) + j,
@@ -320,7 +314,7 @@ __free_pm:
 
 void __tfm_cpa_exit(struct trace_set *ts)
 {
-    struct tfm_cpa *tfm = TFM_DATA(ts->tfm);
+    struct cpa_args *tfm = TFM_DATA(ts->tfm);
     tfm->consumer_exit(ts, tfm->init_args);
 }
 
@@ -335,17 +329,13 @@ void __tfm_cpa_free_samples(struct trace *t)
     free(t->buffered_samples);
 }
 
-int tfm_cpa(struct tfm **tfm,
-            int (*power_model)(uint8_t *, int, float *),
-            int (*consumer_init)(struct trace_set *, void *),
-            int (*consumer_exit)(struct trace_set *, void *),
-            void *init_args)
+int tfm_cpa(struct tfm **tfm, struct cpa_args *args)
 {
     struct tfm *res;
 
-    if(!power_model || !consumer_init)
+    if(!tfm || !args)
     {
-        err("Invalid power model or consumer initialization function\n");
+        err("Invalid transformation or cpa args\n");
         return -EINVAL;
     }
 
@@ -355,18 +345,14 @@ int tfm_cpa(struct tfm **tfm,
 
     ASSIGN_TFM_FUNCS(res, __tfm_cpa);
 
-    res->tfm_data = calloc(1, sizeof(struct tfm_cpa));
+    res->tfm_data = calloc(1, sizeof(struct cpa_args));
     if(!res->tfm_data)
     {
         free(res);
         return -ENOMEM;
     }
 
-    TFM_DATA(res)->power_model = power_model;
-    TFM_DATA(res)->consumer_init = consumer_init;
-    TFM_DATA(res)->consumer_exit = consumer_exit;
-    TFM_DATA(res)->init_args = init_args;
-
+    memcpy(res->tfm_data, args, sizeof(struct cpa_args));
     *tfm = res;
     return 0;
 }

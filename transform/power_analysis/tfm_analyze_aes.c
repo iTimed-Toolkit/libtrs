@@ -97,8 +97,8 @@ static inline uint8_t hamming_distance(uint8_t n0, uint8_t n1)
 
 int aes128_round10_hw_sbox_in(uint8_t *data, int index, float *res)
 {
-    int key_index = (index / PMS_PER_THREAD);
-    uint8_t key_guess = (index % PMS_PER_THREAD), state;
+    int key_index = (index / 256);
+    uint8_t key_guess = (index % 256), state;
 
     state = data[16 + shift_rows_inv[key_index]] ^ key_guess;
 
@@ -119,8 +119,8 @@ int aes128_round10_hw_sbox_in_verify(uint8_t *data, int index, float *res)
 
 int aes128_round0_hw_sbox_out(uint8_t *data, int index, float *res)
 {
-    int key_index = (index / PMS_PER_THREAD);
-    uint8_t key_guess = (index % PMS_PER_THREAD), state;
+    int key_index = (index / 256);
+    uint8_t key_guess = (index % 256), state;
 
     state = data[key_index] ^ key_guess;
     state = sbox[state >> 4u][state & 0xfu];
@@ -141,8 +141,8 @@ int aes128_round0_hw_sbox_out_verify(uint8_t *data, int index, float *res)
 
 int aes128_round0_round1_hd(uint8_t *data, int index, float *res)
 {
-    int key_index = (index / PMS_PER_THREAD);
-    uint8_t key_guess = (index % PMS_PER_THREAD), state;
+    int key_index = (index / 256);
+    uint8_t key_guess = (index % 256), state;
 
     state = data[key_index] ^ key_guess;
     state = sbox[state >> 4u][state & 0xfu];
@@ -216,11 +216,28 @@ int tfm_analyze_aes_exit(struct trace_set *ts, void *arg)
     return 0;
 }
 
+void tfm_analyze_aes_progress_title(char *dst, int len, size_t index, int count)
+{
+    size_t key_index = (index / 256);
+    uint8_t key_guess = (index % 256);
+
+    snprintf(dst, len, "CPA %li pm %02X (%i traces)", key_index, key_guess, count);
+}
+
 int tfm_analyze_aes(struct tfm **tfm, bool verify_data, aes_leakage_t leakage_model)
 {
     int ret;
     struct tfm_analyze_aes_arg *arg;
     int (*model)(uint8_t *, int, float *);
+
+    struct cpa_args cpa_args = {
+            .power_model = NULL,
+            .num_models = PMS_PER_THREAD,
+            .consumer_init = tfm_analyze_aes_init,
+            .consumer_exit = tfm_analyze_aes_exit,
+            .progress_title = tfm_analyze_aes_progress_title,
+            .init_args = NULL
+    };
 
     switch(leakage_model)
     {
@@ -252,10 +269,10 @@ int tfm_analyze_aes(struct tfm **tfm, bool verify_data, aes_leakage_t leakage_mo
     }
 
     arg->leakage_model = leakage_model;
-    ret = tfm_cpa(tfm, model,
-                  tfm_analyze_aes_init,
-                  tfm_analyze_aes_exit,
-                  arg);
+
+    cpa_args.power_model = model;
+    cpa_args.init_args = arg;
+    ret = tfm_cpa(tfm, &cpa_args);
 
     if(ret < 0)
     {

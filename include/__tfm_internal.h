@@ -47,4 +47,17 @@ void passthrough_free_title(struct trace *t);
 void passthrough_free_data(struct trace *t);
 void passthrough_free_samples(struct trace *t);
 
+struct cpa_args
+{
+    int (*power_model)(uint8_t *, int, float *);
+    int num_models;
+
+    int (*consumer_init)(struct trace_set *, void *);
+    int (*consumer_exit)(struct trace_set *, void *);
+    void (*progress_title)(char *, int, size_t, int);
+    void *init_args;
+};
+
+int tfm_cpa(struct tfm **tfm, struct cpa_args *args);
+
 #endif //LIBTRS___TFM_INTERNAL_H

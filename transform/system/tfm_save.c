@@ -8,7 +8,6 @@
 #include <errno.h>
 #include <string.h>
 #include <pthread.h>
-#include <immintrin.h>
 
 #define TFM_DATA(tfm)   ((struct tfm_save *) (tfm)->tfm_data)
 #define SENTINEL        SIZE_MAX
@@ -144,14 +143,11 @@ int __list_remove_entry(struct __commit_queue *queue,
 
 int __append_trace_sequential(struct trace *t)
 {
-    int i, j;
-    int ret;
+    int i, ret;
     size_t written;
 
     size_t temp_len;
     void *temp = NULL;
-    float curr_batch[8];
-    __m256 curr, scale;
 
     if(!t)
     {
@@ -159,7 +155,6 @@ int __append_trace_sequential(struct trace *t)
         return -EINVAL;
     }
 
-    scale = _mm256_broadcast_ss(&t->owner->yscale);
     switch(t->owner->datatype)
     {
         case DT_BYTE:
@@ -167,26 +162,9 @@ int __append_trace_sequential(struct trace *t)
             temp = calloc(t->owner->num_samples, sizeof(char));
             if(!temp) break;
 
-            for(i = 0; i < ts_num_samples(t->owner);)
-            {
-                if(i + 8 < ts_num_samples(t->owner))
-                {
-                    curr = _mm256_loadu_ps(&t->buffered_samples[i]);
-                    curr = _mm256_div_ps(curr, scale);
-                    _mm256_storeu_ps(curr_batch, curr);
-
-                    for(j = 0; j < 8; j++)
-                        ((char *) temp)[i + j] = (char) curr_batch[j];
-
-                    i += 8;
-                }
-                else
-                {
-                    ((char *) temp)[i] = (char) (t->buffered_samples[i] / t->owner->yscale);
-                    i++;
-                }
-            }
-
+            for(i = 0; i < ts_num_samples(t->owner); i++)
+                ((char *) temp)[i] =
+                        (char) (t->buffered_samples[i] / t->owner->yscale);
             break;
 
         case DT_SHORT:
@@ -194,26 +172,9 @@ int __append_trace_sequential(struct trace *t)
             temp = calloc(t->owner->num_samples, sizeof(short));
             if(!temp) break;
 
-            for(i = 0; i < ts_num_samples(t->owner);)
-            {
-                if(i + 8 < ts_num_samples(t->owner))
-                {
-                    curr = _mm256_loadu_ps(&t->buffered_samples[i]);
-                    curr = _mm256_div_ps(curr, scale);
-                    _mm256_storeu_ps(curr_batch, curr);
-
-                    for(j = 0; j < 8; j++)
-                        ((short *) temp)[i + j] = (short) curr_batch[j];
-
-                    i += 8;
-                }
-                else
-                {
-                    ((short *) temp)[i] = (short) (t->buffered_samples[i] / t->owner->yscale);
-                    i++;
-                }
-            }
-
+            for(i = 0; i < ts_num_samples(t->owner); i++)
+                ((short *) temp)[i] =
+                        (short) (t->buffered_samples[i] / t->owner->yscale);
             break;
 
         case DT_INT:
@@ -221,26 +182,9 @@ int __append_trace_sequential(struct trace *t)
             temp = calloc(t->owner->num_samples, sizeof(int));
             if(!temp) break;
 
-            for(i = 0; i < ts_num_samples(t->owner);)
-            {
-                if(i + 8 < ts_num_samples(t->owner))
-                {
-                    curr = _mm256_loadu_ps(&t->buffered_samples[i]);
-                    curr = _mm256_div_ps(curr, scale);
-                    _mm256_storeu_ps(curr_batch, curr);
-
-                    for(j = 0; j < 8; j++)
-                        ((int *) temp)[i + j] = (int) curr_batch[j];
-
-                    i += 8;
-                }
-                else
-                {
-                    ((int *) temp)[i] = (int) (t->buffered_samples[i] / t->owner->yscale);
-                    i++;
-                }
-            }
-
+            for(i = 0; i < ts_num_samples(t->owner); i++)
+                ((int *) temp)[i] =
+                        (int) (t->buffered_samples[i] / t->owner->yscale);
             break;
 
         case DT_FLOAT:
@@ -248,26 +192,9 @@ int __append_trace_sequential(struct trace *t)
             temp = calloc(t->owner->num_samples, sizeof(float));
             if(!temp) break;
 
-            for(i = 0; i < ts_num_samples(t->owner);)
-            {
-                if(i + 8 < ts_num_samples(t->owner))
-                {
-                    curr = _mm256_loadu_ps(&t->buffered_samples[i]);
-                    curr = _mm256_div_ps(curr, scale);
-                    _mm256_storeu_ps(curr_batch, curr);
-
-                    for(j = 0; j < 8; j++)
-                        ((float *) temp)[i + j] = curr_batch[j];
-
-                    i += 8;
-                }
-                else
-                {
-                    ((float *) temp)[i] = (t->buffered_samples[i] / t->owner->yscale);
-                    i++;
-                }
-            }
-
+            for(i = 0; i < ts_num_samples(t->owner); i++)
+                ((float *) temp)[i] =
+                        (t->buffered_samples[i] / t->owner->yscale);
             break;
 
         case DT_NONE:
