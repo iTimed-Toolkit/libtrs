@@ -148,16 +148,6 @@ int aes128_round0_round1_hd(uint8_t *data, int index, float *res)
     state = sbox[state >> 4u][state & 0xfu];
     *res = (float) hamming_distance(data[shift_rows_inv[key_index]], state);
 
-//    if(key_index == 1)
-//    {
-//        critical("Key index %i, key guess %02X\n", key_index, key_guess);
-//        critical("AddRoundKey: %02X ^ %02X = %02X\n", data[key_index], key_guess, data[key_index] ^ key_guess);
-//        critical("SubBytes: %02X -> %02X\n", data[key_index] ^ key_guess, state);
-//        critical("Hamming distance between %02X and m[%i] = %02X is %02X\n", state,
-//                 shift_rows_inv[key_index], data[shift_rows_inv[key_index]],
-//                 hamming_distance(data[shift_rows_inv[key_index]], state));
-//    }
-
     return 0;
 }
 

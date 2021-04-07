@@ -35,10 +35,10 @@ size_t __find_num_traces(struct trace_set *ts, size_t size_bytes, int assoc)
         if(ntraces % assoc == 0)
         {
             mem_used += sizeof(struct tc_set);
-            mem_used += assoc * sizeof(bool);
-            mem_used += assoc * sizeof(uint8_t);
-            mem_used += assoc * sizeof(uint8_t);
-            mem_used += assoc * sizeof(struct trace *);
+            mem_used += assoc * sizeof(bool);           // valid
+            mem_used += assoc * sizeof(uint8_t);        // lru
+            mem_used += assoc * sizeof(uint8_t);        // refcount
+            mem_used += assoc * sizeof(struct trace *); // traces
         }
 
         mem_used += trace_size;

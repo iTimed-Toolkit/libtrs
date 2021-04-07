@@ -175,7 +175,7 @@ int __accumulate_dual_array(struct accumulator *acc, float *val0, float *val1, i
 
                                       IF_HAVE_128(cov_m_ = _mm_broadcast_ss(&m1_new_scalar));
                                       IF_HAVE_256(cov_m_256 = _mm256_broadcast_ss(&m1_new_scalar));
-                                      IF_HAVE_512(cov_m_512 = _mm512_broadcastss_ps(cov_curr_));
+                                      IF_HAVE_512(cov_m_512 = _mm512_broadcastss_ps(cov_m_));
 
                                       IF_HAVE_128(cov_curr_ = _mm_broadcast_ss(&val1[i + j]));
                                       IF_HAVE_256(cov_curr_256 = _mm256_broadcast_ss(&val1[i + j]));
@@ -218,7 +218,7 @@ int __accumulate_dual_array(struct accumulator *acc, float *val0, float *val1, i
 
                                       IF_HAVE_128(cov_m_ = _mm_broadcast_ss(&m1_new_scalar));
                                       IF_HAVE_256(cov_m_256 = _mm256_broadcast_ss(&m1_new_scalar));
-                                      IF_HAVE_512(cov_m_512 = _mm512_broadcastss_ps(cov_curr_));
+                                      IF_HAVE_512(cov_m_512 = _mm512_broadcastss_ps(cov_m_));
 
                                       IF_HAVE_128(cov_curr_ = _mm_broadcast_ss(&val1[i + j]));
                                       IF_HAVE_256(cov_curr_256 = _mm256_broadcast_ss(&val1[i + j]));
@@ -261,7 +261,7 @@ int __accumulate_dual_array(struct accumulator *acc, float *val0, float *val1, i
 
                                       IF_HAVE_128(cov_m_ = _mm_broadcast_ss(&m1_new_scalar));
                                       IF_HAVE_256(cov_m_256 = _mm256_broadcast_ss(&m1_new_scalar));
-                                      IF_HAVE_512(cov_m_512 = _mm512_broadcastss_ps(cov_curr_));
+                                      IF_HAVE_512(cov_m_512 = _mm512_broadcastss_ps(cov_m_));
 
                                       IF_HAVE_128(cov_curr_ = _mm_broadcast_ss(&val1[i + j]));
                                       IF_HAVE_256(cov_curr_256 = _mm256_broadcast_ss(&val1[i + j]));
@@ -297,7 +297,7 @@ int __accumulate_dual_array(struct accumulator *acc, float *val0, float *val1, i
 
             IF_HAVE_128(cov_m_ = _mm_broadcast_ss(&acc->m.a[len0 + i]));
             IF_HAVE_256(cov_m_256 = _mm256_broadcast_ss(&acc->m.a[len0 + i]));
-            IF_HAVE_512(cov_m_512 = _mm512_broadcastss_ps(cov_curr_));
+            IF_HAVE_512(cov_m_512 = _mm512_broadcastss_ps(cov_m_));
 
             acc->m.a[len0 + i] = m1_new_scalar;
 
