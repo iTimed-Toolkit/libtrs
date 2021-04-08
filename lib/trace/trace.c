@@ -14,7 +14,7 @@ int trace_free_memory(struct trace *t)
         return -EINVAL;
     }
 
-    if(t->owner->prev && t->owner->tfm)
+    if(t->owner && t->owner->prev && t->owner->tfm)
     {
         if(t->buffered_title)
             t->owner->tfm->free_title(t);
@@ -138,41 +138,54 @@ int trace_copy(struct trace **res, struct trace *prev)
         return -ENOMEM;
     }
 
-    t_result->buffered_title = calloc(prev->owner->title_size, sizeof(char));
-    if(!t_result->buffered_title)
+    if(prev->buffered_title)
     {
-        err("Failed to allocate memory for new trace title\n");
-        ret = -ENOMEM;
-        goto __fail_free_result;
-    }
+        t_result->buffered_title = calloc(prev->owner->title_size, sizeof(char));
+        if(!t_result->buffered_title)
+        {
+            err("Failed to allocate memory for new trace title\n");
+            ret = -ENOMEM;
+            goto __fail_free_result;
+        }
 
-    t_result->buffered_data = calloc(prev->owner->data_size, sizeof(uint8_t));
-    if(!t_result->buffered_data)
+        memcpy(t_result->buffered_title,
+               prev->buffered_title,
+               prev->owner->title_size * sizeof(char));
+    }
+    else t_result->buffered_title = NULL;
+
+    if(prev->buffered_data)
     {
-        err("Failed to allocate memory for new trace data\n");
-        ret = -ENOMEM;
-        goto __fail_free_result;
-    }
+        t_result->buffered_data = calloc(prev->owner->data_size, sizeof(uint8_t));
+        if(!t_result->buffered_data)
+        {
+            err("Failed to allocate memory for new trace data\n");
+            ret = -ENOMEM;
+            goto __fail_free_result;
+        }
 
-    t_result->buffered_samples = calloc(prev->owner->num_samples, sizeof(float));
-    if(!t_result->buffered_samples)
+        memcpy(t_result->buffered_data,
+               prev->buffered_data,
+               prev->owner->data_size * sizeof(uint8_t));
+    }
+    else t_result->buffered_data = NULL;
+
+    if(prev->buffered_samples)
     {
-        err("Failed to allocate memory for new trace samples\n");
-        ret = -ENOMEM;
-        goto __fail_free_result;
+        t_result->buffered_samples = calloc(prev->owner->num_samples, sizeof(float));
+        if(!t_result->buffered_samples)
+        {
+            err("Failed to allocate memory for new trace samples\n");
+            ret = -ENOMEM;
+            goto __fail_free_result;
+        }
+
+        memcpy(t_result->buffered_samples,
+               prev->buffered_samples,
+               prev->owner->num_samples * sizeof(float));
+
     }
-
-    memcpy(t_result->buffered_title,
-           prev->buffered_title,
-           prev->owner->title_size * sizeof(char));
-
-    memcpy(t_result->buffered_data,
-           prev->buffered_data,
-           prev->owner->data_size * sizeof(uint8_t));
-
-    memcpy(t_result->buffered_samples,
-           prev->buffered_samples,
-           prev->owner->num_samples * sizeof(float));
+    else t_result->buffered_samples = NULL;
 
     *res = t_result;
     return 0;

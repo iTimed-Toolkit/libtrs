@@ -32,6 +32,7 @@ typedef enum
 
 struct viz_args
 {
+    char *filename;
     int rows, cols, plots, samples;
     float rate;
 

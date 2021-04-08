@@ -78,6 +78,7 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
     pushed_samples = va_arg(arg_list, float *);
     va_end(arg_list);
 
+    debug("got push for port %i, index %i\n", port, index);
     list_for_each_entry(curr_waiter, queue, list)
     {
         if(curr_waiter->port == port)

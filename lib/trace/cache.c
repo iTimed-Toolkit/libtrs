@@ -45,7 +45,7 @@ size_t __find_num_traces(struct trace_set *ts, size_t size_bytes, int assoc)
         ntraces++;
     }
 
-    debug("Cache for trace set %li can fit %li traces\n", ts->set_id, ntraces);
+    critical("Cache for trace set %li can fit %li traces\n", ts->set_id, ntraces);
     return ntraces;
 }
 

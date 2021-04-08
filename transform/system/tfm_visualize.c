@@ -122,7 +122,13 @@ int __tfm_visualize_init(struct trace_set *ts)
     tfm_data->current_base = 0;
     tfm_data->current_count = 0;
 
-    fprintf(tfm_data->gnuplot, "set term x11\n");
+    if(tfm->filename)
+    {
+        fprintf(tfm_data->gnuplot, "set term gif animate giant size 2560x1440");
+        fprintf(tfm_data->gnuplot, "set output \"%s\"", tfm->filename);
+    }
+    else fprintf(tfm_data->gnuplot, "set term x11\n");
+
     fprintf(tfm_data->gnuplot, "set grid\n");
     if(tfm->samples == 0)
     {
@@ -185,87 +191,111 @@ size_t __tfm_visualize_trace_size(struct trace_set *ts)
     return ts_trace_size(ts->prev);
 }
 
-int __redraw_gnuplot(struct trace_set *ts, struct viz_args *tfm,
+int __redraw_gnuplot(struct trace *t, struct viz_args *tfm,
                      struct tfm_visualize_data *tfm_data)
 {
-    int r, c, p, s;
+    int ret, r, c, p, s;
     int index;
 
-    if(IS_MULTIPLOT(tfm))
+    ret = sem_wait(&tfm_data->lock);
+    if(ret < 0)
     {
-        fprintf(tfm_data->gnuplot,
-                "set multiplot layout %i,%i rowsfirst\n",
-                tfm->rows, tfm->cols);
+        err("Failed to lock data buffers\n");
+        return -errno;
     }
 
-    for(r = 0; r < tfm->rows; r++)
+    if(tfm_data->current_count == NUMBER_TRACES(tfm))
     {
-        for(c = 0; c < tfm->cols; c++)
+        if(IS_MULTIPLOT(tfm))
         {
-            fprintf(tfm_data->gnuplot, "plot ");
-            for(p = 0; p < tfm->plots; p++)
+            fprintf(tfm_data->gnuplot,
+                    "set multiplot layout %i,%i rowsfirst\n",
+                    tfm->rows, tfm->cols);
+        }
+
+        for(r = 0; r < tfm->rows; r++)
+        {
+            for(c = 0; c < tfm->cols; c++)
             {
-                index = __plot_indices(tfm, r, c, p);
-                if(tfm_data->current_valid[index])
+                fprintf(tfm_data->gnuplot, "plot ");
+                for(p = 0; p < tfm->plots; p++)
                 {
-                    if(tfm_data->current_samples[index])
+                    index = __plot_indices(tfm, r, c, p);
+                    if(tfm_data->current_valid[index])
                     {
-                        fprintf(tfm_data->gnuplot,
-                                " '-' binary endian=little array=%i dx=%li "
-                                "format=\"%%f\" using 1 with lines",
-                                tfm->samples, ts_num_samples(ts) / tfm->samples);
+                        if(tfm_data->current_samples[index])
+                        {
+                            fprintf(tfm_data->gnuplot,
+                                    " '-' binary endian=little array=%i dx=%li "
+                                    "format=\"%%f\" using 1 with lines",
+                                    tfm->samples, ts_num_samples(t->owner) / tfm->samples);
 
-                        if(tfm_data->current_titles[index])
-                            fprintf(tfm_data->gnuplot, " title \"%s\"",
-                                    tfm_data->current_titles[index]);
+                            if(tfm_data->current_titles[index])
+                                fprintf(tfm_data->gnuplot, " title \"%s\"",
+                                        tfm_data->current_titles[index]);
 
-                        // todo this might be wrong
-                        if(p != tfm->plots - 1)
-                            fprintf(tfm_data->gnuplot, ",");
+                            // todo this might be wrong
+                            if(p != tfm->plots - 1)
+                                fprintf(tfm_data->gnuplot, ",");
+                        }
+                    }
+                    else
+                    {
+                        err("Invalid entry for index %i\n", index);
+                        return -EINVAL;
                     }
                 }
-                else
+
+                fprintf(tfm_data->gnuplot, "\n");
+                for(p = 0; p < tfm->plots; p++)
                 {
-                    err("...");
+                    index = __plot_indices(tfm, r, c, p);
+                    if(tfm_data->current_samples[index])
+                    {
+                        for(s = 0; s < ts_num_samples(t->owner);
+                            s += (int) (ts_num_samples(t->owner) / tfm->samples))
+                            fwrite(&tfm_data->current_samples[index][s],
+                                   sizeof(float), 1, tfm_data->gnuplot);
+                    }
                 }
+            }
+        }
+
+        if(IS_MULTIPLOT(tfm))
+            fprintf(tfm_data->gnuplot, "unset multiplot\n");
+
+        fflush(tfm_data->gnuplot);
+        tfm_data->current_base += NUMBER_TRACES(tfm);
+        tfm_data->current_count = 0;
+
+        for(r = 0; r < NUMBER_TRACES(tfm); r++)
+        {
+            if(tfm_data->current_titles[r])
+            {
+                free(tfm_data->current_titles[r]);
+                tfm_data->current_titles[r] = NULL;
             }
 
-            fprintf(tfm_data->gnuplot, "\n");
-            for(p = 0; p < tfm->plots; p++)
+            if(tfm_data->current_samples[r])
             {
-                index = __plot_indices(tfm, r, c, p);
-                if(tfm_data->current_samples[index])
-                {
-                    for(s = 0; s < ts_num_samples(ts); s += (int) (ts_num_samples(ts) / tfm->samples))
-                        fwrite(&tfm_data->current_samples[index][s],
-                               sizeof(float), 1, tfm_data->gnuplot);
-                }
+                free(tfm_data->current_samples[r]);
+                tfm_data->current_samples[r] = NULL;
             }
+
+            tfm_data->current_valid[r] = false;
         }
     }
-
-    if(IS_MULTIPLOT(tfm))
-        fprintf(tfm_data->gnuplot, "unset multiplot\n");
-
-    fflush(tfm_data->gnuplot);
-    tfm_data->current_base += NUMBER_TRACES(tfm);
-    tfm_data->current_count = 0;
-
-    for(r = 0; r < NUMBER_TRACES(tfm); r++)
+    else
     {
-        if(tfm_data->current_titles[r])
-        {
-            free(tfm_data->current_titles[r]);
-            tfm_data->current_titles[r] = NULL;
-        }
+        critical("%li, Not time to redraw yet... base = %li, have %li but want %i\n",
+                 TRACE_IDX(t), tfm_data->current_base, tfm_data->current_count, NUMBER_TRACES(tfm));
+    }
 
-        if(tfm_data->current_samples[r])
-        {
-            free(tfm_data->current_samples[r]);
-            tfm_data->current_samples[r] = NULL;
-        }
-
-        tfm_data->current_valid[r] = false;
+    ret = sem_post(&tfm_data->lock);
+    if(ret < 0)
+    {
+        err("Failed to lock data buffers\n");
+        return -errno;
     }
 
     return 0;
@@ -307,11 +337,28 @@ int __tfm_visualize_fetch(struct trace *t, char *title, float *samples)
     }
     else
     {
-        ret = trace_get(t->owner->prev, &prev, TRACE_IDX(t), false);
+        ret = sem_post(&tfm_data->lock);
+        if(ret < 0)
+        {
+            err("Failed to post to data buffers\n");
+            return -errno;
+        }
+
+        critical(". %li\n", TRACE_IDX(t));
+
+        // could take a long time
+        ret = trace_get(t->owner->prev, &prev, TRACE_IDX(t), true);
         if(ret < 0)
         {
             err("Failed to get trace from previous set\n");
             return ret;
+        }
+
+        ret = sem_wait(&tfm_data->lock);
+        if(ret < 0)
+        {
+            err("Failed to lock data buffers\n");
+            return -errno;
         }
 
         ret = trace_title(prev, &tfm_data->current_titles[index]);
@@ -365,9 +412,12 @@ int __tfm_visualize_title(struct trace *t, char **title)
     tfm = TFM_DATA(t->owner->tfm);
     tfm_data = t->owner->tfm_data;
 
-    if(TRACE_IDX(t) >= tfm_data->current_base + NUMBER_TRACES(tfm) &&
-       tfm_data->current_count == NUMBER_TRACES(tfm))
-        __redraw_gnuplot(t->owner, tfm, tfm_data);
+    ret = __redraw_gnuplot(t, tfm, tfm_data);
+    if(ret < 0)
+    {
+        err("Error when redrawing gnuplot\n");
+        return ret;
+    }
 
     if(TRACE_IDX(t) >= tfm_data->current_base &&
        TRACE_IDX(t) < tfm_data->current_base + NUMBER_TRACES(tfm))
@@ -390,7 +440,11 @@ int __tfm_visualize_title(struct trace *t, char **title)
         *title = result;
         return 0;
     }
-    else return passthrough_title(t, title);
+    else
+    {
+        critical("passing through title for index %li\n", TRACE_IDX(t));
+        return passthrough_title(t, title);
+    }
 }
 
 int __tfm_visualize_data(struct trace *t, uint8_t **data)
@@ -414,9 +468,12 @@ int __tfm_visualize_samples(struct trace *t, float **samples)
     tfm = TFM_DATA(t->owner->tfm);
     tfm_data = t->owner->tfm_data;
 
-    if(TRACE_IDX(t) >= tfm_data->current_base + NUMBER_TRACES(tfm) &&
-       tfm_data->current_count == NUMBER_TRACES(tfm))
-        __redraw_gnuplot(t->owner, tfm, tfm_data);
+    ret = __redraw_gnuplot(t, tfm, tfm_data);
+    if(ret < 0)
+    {
+        err("Error when redrawing gnuplot\n");
+        return ret;
+    }
 
     if(TRACE_IDX(t) >= tfm_data->current_base &&
        TRACE_IDX(t) < tfm_data->current_base + NUMBER_TRACES(tfm))
@@ -439,7 +496,11 @@ int __tfm_visualize_samples(struct trace *t, float **samples)
         *samples = result;
         return 0;
     }
-    else return passthrough_samples(t, samples);
+    else
+    {
+        critical("passing through samples for index %li\n", TRACE_IDX(t));
+        return passthrough_samples(t, samples);
+    }
 }
 
 void __tfm_visualize_exit(struct trace_set *ts)

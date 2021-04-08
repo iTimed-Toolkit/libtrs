@@ -68,7 +68,7 @@ int __list_create_entry(struct __commit_queue *queue,
                         struct __commit_queue_entry **res,
                         size_t prev_index)
 {
-    int ret;
+    int ret, count = 0;
     struct __commit_queue_entry *entry, *curr;
 
     if(!queue || !res)
@@ -97,8 +97,10 @@ int __list_create_entry(struct __commit_queue *queue,
     {
         if(curr->prev_index > prev_index)
             break;
+        else count++;
     }
     list_add_tail(&entry->list, &curr->list);
+    debug("appending prev_index %li at spot %i\n", prev_index, count);
 
     ret = sem_post(&queue->list_lock);
     if(ret < 0)
@@ -253,6 +255,7 @@ __free_temp:
 void *__commit_thread(void *arg)
 {
     int ret, count;
+    struct timespec ts;
     size_t written = 0, prev_index;
     bool sentinel_seen = false;
 
@@ -265,10 +268,13 @@ void *__commit_thread(void *arg)
 
     while(1)
     {
-        ret = sem_wait(&queue->event);
-        if(ret < 0)
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec++;
+
+        ret = sem_timedwait(&queue->event, &ts);
+        if(ret < 0 && errno != ETIMEDOUT)
         {
-            err("Commit thread failed to wait on event signal\n");
+            err("Commit thread failed to wait on event signal (%s)\n", strerror(errno));
             queue->thread_ret = -errno;
             pthread_exit(NULL);
         }
@@ -380,6 +386,8 @@ void *__commit_thread(void *arg)
                             pthread_exit(NULL);
                         }
 
+                        // make this an anonymous trace to ensure memory is actually freed
+                        trace_to_commit->owner = NULL;
                         trace_free_memory(trace_to_commit);
                         written++;
                     }
