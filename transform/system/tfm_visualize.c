@@ -87,8 +87,8 @@ void *__draw_gnuplot_thread(void *arg)
 
     if(viz_args->filename)
     {
-        fprintf(gnuplot, "set term gif animate giant size 2560x1440");
-        fprintf(gnuplot, "set output \"%s\"", viz_args->filename);
+        fprintf(gnuplot, "set term gif animate giant size 2560x1440\n");
+        fprintf(gnuplot, "set output \"%s\"\n", viz_args->filename);
     }
     else fprintf(gnuplot, "set term x11\n");
 
