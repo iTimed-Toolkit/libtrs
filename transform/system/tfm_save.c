@@ -254,7 +254,8 @@ __free_temp:
 
 void *__commit_thread(void *arg)
 {
-    int ret, count;
+    int ret;
+    size_t count;
     struct timespec ts;
     size_t written = 0, prev_index;
     bool sentinel_seen = false;
@@ -278,6 +279,9 @@ void *__commit_thread(void *arg)
             queue->thread_ret = -errno;
             pthread_exit(NULL);
         }
+
+        // this is necessary when debugging?
+        tfm_data = queue->ts->tfm_data;
 
         if(queue->ts == NULL)
         {
@@ -315,7 +319,7 @@ void *__commit_thread(void *arg)
         // write the collected batch
         if(!list_empty(&write_head))
         {
-            debug("Committing %li -> %li (%i)\n", written, written + count, count);
+            debug("Committing %li -> %li (%li)\n", written, written + count, count);
 
             ret = sem_wait(&queue->ts->file_lock);
             if(ret < 0)
@@ -356,7 +360,7 @@ void *__commit_thread(void *arg)
 
                     sentinel_seen = true;
                     __atomic_store(&queue->ts->num_traces,
-                                   &written, __ATOMIC_RELEASE);
+                                   &written, __ATOMIC_RELAXED);
 
                     ret = sem_post(&queue->sentinel);
                     if(ret < 0)
@@ -400,9 +404,8 @@ void *__commit_thread(void *arg)
                 }
             }
 
-            // todo: sometimes crash here when using tfm_wait and debugging?
             // update global written counter
-            __atomic_store(&tfm_data->num_traces_written, &written, __ATOMIC_RELEASE);
+            __atomic_fetch_add(&tfm_data->num_traces_written, count, __ATOMIC_RELAXED);
 
             ret = sem_post(&queue->ts->file_lock);
             if(ret < 0)
@@ -590,17 +593,17 @@ int __render_to_index(struct trace_set *ts, size_t index)
 
     while(1)
     {
-        written = __atomic_load_n(&tfm_data->num_traces_written, __ATOMIC_ACQUIRE);
+        written = __atomic_load_n(&tfm_data->num_traces_written, __ATOMIC_RELAXED);
         if(index < written)
         {
-            debug("Index %li < written %li, exiting\n", index, tfm_data->num_traces_written);
+            debug("Index %li < written %li, exiting\n", index, written);
             break;
         }
 
         prev_index = __atomic_fetch_add(&tfm_data->prev_next_trace,
                                         1, __ATOMIC_RELAXED);
 
-        debug("Checking prev_index %li\n", prev_index);
+        debug("Checking prev_index %li (want %li)\n", prev_index, index);
         // todo this might be the bad condition for chained tfm_saves
         if(prev_index >= ts_num_traces(ts->prev))
         {
@@ -702,7 +705,7 @@ int __tfm_save_generic(struct trace *t, void **out, tfm_save_kind_t kind)
 {
     int ret;
     struct tfm_save_data *tfm_data = t->owner->tfm_data;
-    size_t written = __atomic_load_n(&tfm_data->num_traces_written, __ATOMIC_ACQUIRE);
+    size_t written = __atomic_load_n(&tfm_data->num_traces_written, __ATOMIC_RELAXED);
     struct __commit_queue *queue = tfm_data->commit_data;
 
     if(kind != KIND_TITLE && kind != KIND_DATA && kind != KIND_SAMPLES)
@@ -731,6 +734,7 @@ int __tfm_save_generic(struct trace *t, void **out, tfm_save_kind_t kind)
         }
     }
 
+    debug("Reading trace %li from file\n", TRACE_IDX(t));
     if(TRACE_IDX(t) < t->owner->num_traces)
     {
         switch(kind)

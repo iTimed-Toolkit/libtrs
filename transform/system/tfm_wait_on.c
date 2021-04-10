@@ -25,9 +25,7 @@ struct __trace_entry
     uint8_t *data;
     float *samples;
 
-    int ref_title,
-            ref_data,
-            ref_samples;
+    int refcount;
 };
 
 struct __request_entry
@@ -92,10 +90,10 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
 
             LIST_HEAD_INIT_INLINE(entry->list);
             entry->index = index;
+            entry->refcount = 0;
 
             if(pushed_title)
             {
-                entry->ref_title = 0;
                 entry->title = calloc(curr_waiter->set->title_size, sizeof(char));
                 if(!entry->title)
                 {
@@ -110,7 +108,6 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
 
             if(pushed_data)
             {
-                entry->ref_data = 0;
                 entry->data = calloc(curr_waiter->set->data_size, sizeof(uint8_t));
                 if(!entry->data)
                 {
@@ -125,7 +122,6 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
 
             if(pushed_samples)
             {
-                entry->ref_samples = 0;
                 entry->samples = calloc(curr_waiter->set->num_samples, sizeof(float));
                 if(!entry->samples)
                 {
@@ -168,7 +164,7 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
                         return -errno;
                     }
 
-                    free(curr_req);
+//                    free(curr_req);
                 }
             }
 
@@ -330,6 +326,7 @@ int __search_for_entry(struct list_head *queue,
             else
             {
                 debug("Found trace %i\n", index);
+                curr_trace->refcount++;
                 *res = curr_trace;
                 found = true;
                 break;
@@ -362,19 +359,15 @@ int __search_for_entry(struct list_head *queue,
                     break;
             }
             list_add_tail(&request->list, &curr_request->list);
-        }
 
-        ret = sem_post(&curr_waiter->lock);
-        if(ret < 0)
-        {
-            err("Failed to post to queue entry lock\n");
-            return -errno;
-        }
+            ret = sem_post(&curr_waiter->lock);
+            if(ret < 0)
+            {
+                err("Failed to post to queue entry lock\n");
+                return -errno;
+            }
 
-        if(!found)
-        {
             debug("Waiting for trace %i\n", index);
-
             ret = sem_wait(&signal);
             if(ret < 0)
             {
@@ -384,6 +377,10 @@ int __search_for_entry(struct list_head *queue,
 
             debug("Came out of wait for trace %i\n", index);
             sem_destroy(&signal);
+
+            // already unlinked by push
+            free(request);
+
             ret = sem_wait(&curr_waiter->lock);
             if(ret < 0)
             {
@@ -401,17 +398,18 @@ int __search_for_entry(struct list_head *queue,
                 }
                 else
                 {
+                    curr_trace->refcount++;
                     *res = curr_trace;
                     break;
                 }
             }
+        }
 
-            ret = sem_post(&curr_waiter->lock);
-            if(ret < 0)
-            {
-                err("Failed to post to queue entry lock\n");
-                return -errno;
-            }
+        ret = sem_post(&curr_waiter->lock);
+        if(ret < 0)
+        {
+            err("Failed to post to queue entry lock\n");
+            return -errno;
         }
 
         return 0;
@@ -438,9 +436,6 @@ int __tfm_wait_on_title(struct trace *t, char **title)
         return ret;
     }
 
-    if(entry->title)
-        __atomic_fetch_add(&entry->ref_title, 1, __ATOMIC_RELAXED);
-
     *title = entry->title;
     return 0;
 }
@@ -460,9 +455,6 @@ int __tfm_wait_on_data(struct trace *t, uint8_t **data)
         return ret;
     }
 
-    if(entry->data)
-        __atomic_fetch_add(&entry->ref_data, 1, __ATOMIC_RELAXED);
-
     *data = entry->data;
     return 0;
 }
@@ -481,9 +473,6 @@ int __tfm_wait_on_samples(struct trace *t, float **samples)
         err("Failed to search for trace entry\n");
         return ret;
     }
-
-    if(entry->samples)
-        __atomic_fetch_add(&entry->ref_samples, 1, __ATOMIC_RELAXED);
 
     *samples = entry->samples;
     return 0;
@@ -509,16 +498,8 @@ void __tfm_wait_on_exit(struct trace_set *ts)
     else err("Unable to find registered waiter entry for given port and trace set\n");
 }
 
-typedef enum
-{
-    KIND_TITLE = 0,
-    KIND_DATA,
-    KIND_SAMPLES
-} tfm_wait_on_kind_t;
-
 int __deref_and_free_entry(struct list_head *queue,
-                           port_t port, struct trace_set *ts, int index,
-                           tfm_wait_on_kind_t kind)
+                           port_t port, struct trace_set *ts, int index)
 {
     int ret;
     struct __waiter_entry *curr_waiter = NULL;
@@ -556,49 +537,25 @@ int __deref_and_free_entry(struct list_head *queue,
             }
             else
             {
-                switch(kind)
+                curr_trace->refcount--;
+                if(curr_trace->refcount == 0)
                 {
-                    case KIND_TITLE:
-                        curr_trace->ref_title--;
-                        if(curr_trace->ref_title == 0 &&
-                           curr_trace->title)
-                        {
-                            free(curr_trace->title);
-                            curr_trace->title = NULL;
-                        }
-                        break;
+                    if(curr_trace->title)
+                        free(curr_trace->title);
 
-                    case KIND_DATA:
-                        curr_trace->ref_data--;
-                        if(curr_trace->ref_data == 0 &&
-                           curr_trace->data)
-                        {
-                            free(curr_trace->data);
-                            curr_trace->data = NULL;
-                        }
-                        break;
+                    if(curr_trace->data)
+                        free(curr_trace->data);
 
-                    case KIND_SAMPLES:
-                        curr_trace->ref_samples--;
-                        if(curr_trace->ref_samples == 0 &&
-                           curr_trace->samples)
-                        {
-                            free(curr_trace->samples);
-                            curr_trace->samples = NULL;
-                        }
-                        break;
+                    if(curr_trace->samples)
+                        free(curr_trace->samples);
 
-                    default:
-                        err("Invalid trace data kind\n");
-                        return -EINVAL;
-                }
-
-                if(!curr_trace->title &&
-                   !curr_trace->data &&
-                   !curr_trace->samples)
-                {
                     list_del(&curr_trace->list);
                     free(curr_trace);
+                }
+
+                if(list_empty(&curr_waiter->traces_available))
+                {
+                    critical("No more traces available after freeing index %i\n", index);
                 }
 
                 break;
@@ -627,8 +584,7 @@ void __tfm_wait_on_free_title(struct trace *t)
     struct tfm_wait_on *tfm = TFM_DATA(t->owner->tfm);
     struct list_head *queue = t->owner->tfm_data;
 
-    ret = __deref_and_free_entry(queue, tfm->port, t->owner,
-                                 TRACE_IDX(t), KIND_TITLE);
+    ret = __deref_and_free_entry(queue, tfm->port, t->owner, TRACE_IDX(t));
     if(ret < 0)
         err("Failed to deref and free trace title\n");
 }
@@ -639,10 +595,9 @@ void __tfm_wait_on_free_data(struct trace *t)
     struct tfm_wait_on *tfm = TFM_DATA(t->owner->tfm);
     struct list_head *queue = t->owner->tfm_data;
 
-    ret = __deref_and_free_entry(queue, tfm->port, t->owner,
-                                 TRACE_IDX(t), KIND_DATA);
+    ret = __deref_and_free_entry(queue, tfm->port, t->owner, TRACE_IDX(t));
     if(ret < 0)
-        err("Failed to deref and free trace title\n");
+        err("Failed to deref and free trace data\n");
 }
 
 void __tfm_wait_on_free_samples(struct trace *t)
@@ -651,10 +606,9 @@ void __tfm_wait_on_free_samples(struct trace *t)
     struct tfm_wait_on *tfm = TFM_DATA(t->owner->tfm);
     struct list_head *queue = t->owner->tfm_data;
 
-    ret = __deref_and_free_entry(queue, tfm->port, t->owner,
-                                 TRACE_IDX(t), KIND_SAMPLES);
+    ret = __deref_and_free_entry(queue, tfm->port, t->owner, TRACE_IDX(t));
     if(ret < 0)
-        err("Failed to deref and free trace title\n");
+        err("Failed to deref and free trace samples\n");
 }
 
 int tfm_wait_on(struct tfm **tfm, port_t port)
