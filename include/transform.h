@@ -71,8 +71,9 @@ int tfm_io_correlation(struct tfm **tfm, int granularity, int num);
 
 typedef enum
 {
-    AES128_R0_R1_HD_NOMC,
+    AES128_R0_R1_HD_NOMC = 0,
     AES128_R0_HW_SBOXOUT,
+    AES128_R10_OUT_HD,
     AES128_R10_HW_SBOXIN,
 } aes_leakage_t;
 

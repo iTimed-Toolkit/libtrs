@@ -117,6 +117,30 @@ int aes128_round10_hw_sbox_in_verify(uint8_t *data, int index, float *res)
     return aes128_round10_hw_sbox_in(data, index, res);
 }
 
+int aes128_round10_out_hd(uint8_t *data, int index, float *res)
+{
+    int key_index = (index / 256);
+    uint8_t key_guess = (index % 256), state;
+
+    state = data[16 + key_index] ^ key_guess;
+    state = sbox_inv[state >> 4u][state & 0xFu];
+
+    *res = (float) hamming_distance(state, data[16 + shift_rows[key_index]]);
+    return 0;
+}
+
+
+int aes128_round10_out_hd_verify(uint8_t *data, int index, float *res)
+{
+    if(!__verify_aes128(data))
+    {
+        err("Data failed validation\n");
+        return -EINVAL;
+    }
+
+    return aes128_round10_out_hd(data, index, res);
+}
+
 int aes128_round0_hw_sbox_out(uint8_t *data, int index, float *res)
 {
     int key_index = (index / 256);
@@ -181,6 +205,7 @@ int tfm_analyze_aes_init(struct trace_set *ts, void *arg)
     {
         case AES128_R0_R1_HD_NOMC:
         case AES128_R0_HW_SBOXOUT:
+        case AES128_R10_OUT_HD:
         case AES128_R10_HW_SBOXIN:
             ts->num_traces = 16 * 256 / PMS_PER_THREAD;
             ts->num_samples = ts->prev->num_samples * PMS_PER_THREAD;
@@ -240,6 +265,10 @@ int tfm_analyze_aes(struct tfm **tfm, bool verify_data, aes_leakage_t leakage_mo
             if(verify_data) model = aes128_round0_hw_sbox_out_verify;
             else model = aes128_round0_hw_sbox_out;
             break;
+
+        case AES128_R10_OUT_HD:
+            if(verify_data) model = aes128_round10_out_hd_verify;
+            else model = aes128_round10_out_hd;
 
         case AES128_R10_HW_SBOXIN:
             if(verify_data) model = aes128_round10_hw_sbox_in_verify;
