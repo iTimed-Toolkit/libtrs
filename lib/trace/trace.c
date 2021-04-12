@@ -63,7 +63,8 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuff
     if(ts->cache)
     {
         debug("Looking up in cache\n");
-        ret = tc_lookup(ts->cache, index, &t_result);
+        ret = tc_lookup(ts->cache, index, &t_result,
+                        COHESIVE_CACHES ? true : false);
         if(ret < 0)
         {
             err("Failed to lookup trace in cache\n");
@@ -108,7 +109,8 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuff
     if(cache_missed)
     {
         debug("Storing trace %li in the cache\n", index);
-        ret = tc_store(ts->cache, index, t_result);
+        ret = tc_store(ts->cache, index, t_result,
+                       COHESIVE_CACHES ? true : false);
         if(ret < 0)
         {
             err("Failed to store result trace in cache\n");

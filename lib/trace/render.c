@@ -172,6 +172,9 @@ void *__ts_render_controller(void *controller_arg)
             else if(args[i].ret < 0)
             {
                 err("Detected error for thread %i\n", i);
+
+                // this is good until we have better error detection/recovery
+                exit(-1);
                 ret = args[i].ret;
                 goto __done;
             }

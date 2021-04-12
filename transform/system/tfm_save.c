@@ -280,7 +280,8 @@ void *__commit_thread(void *arg)
             pthread_exit(NULL);
         }
 
-        // this is necessary when debugging?
+        // this is necessary when debugging? code breaks
+        // if this is removed
         tfm_data = queue->ts->tfm_data;
 
         if(queue->ts == NULL)

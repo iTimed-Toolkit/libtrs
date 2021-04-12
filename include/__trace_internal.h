@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <semaphore.h>
 
 struct trace_cache;
@@ -98,9 +99,10 @@ int finalize_headers(struct trace_set *ts);
 int free_headers(struct trace_set *ts);
 
 /* Cache interface */
+size_t __find_num_traces(struct trace_set *ts, size_t size_bytes, int assoc);
 int tc_cache_manual(struct trace_cache **cache, size_t id, size_t nsets, size_t nways);
-int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace);
-int tc_store(struct trace_cache *cache, size_t index, struct trace *trace);
+int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, bool keep_lock);
+int tc_store(struct trace_cache *cache, size_t index, struct trace *trace, bool keep_lock);
 int tc_deref(struct trace_cache *cache, size_t index, struct trace *trace);
 int tc_free(struct trace_cache *cache);
 

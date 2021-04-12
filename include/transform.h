@@ -46,7 +46,7 @@ struct viz_args
 
 // System
 int tfm_save(struct tfm **tfm, char *path_prefix);
-int tfm_wait_on(struct tfm **tfm, port_t port);
+int tfm_wait_on(struct tfm **tfm, port_t port, size_t bufsize);
 int tfm_visualize(struct tfm **tfm, struct viz_args *args);
 
 // Analysis
