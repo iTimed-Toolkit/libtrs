@@ -269,6 +269,7 @@ int tfm_analyze_aes(struct tfm **tfm, bool verify_data, aes_leakage_t leakage_mo
         case AES128_R10_OUT_HD:
             if(verify_data) model = aes128_round10_out_hd_verify;
             else model = aes128_round10_out_hd;
+            break;
 
         case AES128_R10_HW_SBOXIN:
             if(verify_data) model = aes128_round10_hw_sbox_in_verify;
