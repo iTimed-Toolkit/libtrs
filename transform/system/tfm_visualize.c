@@ -174,7 +174,7 @@ void *__draw_gnuplot_thread(void *arg)
             goto __done;
         }
 
-        critical("displaying entry for base %li\n", curr->base);
+        critical("Displaying entry for base %li\n", curr->base);
 
         if(IS_MULTIPLOT(viz_args))
         {
@@ -368,7 +368,7 @@ int __tfm_visualize_fetch(struct trace *t, char *title, float *samples)
     }
 
     debug("Index %li got curr = %p (list_empty is %i, found is %i)\n",
-             TRACE_IDX(t), curr, list_empty(&tfm_data->list), found);
+          TRACE_IDX(t), curr, list_empty(&tfm_data->list), found);
 
     // not found
     if(!found)
@@ -377,7 +377,7 @@ int __tfm_visualize_fetch(struct trace *t, char *title, float *samples)
            TRACE_IDX(t) >= tfm_data->currently_displayed &&
            TRACE_IDX(t) < tfm_data->currently_displayed + NUMBER_TRACES(tfm))
         {
-            critical("Fetch for %li should pass through instead\n", TRACE_IDX(t));
+            debug("Fetch for %li should pass through instead\n", TRACE_IDX(t));
             ret = sem_post(&tfm_data->lock);
             if(ret < 0)
             {
@@ -388,8 +388,8 @@ int __tfm_visualize_fetch(struct trace *t, char *title, float *samples)
             return 1;
         }
 
-        critical("Creating entry for base %li because of trace %li\n",
-                 TRACE_IDX(t) - (TRACE_IDX(t) % NUMBER_TRACES(tfm)), TRACE_IDX(t));
+        debug("Creating entry for base %li because of trace %li\n",
+              TRACE_IDX(t) - (TRACE_IDX(t) % NUMBER_TRACES(tfm)), TRACE_IDX(t));
 
         new = calloc(1, sizeof(struct __tfm_viz_entry));
         if(!new)
