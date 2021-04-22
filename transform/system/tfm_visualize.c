@@ -37,25 +37,25 @@ struct tfm_visualize_data
 
 int __plot_indices(struct viz_args *tfm, int r, int c, int p)
 {
-    if(tfm->fill_order[0] == PLOTS)
+    if(tfm->order[0] == PLOTS)
     {
-        if(tfm->fill_order[1] == ROWS)
+        if(tfm->order[1] == ROWS)
             return r * (tfm->cols * tfm->plots) + c * tfm->plots + p;
-        else if(tfm->fill_order[1] == COLS)
+        else if(tfm->order[1] == COLS)
             return c * (tfm->rows * tfm->plots) + r * tfm->plots + p;
     }
-    else if(tfm->fill_order[0] == ROWS)
+    else if(tfm->order[0] == ROWS)
     {
-        if(tfm->fill_order[1] == PLOTS)
+        if(tfm->order[1] == PLOTS)
             return r * (tfm->cols * tfm->plots) + c + (tfm->cols) * p;
-        else if(tfm->fill_order[1] == COLS)
+        else if(tfm->order[1] == COLS)
             return r + c + (tfm->rows * tfm->cols) * p;
     }
-    else if(tfm->fill_order[0] == COLS)
+    else if(tfm->order[0] == COLS)
     {
-        if(tfm->fill_order[1] == ROWS)
+        if(tfm->order[1] == ROWS)
             return c * tfm->rows + r + (tfm->rows * tfm->cols) * p;
-        else if(tfm->fill_order[1] == PLOTS)
+        else if(tfm->order[1] == PLOTS)
             return c * (tfm->rows * tfm->plots) + r + (tfm->rows) * p;
     }
 
@@ -108,7 +108,7 @@ void *__draw_gnuplot_thread(void *arg)
 
         fprintf(gnuplot, "set samples %i\n", viz_args->samples);
     }
-//    fprintf(gnuplot, "unset key\n");
+    fprintf(gnuplot, "unset key\n");
 
     if(IS_MULTIPLOT(viz_args))
     {
@@ -148,7 +148,7 @@ void *__draw_gnuplot_thread(void *arg)
             goto __done;
         }
 
-        curr = NULL;
+        found = false;
         list_for_each_entry(curr, &tfm_arg->list, list)
         {
             if(curr->count == NUMBER_TRACES(viz_args))
@@ -574,7 +574,12 @@ int __tfm_visualize_samples(struct trace *t, float **samples)
 }
 
 void __tfm_visualize_exit(struct trace_set *ts)
-{}
+{
+    struct tfm_visualize_data *tfm = ts->tfm_data;
+
+//    sem_post(&tfm->signal);
+    pthread_join(tfm->handle, NULL);
+}
 
 void __tfm_visualize_free_title(struct trace *t)
 {

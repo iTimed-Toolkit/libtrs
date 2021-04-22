@@ -9,7 +9,7 @@
 #include <errno.h>
 
 #define TFM_DATA(tfm)   ((struct cpa_args *) (tfm)->tfm_data)
-#define CPA_REPORT_INTERVAL     100000
+#define CPA_REPORT_INTERVAL     1024
 #define CPA_TITLE_SIZE          128
 
 int __tfm_cpa_init(struct trace_set *ts)
@@ -161,6 +161,7 @@ int __tfm_cpa_samples(struct trace *t, float **samples)
 
     for(i = 0; i < ts_num_traces(t->owner->prev); i++)
     {
+//        if(i % (CPA_REPORT_INTERVAL / 100) == 0)
         if(i % CPA_REPORT_INTERVAL == 0)
             warn("CPA %li working on trace %i\n", TRACE_IDX(t), i);
 

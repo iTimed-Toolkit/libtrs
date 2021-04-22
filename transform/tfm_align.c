@@ -309,7 +309,7 @@ int tfm_static_align(struct tfm **tfm, double confidence,
                      int max_shift, size_t ref_trace, size_t num_regions,
                      int *ref_samples_lower, int *ref_samples_higher)
 {
-    struct tfm *res;
+    struct tfm *res = NULL;
     res = calloc(1, sizeof(struct tfm));
     if(!res)
     {
@@ -323,17 +323,50 @@ int tfm_static_align(struct tfm **tfm, double confidence,
     if(!res->tfm_data)
     {
         err("Failed to allocate memory for transformation variables\n");
-        free(res);
-        return -ENOMEM;
+        goto __fail_free_res;
     }
 
     TFM_DATA(res)->confidence = confidence;
     TFM_DATA(res)->max_shift = max_shift;
     TFM_DATA(res)->ref_trace = ref_trace;
     TFM_DATA(res)->num_regions = num_regions;
-    TFM_DATA(res)->ref_samples_lower = ref_samples_lower;
-    TFM_DATA(res)->ref_samples_higher = ref_samples_higher;
+
+    TFM_DATA(res)->ref_samples_lower = calloc(num_regions, sizeof(int));
+    if(!TFM_DATA(res)->ref_samples_lower)
+    {
+        err("Failed to allocate memory for lower ref samples\n");
+        goto __fail_free_res;
+    }
+
+    TFM_DATA(res)->ref_samples_higher = calloc(num_regions, sizeof(int));
+    if(!TFM_DATA(res)->ref_samples_higher)
+    {
+        err("Failed to allocate memory for higher ref samples\n");
+        goto __fail_free_res;
+    }
+
+    memcpy(TFM_DATA(res)->ref_samples_lower, ref_samples_lower, num_regions * sizeof(int));
+    memcpy(TFM_DATA(res)->ref_samples_higher, ref_samples_higher, num_regions * sizeof(int));
 
     *tfm = res;
     return 0;
+
+__fail_free_res:
+    if(res)
+    {
+        if(res->tfm_data)
+        {
+            if(TFM_DATA(res)->ref_samples_lower)
+                free(TFM_DATA(res)->ref_samples_lower);
+
+            if(TFM_DATA(res)->ref_samples_higher)
+                free(TFM_DATA(res)->ref_samples_higher);
+
+            free(res->tfm_data);
+        }
+
+        free(res);
+    }
+
+    return -ENOMEM;
 }

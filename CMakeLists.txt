@@ -24,18 +24,12 @@ target_compile_options(stats PRIVATE "-DUSE_GPU=${STATS_USE_GPU}")
 target_link_libraries(stats m)
 
 add_library(transform transform/tfm.c transform/tfm_align.c
-        transform/tfm_average.c transform/tfm_split_tvla.c
+        transform/tfm_average.c transform/trace/tfm_split_tvla.c
         transform/power_analysis/tfm_cpa.c transform/tfm_nop.c transform/system/tfm_save.c
-        transform/power_analysis/tfm_io_correlation.c transform/tfm_narrow.c
-        transform/power_analysis/tfm_analyze_aes.c transform/system/tfm_wait_on.c transform/system/tfm_visualize.c
-        transform/block/tfm_block_maxabs.c transform/block/tfm_block_select.c)
+        transform/power_analysis/tfm_io_correlation.c transform/trace/tfm_narrow.c
+        transform/power_analysis/tfm_aes_intermediate.c transform/system/tfm_wait_on.c transform/system/tfm_visualize.c
+        transform/block/tfm_block_maxabs.c transform/block/tfm_block_select.c transform/power_analysis/tfm_aes_knownkey.c)
 target_link_libraries(transform pthread crypto m stats)
 
 add_executable(libtrace_evaluate main.c)
 target_link_libraries(libtrace_evaluate trace transform)
-
-add_executable(libtrs_test_cpu test.c aes.c)
-target_link_libraries(libtrs_test_cpu trace transform)
-
-add_executable(test_accumulate test_accumulators.c)
-target_link_libraries(test_accumulate stats)

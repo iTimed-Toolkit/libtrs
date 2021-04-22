@@ -85,6 +85,11 @@ int tfm_io_correlation_exit(struct trace_set *ts, void *arg)
     return 0;
 }
 
+void tfm_io_correlation_progress_title(char *dst, int len, size_t index, int count)
+{
+    snprintf(dst, len, "CPA %li", index);
+}
+
 int tfm_io_correlation(struct tfm **tfm, int granularity, int num)
 {
     int ret;
@@ -96,7 +101,7 @@ int tfm_io_correlation(struct tfm **tfm, int granularity, int num)
             .num_models = 1,
             .consumer_init = tfm_io_correlation_init,
             .consumer_exit = tfm_io_correlation_exit,
-            .progress_title = NULL,
+            .progress_title = tfm_io_correlation_progress_title,
             .init_args = NULL
     };
 

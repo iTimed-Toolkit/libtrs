@@ -16,7 +16,7 @@ struct tfm;
 
 typedef enum
 {
-    BLOCK_MAX,
+    BLOCK_MAX = 0,
     BLOCK_MIN,
     BLOCK_MAXABS,
     BLOCK_MINABS
@@ -30,18 +30,18 @@ typedef enum
     PORT_CPA_SPLIT_PM_PROGRESS
 } port_t;
 
+typedef enum
+{
+    ROWS = 0,
+    COLS,
+    PLOTS
+} fill_order_t;
+
 struct viz_args
 {
     char *filename;
     int rows, cols, plots, samples;
-    float rate;
-
-    enum
-    {
-        ROWS,
-        COLS,
-        PLOTS
-    } fill_order[3];
+    fill_order_t order[3];
 };
 
 // System
@@ -77,6 +77,6 @@ typedef enum
     AES128_R10_HW_SBOXIN,
 } aes_leakage_t;
 
-int tfm_analyze_aes(struct tfm **tfm, bool verify_data, aes_leakage_t leakage_model);
+int tfm_aes_intermediate(struct tfm **tfm, bool verify_data, aes_leakage_t leakage_model);
 
 #endif //LIBTRS_TRANSFORM_H

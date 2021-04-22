@@ -186,14 +186,14 @@ int aes128_round0_round1_hd_verify(uint8_t *data, int index, float *res)
     return aes128_round0_round1_hd(data, index, res);
 }
 
-struct tfm_analyze_aes_arg
+struct tfm_aes_intermediate_arg
 {
     aes_leakage_t leakage_model;
 };
 
-int tfm_analyze_aes_init(struct trace_set *ts, void *arg)
+int tfm_aes_intermediate_init(struct trace_set *ts, void *arg)
 {
-    struct tfm_analyze_aes_arg *aes_arg = arg;
+    struct tfm_aes_intermediate_arg *aes_arg = arg;
 
     if(!ts || !arg)
     {
@@ -219,7 +219,7 @@ int tfm_analyze_aes_init(struct trace_set *ts, void *arg)
     return 0;
 }
 
-int tfm_analyze_aes_exit(struct trace_set *ts, void *arg)
+int tfm_aes_intermediate_exit(struct trace_set *ts, void *arg)
 {
     if(!ts || !arg)
     {
@@ -231,7 +231,7 @@ int tfm_analyze_aes_exit(struct trace_set *ts, void *arg)
     return 0;
 }
 
-void tfm_analyze_aes_progress_title(char *dst, int len, size_t index, int count)
+void tfm_aes_intermediate_progress_title(char *dst, int len, size_t index, int count)
 {
     size_t key_index = (index / 256);
     uint8_t key_guess = (index % 256);
@@ -239,18 +239,18 @@ void tfm_analyze_aes_progress_title(char *dst, int len, size_t index, int count)
     snprintf(dst, len, "CPA %li pm %02X (%i traces)", key_index, key_guess, count);
 }
 
-int tfm_analyze_aes(struct tfm **tfm, bool verify_data, aes_leakage_t leakage_model)
+int tfm_aes_intermediate(struct tfm **tfm, bool verify_data, aes_leakage_t leakage_model)
 {
     int ret;
-    struct tfm_analyze_aes_arg *arg;
+    struct tfm_aes_intermediate_arg *arg;
     int (*model)(uint8_t *, int, float *);
 
     struct cpa_args cpa_args = {
             .power_model = NULL,
             .num_models = PMS_PER_THREAD,
-            .consumer_init = tfm_analyze_aes_init,
-            .consumer_exit = tfm_analyze_aes_exit,
-            .progress_title = tfm_analyze_aes_progress_title,
+            .consumer_init = tfm_aes_intermediate_init,
+            .consumer_exit = tfm_aes_intermediate_exit,
+            .progress_title = tfm_aes_intermediate_progress_title,
             .init_args = NULL
     };
 
@@ -281,7 +281,7 @@ int tfm_analyze_aes(struct tfm **tfm, bool verify_data, aes_leakage_t leakage_mo
             return -EINVAL;
     }
 
-    arg = calloc(1, sizeof(struct tfm_analyze_aes_arg));
+    arg = calloc(1, sizeof(struct tfm_aes_intermediate_arg));
     if(!arg)
     {
         err("Failed to allocate AES analyze arg\n");
