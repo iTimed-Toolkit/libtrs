@@ -8,7 +8,7 @@
     union {                 \
         float f;            \
         float *a;           \
-    } name;
+    } (name);
 
 // structs
 struct accumulator

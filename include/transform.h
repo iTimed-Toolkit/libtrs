@@ -37,6 +37,11 @@ typedef enum
     PLOTS
 } fill_order_t;
 
+typedef enum
+{
+    AES128
+} verify_t;
+
 struct viz_args
 {
     char *filename;
@@ -46,12 +51,15 @@ struct viz_args
 
 // System
 int tfm_save(struct tfm **tfm, char *path_prefix);
+int tfm_synchronize(struct tfm **tfm, int max_distance);
 int tfm_wait_on(struct tfm **tfm, port_t port, size_t bufsize);
 int tfm_visualize(struct tfm **tfm, struct viz_args *args);
 
 // Analysis
 int tfm_average(struct tfm **tfm, bool per_sample);
+int tfm_verify(struct tfm **tfm, verify_t which);
 
+int tfm_block_reduce(struct tfm **tfm, int blocksize, block_t block);
 int tfm_block_maxabs(struct tfm **tfm, bool per_sample, int blocksize);
 int tfm_block_select(struct tfm **tfm, int blocksize, block_t block);
 
@@ -60,6 +68,7 @@ int tfm_split_tvla(struct tfm **tfm, bool which);
 int tfm_narrow(struct tfm **tfm,
                int first_trace, int num_traces,
                int first_sample, int num_samples);
+int tfm_append(struct tfm **tfm, const char *path);
 
 // Align
 int tfm_static_align(struct tfm **tfm, double confidence,
@@ -67,7 +76,7 @@ int tfm_static_align(struct tfm **tfm, double confidence,
                      int *ref_samples_lower, int *ref_samples_higher);
 
 // Correlation
-int tfm_io_correlation(struct tfm **tfm, int granularity, int num);
+int tfm_io_correlation(struct tfm **tfm, bool verify_data, int granularity, int num);
 
 typedef enum
 {
@@ -78,5 +87,6 @@ typedef enum
 } aes_leakage_t;
 
 int tfm_aes_intermediate(struct tfm **tfm, bool verify_data, aes_leakage_t leakage_model);
+int tfm_aes_knownkey(struct tfm **tfm, bool verify_data);
 
 #endif //LIBTRS_TRANSFORM_H

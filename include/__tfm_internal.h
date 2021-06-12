@@ -13,39 +13,36 @@ struct trace;
         (res)->init = name ## _init;                    \
         (res)->init_waiter = name ## _init_waiter;      \
         (res)->trace_size = name ## _trace_size;        \
-        (res)->title = name ## _title;                  \
-        (res)->data = name ## _data;                    \
-        (res)->samples = name ## _samples;              \
         (res)->exit = name ## _exit;                    \
-        (res)->free_title = name ## _free_title;        \
-        (res)->free_data = name ## _free_data;          \
-        (res)->free_samples = name ## _free_samples;
+        (res)->get = name ## _get;                      \
+        (res)->free = name ## _free;
 
 struct tfm
 {
     int (*init)(struct trace_set *ts);
     int (*init_waiter)(struct trace_set *ts, port_t port);
     size_t (*trace_size)(struct trace_set *ts);
-
-    int (*title)(struct trace *t, char **title);
-    int (*data)(struct trace *t, uint8_t **data);
-    int (*samples)(struct trace *t, float **samples);
-
     void (*exit)(struct trace_set *ts);
-    void (*free_title)(struct trace *t);
-    void (*free_data)(struct trace *t);
-    void (*free_samples)(struct trace *t);
 
-    void *tfm_data;
+    int (*get)(struct trace *t);
+    void (*free)(struct trace *t);
+
+    void *data;
 };
 
-int passthrough_title(struct trace *trace, char **title);
-int passthrough_data(struct trace *trace, uint8_t **data);
-int passthrough_samples(struct trace *trace, float **samples);
+int copy_title(struct trace *to, struct trace *from);
+int copy_data(struct trace *to, struct trace *from);
+int copy_samples(struct trace *to, struct trace *from);
+
+int passthrough_title(struct trace *trace);
+int passthrough_data(struct trace *trace);
+int passthrough_samples(struct trace *trace);
+int passthrough_all(struct trace *trace);
 
 void passthrough_free_title(struct trace *t);
 void passthrough_free_data(struct trace *t);
 void passthrough_free_samples(struct trace *t);
+void passthrough_free_all(struct trace *t);
 
 struct cpa_args
 {

@@ -11,7 +11,7 @@
 #define STR_FIXED       "TVLA set Fixed"
 #define STR_RAND        "TVLA set Random"
 
-#define TFM_DATA(tfm)   ((struct tfm_split_tvla *) (tfm)->tfm_data)
+#define TFM_DATA(tfm)   ((struct tfm_split_tvla *) (tfm)->data)
 
 struct tfm_split_tvla
 {
@@ -22,13 +22,6 @@ int __tfm_split_tvla_init(struct trace_set *ts)
 {
     ts->num_samples = ts->prev->num_samples;
     ts->num_traces = ts->prev->num_traces;
-
-    ts->input_offs = ts->prev->input_offs;
-    ts->input_len = ts->prev->input_len;
-    ts->output_offs = ts->prev->output_offs;
-    ts->output_len = ts->prev->output_len;
-    ts->key_offs = ts->prev->key_offs;
-    ts->key_len = ts->prev->key_len;
 
     ts->title_size = ts->prev->title_size;
     ts->data_size = ts->prev->data_size;
@@ -55,25 +48,15 @@ void __tfm_split_tvla_exit(struct trace_set *ts)
 
 int __get_trace_type(struct trace *t, bool *type)
 {
-    int ret;
-    char *title;
-
-    ret = trace_title(t, &title);
-    if(ret < 0)
+    if(t->title)
     {
-        err("Failed to get title from trace\n");
-        return ret;
-    }
-
-    if(title)
-    {
-        if(strncmp(title, STR_FIXED, strlen(STR_FIXED)) == 0)
+        if(strncmp(t->title, STR_FIXED, strlen(STR_FIXED)) == 0)
         {
             *type = TVLA_FIXED;
             return 0;
         }
 
-        if(strncmp(title, STR_RAND, strlen(STR_RAND)) == 0)
+        if(strncmp(t->title, STR_RAND, strlen(STR_RAND)) == 0)
         {
             *type = TVLA_RANDOM;
             return 0;
@@ -85,18 +68,7 @@ int __get_trace_type(struct trace *t, bool *type)
     else return 0;
 }
 
-
-int __tfm_split_tvla_title(struct trace *t, char **title)
-{
-    return passthrough_title(t, title);
-}
-
-int __tfm_split_tvla_data(struct trace *t, uint8_t **data)
-{
-    return passthrough_data(t, data);
-}
-
-int __tfm_split_tvla_samples(struct trace *t, float **samples)
+int __tfm_split_tvla_get(struct trace *t)
 {
     int ret;
     bool type;
@@ -104,7 +76,7 @@ int __tfm_split_tvla_samples(struct trace *t, float **samples)
     struct trace *prev_trace;
     struct tfm_split_tvla *tfm = TFM_DATA(t->owner->tfm);
 
-    ret = trace_get(t->owner->prev, &prev_trace, TRACE_IDX(t), false);
+    ret = trace_get(t->owner->prev, &prev_trace, TRACE_IDX(t));
     if(ret < 0)
     {
         err("Failed to get trace from previous set\n");
@@ -119,10 +91,12 @@ int __tfm_split_tvla_samples(struct trace *t, float **samples)
     }
 
     if(type == tfm->which)
-        ret = passthrough_samples(t, samples);
+        ret = passthrough_all(t);
     else
     {
-        *samples = NULL;
+        t->title = NULL;
+        t->data = NULL;
+        t->samples = NULL;
         ret = 0;
     }
 
@@ -131,19 +105,9 @@ __out:
     return ret;
 }
 
-void __tfm_split_tvla_free_title(struct trace *t)
+void __tfm_split_tvla_free(struct trace *t)
 {
-    passthrough_free_title(t);
-}
-
-void __tfm_split_tvla_free_data(struct trace *t)
-{
-    passthrough_free_data(t);
-}
-
-void __tfm_split_tvla_free_samples(struct trace *t)
-{
-    passthrough_free_samples(t);
+    passthrough_free_all(t);
 }
 
 int tfm_split_tvla(struct tfm **tfm, bool which)
@@ -159,8 +123,8 @@ int tfm_split_tvla(struct tfm **tfm, bool which)
 
     ASSIGN_TFM_FUNCS(res, __tfm_split_tvla);
 
-    res->tfm_data = calloc(1, sizeof(struct tfm_split_tvla));
-    if(!res->tfm_data)
+    res->data = calloc(1, sizeof(struct tfm_split_tvla));
+    if(!res->data)
     {
         err("Failed to allocate memory for transformation variables\n");
         free(res);

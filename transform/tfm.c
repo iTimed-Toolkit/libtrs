@@ -16,147 +16,214 @@ int tfm_destroy(struct tfm *tfm)
         return -EINVAL;
     }
 
-    if(tfm->tfm_data)
-        free(tfm->tfm_data);
+    if(tfm->data)
+        free(tfm->data);
 
     free(tfm);
     return 0;
 }
 
-int passthrough_title(struct trace *trace, char **title)
+int copy_title(struct trace *to, struct trace *from)
 {
-    int ret;
-    char *prev_title, *res;
-    struct trace *prev_trace;
-
-    ret = trace_get(trace->owner->prev, &prev_trace, TRACE_IDX(trace), false);
-    if(ret < 0)
+    char *res;
+    if(to->owner->title_size != from->owner->title_size)
     {
-        err("Failed to get trace from previous trace set\n");
-        return ret;
+        err("Incompatible title sizes\n");
+        return -EINVAL;
     }
 
-    ret = trace_title(prev_trace, &prev_title);
-    if(ret < 0)
+    if(from->title)
     {
-        err("Failed to get title from previous trace\n");
-        goto __out;
-    }
-
-    if(prev_title)
-    {
-        res = calloc(trace->owner->title_size, sizeof(char));
+        res = calloc(from->owner->title_size, sizeof(char));
         if(!res)
         {
             err("Failed to allocate memory for trace title\n");
             return -ENOMEM;
         }
 
-        memcpy(res, prev_title, trace->owner->title_size);
-        *title = res;
+        memcpy(res, from->title, to->owner->title_size);
+        to->title = res;
     }
-    else *title = NULL;
-    ret = 0;
+    else to->title = NULL;
 
-__out:
-    trace_free(prev_trace);
-    return ret;
+    return 0;
 }
 
-int passthrough_data(struct trace *trace, uint8_t **data)
+int copy_data(struct trace *to, struct trace *from)
 {
-    int ret;
-    uint8_t *prev_data, *res;
-    struct trace *prev_trace;
-
-    ret = trace_get(trace->owner->prev, &prev_trace, TRACE_IDX(trace), false);
-    if(ret < 0)
+    uint8_t *res;
+    if(to->owner->data_size != from->owner->data_size)
     {
-        err("Failed to get trace from previous trace set\n");
-        return ret;
+        err("Incompatible data sizes\n");
+        return -EINVAL;
     }
 
-    ret = trace_data_all(prev_trace, &prev_data);
-    if(ret < 0)
+    if(from->data)
     {
-        err("Failed to get data from previous trace\n");
-        goto __out;
-    }
-
-    if(prev_data)
-    {
-        res = calloc(trace->owner->data_size, sizeof(uint8_t));
+        res = calloc(from->owner->data_size, sizeof(uint8_t));
         if(!res)
         {
             err("Failed to allocate memory for trace data\n");
             return -ENOMEM;
         }
 
-        memcpy(res, prev_data, trace->owner->data_size);
-        *data = res;
+        memcpy(res, from->data, to->owner->data_size);
+        to->data = res;
     }
-    else *data = NULL;
-    ret = 0;
+    else to->data = NULL;
 
-__out:
-    trace_free(prev_trace);
-    return ret;
+    return 0;
 }
 
-int passthrough_samples(struct trace *trace, float **samples)
+int copy_samples(struct trace *to, struct trace *from)
 {
-    int ret;
-    float *prev_samples, *res;
-    struct trace *prev_trace;
-
-    ret = trace_get(trace->owner->prev, &prev_trace, TRACE_IDX(trace), false);
-    if(ret < 0)
+    float *res;
+    if(to->owner->num_samples != from->owner->num_samples)
     {
-        err("Failed to get trace from previous trace set\n");
-        return ret;
+        err("Incompatible data sizes\n");
+        return -EINVAL;
     }
 
-    ret = trace_samples(prev_trace, &prev_samples);
-    if(ret < 0)
+    if(from->samples)
     {
-        err("Failed to get samples from previous trace\n");
-        goto __out;
-    }
-
-    if(prev_samples)
-    {
-        res = calloc(trace->owner->num_samples, sizeof(float));
+        res = calloc(from->owner->num_samples, sizeof(float));
         if(!res)
         {
             err("Failed to allocate memory for trace samples\n");
             return -ENOMEM;
         }
 
-        memcpy(res, prev_samples, trace->owner->num_samples * sizeof(float));
-        *samples = res;
+        memcpy(res, from->samples, to->owner->num_samples * sizeof(float));
+        to->samples = res;
     }
-    else *samples = NULL;
-    ret = 0;
+    else to->samples = NULL;
 
-__out:
+    return 0;
+}
+
+int passthrough_title(struct trace *trace)
+{
+    int ret;
+    struct trace *prev_trace;
+
+    ret = trace_get(trace->owner->prev, &prev_trace, TRACE_IDX(trace));
+    if(ret < 0)
+    {
+        err("Failed to get trace from previous trace set\n");
+        return ret;
+    }
+
+    ret = copy_title(trace, prev_trace);
     trace_free(prev_trace);
+    return ret;
+}
+
+int passthrough_data(struct trace *trace)
+{
+    int ret;
+    struct trace *prev_trace;
+
+    ret = trace_get(trace->owner->prev, &prev_trace, TRACE_IDX(trace));
+    if(ret < 0)
+    {
+        err("Failed to get trace from previous trace set\n");
+        return ret;
+    }
+
+    ret = copy_data(trace, prev_trace);
+    trace_free(prev_trace);
+    return ret;
+}
+
+int passthrough_samples(struct trace *trace)
+{
+    int ret;
+    struct trace *prev_trace;
+
+    ret = trace_get(trace->owner->prev, &prev_trace, TRACE_IDX(trace));
+    if(ret < 0)
+    {
+        err("Failed to get trace from previous trace set\n");
+        return ret;
+    }
+
+    ret = copy_samples(trace, prev_trace);
+    trace_free(prev_trace);
+    return ret;
+}
+
+int passthrough_all(struct trace *trace)
+{
+    int ret;
+    struct trace *prev_trace;
+
+    if(trace->title || trace->data || trace->samples)
+    {
+        err("Called with existing member arrays\n");
+        return -EINVAL;
+    }
+
+    ret = trace_get(trace->owner->prev, &prev_trace, TRACE_IDX(trace));
+    if(ret < 0)
+    {
+        err("Failed to get trace from previous trace set\n");
+        return ret;
+    }
+
+    ret = copy_title(trace, prev_trace);
+    if(ret >= 0)
+        ret = copy_data(trace, prev_trace);
+
+    if(ret >= 0)
+        ret = copy_samples(trace, prev_trace);
+
+    if(ret < 0)
+    {
+        err("Failed to copy something\n");
+        goto __fail;
+    }
+
+    return 0;
+
+__fail:
+    if(trace->title)
+        free(trace->title);
+
+    if(trace->data)
+        free(trace->data);
+
+    if(trace->samples)
+        free(trace->samples);
+
     return ret;
 }
 
 void passthrough_free_title(struct trace *t)
 {
-    if(t->buffered_title)
-        free(t->buffered_title);
+    if(t->title)
+        free(t->title);
 }
 
 void passthrough_free_data(struct trace *t)
 {
-    if(t->buffered_data)
-        free(t->buffered_data);
+    if(t->data)
+        free(t->data);
 }
 
 void passthrough_free_samples(struct trace *t)
 {
-    if(t->buffered_samples)
-        free(t->buffered_samples);
+    if(t->samples)
+        free(t->samples);
+}
+
+void passthrough_free_all(struct trace *t)
+{
+    if(t->title)
+        free(t->title);
+
+    if(t->data)
+        free(t->data);
+
+    if(t->samples)
+        free(t->samples);
 }

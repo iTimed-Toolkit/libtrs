@@ -15,33 +15,24 @@ int trace_free_memory(struct trace *t)
     }
 
     if(t->owner && t->owner->prev && t->owner->tfm)
-    {
-        if(t->buffered_title)
-            t->owner->tfm->free_title(t);
-
-        if(t->buffered_data)
-            t->owner->tfm->free_data(t);
-
-        if(t->buffered_samples)
-            t->owner->tfm->free_samples(t);
-    }
+        t->owner->tfm->free(t);
     else
     {
-        if(t->buffered_title)
-            free(t->buffered_title);
+        if(t->title)
+            free(t->title);
 
-        if(t->buffered_data)
-            free(t->buffered_data);
+        if(t->data)
+            free(t->data);
 
-        if(t->buffered_samples)
-            free(t->buffered_samples);
+        if(t->samples)
+            free(t->samples);
     }
 
     free(t);
     return 0;
 }
 
-int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuffer)
+int trace_get(struct trace_set *ts, struct trace **t, size_t index)
 {
     int ret;
     struct trace *t_result;
@@ -62,7 +53,7 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuff
     debug("Getting trace %li from trace set %li\n", index, ts->set_id);
     if(ts->cache)
     {
-        debug("Looking up in cache\n");
+        debug("Looking up trace %li in cache\n", index);
         ret = tc_lookup(ts->cache, index, &t_result,
                         COHESIVE_CACHES ? true : false);
         if(ret < 0)
@@ -86,24 +77,27 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuff
 
     t_result->owner = ts;
     t_result->start_offset = ts->trace_start + index * ts->trace_length;
-    t_result->buffered_title = NULL;
-    t_result->buffered_data = NULL;
-    t_result->buffered_samples = NULL;
+    t_result->title = NULL;
+    t_result->data = NULL;
+    t_result->samples = NULL;
 
-    if(prebuffer || (cache_missed & COHESIVE_CACHES))
+    if(ts->prev && ts->tfm)
     {
-        debug("Prebuffering trace %li\n", index);
-        ret = trace_title(t_result, &t_result->buffered_title);
+        ret = ts->tfm->get(t_result);
         if(ret < 0)
+        {
+            err("Failed to get trace from transformation\n");
             goto __fail;
-
-        ret = trace_data_all(t_result, &t_result->buffered_data);
+        }
+    }
+    else
+    {
+        ret = read_trace_from_file(t_result);
         if(ret < 0)
+        {
+            err("Failed to read trace from file\n");
             goto __fail;
-
-        ret = trace_samples(t_result, &t_result->buffered_samples);
-        if(ret < 0)
-            goto __fail;
+        }
     }
 
     if(cache_missed)
@@ -140,54 +134,54 @@ int trace_copy(struct trace **res, struct trace *prev)
         return -ENOMEM;
     }
 
-    if(prev->buffered_title)
+    if(prev->title)
     {
-        t_result->buffered_title = calloc(prev->owner->title_size, sizeof(char));
-        if(!t_result->buffered_title)
+        t_result->title = calloc(prev->owner->title_size, sizeof(char));
+        if(!t_result->title)
         {
             err("Failed to allocate memory for new trace title\n");
             ret = -ENOMEM;
             goto __fail_free_result;
         }
 
-        memcpy(t_result->buffered_title,
-               prev->buffered_title,
+        memcpy(t_result->title,
+               prev->title,
                prev->owner->title_size * sizeof(char));
     }
-    else t_result->buffered_title = NULL;
+    else t_result->title = NULL;
 
-    if(prev->buffered_data)
+    if(prev->data)
     {
-        t_result->buffered_data = calloc(prev->owner->data_size, sizeof(uint8_t));
-        if(!t_result->buffered_data)
+        t_result->data = calloc(prev->owner->data_size, sizeof(uint8_t));
+        if(!t_result->data)
         {
             err("Failed to allocate memory for new trace data\n");
             ret = -ENOMEM;
             goto __fail_free_result;
         }
 
-        memcpy(t_result->buffered_data,
-               prev->buffered_data,
+        memcpy(t_result->data,
+               prev->data,
                prev->owner->data_size * sizeof(uint8_t));
     }
-    else t_result->buffered_data = NULL;
+    else t_result->data = NULL;
 
-    if(prev->buffered_samples)
+    if(prev->samples)
     {
-        t_result->buffered_samples = calloc(prev->owner->num_samples, sizeof(float));
-        if(!t_result->buffered_samples)
+        t_result->samples = calloc(prev->owner->num_samples, sizeof(float));
+        if(!t_result->samples)
         {
             err("Failed to allocate memory for new trace samples\n");
             ret = -ENOMEM;
             goto __fail_free_result;
         }
 
-        memcpy(t_result->buffered_samples,
-               prev->buffered_samples,
+        memcpy(t_result->samples,
+               prev->samples,
                prev->owner->num_samples * sizeof(float));
 
     }
-    else t_result->buffered_samples = NULL;
+    else t_result->samples = NULL;
 
     *res = t_result;
     return 0;
@@ -212,17 +206,55 @@ int trace_free(struct trace *t)
     }
 }
 
-int read_title_from_file(struct trace *t, char **title)
+int read_trace_from_file(struct trace *t)
 {
-    int ret;
+    int ret = 0, i;
     size_t read;
-    char *result;
 
-    result = calloc(1, t->owner->title_size);
-    if(!result)
+    char *result_title = NULL;
+    uint8_t *result_data = NULL;
+    float *result_samples = NULL;
+    void *temp = NULL;
+
+    if(t->owner->title_size)
     {
-        err("Failed to allocate memory for trace title\n");
-        return -ENOMEM;
+        result_title = calloc(1, t->owner->title_size);
+        if(!result_title)
+        {
+            err("Failed to allocate memory for trace title\n");
+            ret = -ENOMEM;
+            goto __fail;
+        }
+    }
+
+    if(t->owner->data_size)
+    {
+        result_data = calloc(1, t->owner->data_size);
+        if(!result_data)
+        {
+            err("Failed to allocate memory for trace data\n");
+            ret = -ENOMEM;
+            goto __fail;
+        }
+    }
+
+    if(t->owner->num_samples)
+    {
+        temp = calloc(t->owner->datatype & 0xF, t->owner->num_samples);
+        if(!temp)
+        {
+            err("Failed to allocate memory for temp sample buffer\n");
+            ret = -ENOMEM;
+            goto __fail;
+        }
+
+        result_samples = calloc(sizeof(float), t->owner->num_samples);
+        if(!result_samples)
+        {
+            err("Failed to allocate memory for sample buffer\n");
+            ret = -ENOMEM;
+            goto __fail;
+        }
     }
 
     ret = sem_wait(&t->owner->file_lock);
@@ -235,76 +267,27 @@ int read_title_from_file(struct trace *t, char **title)
     ret = fseek(t->owner->ts_file, t->start_offset, SEEK_SET);
     if(ret)
     {
-        err("Failed to seek file to title position\n");
+        err("Failed to seek file to trace position\n");
         ret = -EIO;
-        goto __free_result;
+        goto __fail;
     }
 
-    read = fread(result, 1, t->owner->title_size, t->owner->ts_file);
+    read = fread(result_title, 1, t->owner->title_size, t->owner->ts_file);
     if(read != t->owner->title_size)
     {
         err("Failed to read title from file (read %li expecting %li)\n",
             read, t->owner->title_size);
         ret = -EIO;
-        goto __free_result;
+        goto __fail;
     }
 
-    ret = sem_post(&t->owner->file_lock);
-    if(ret < 0)
+    read = fread(result_data, 1, t->owner->data_size, t->owner->ts_file);
+    if(read != t->owner->data_size)
     {
-        err("Failed to post to trace set file lock\n");
-        goto __sem_fail;
-    }
-
-    *title = result;
-    return 0;
-
-__sem_fail:
-    ret = -errno;
-
-__free_result:
-    free(result);
-    return ret;
-}
-
-int read_samples_from_file(struct trace *t, float **samples)
-{
-    int ret, i;
-    size_t read;
-
-    void *temp;
-    float *result;
-
-    temp = calloc(t->owner->datatype & 0xF, t->owner->num_samples);
-    if(!temp)
-    {
-        err("Failed to allocate memory for temporary calculation buffer\n");
-        return -ENOMEM;
-    }
-
-    result = calloc(sizeof(float), t->owner->num_samples);
-    if(!result)
-    {
-        err("Failed to allocate memory for sample buffer\n");
-        ret = -ENOMEM;
-        goto __free_temp;
-    }
-
-    ret = sem_wait(&t->owner->file_lock);
-    if(ret < 0)
-    {
-        err("Failed to wait on trace set file lock\n");
-        goto __sem_fail;
-    }
-
-    ret = fseek(t->owner->ts_file,
-                t->start_offset + t->owner->title_size + t->owner->data_size,
-                SEEK_SET);
-    if(ret)
-    {
-        err("Failed to seek file to sample position\n");
+        err("Failed to read data from file (read %li expecting %li)\n",
+            read, t->owner->data_size);
         ret = -EIO;
-        goto __free_temp;
+        goto __fail;
     }
 
     read = fread(temp, t->owner->datatype & 0xF, t->owner->num_samples, t->owner->ts_file);
@@ -313,7 +296,7 @@ int read_samples_from_file(struct trace *t, float **samples)
         err("Failed to read samples from file (read %li expecting %li)\n",
             read, t->owner->num_samples);
         ret = -EIO;
-        goto __free_temp;
+        goto __fail;
     }
 
     ret = sem_post(&t->owner->file_lock);
@@ -323,288 +306,92 @@ int read_samples_from_file(struct trace *t, float **samples)
         goto __sem_fail;
     }
 
+    // expand samples
     switch(t->owner->datatype)
     {
         case DT_BYTE:
             for(i = 0; i < t->owner->num_samples; i++)
-                result[i] = t->owner->yscale * (float) ((char *) temp)[i];
+                result_samples[i] = t->owner->yscale * (float) ((char *) temp)[i];
             break;
 
         case DT_SHORT:
             for(i = 0; i < t->owner->num_samples; i++)
-                result[i] = t->owner->yscale * (float) ((short *) temp)[i];
+                result_samples[i] = t->owner->yscale * (float) ((short *) temp)[i];
             break;
 
         case DT_INT:
             for(i = 0; i < t->owner->num_samples; i++)
-                result[i] = t->owner->yscale * (float) ((int *) temp)[i];
+                result_samples[i] = t->owner->yscale * (float) ((int *) temp)[i];
             break;
 
         case DT_FLOAT:
             for(i = 0; i < t->owner->num_samples; i++)
-                result[i] = t->owner->yscale * ((float *) temp)[i];
+                result_samples[i] = t->owner->yscale * ((float *) temp)[i];
             break;
 
         case DT_NONE:
             err("Invalid trace data type: %i\n", t->owner->datatype);
-            goto __free_result;
+            goto __fail;
     }
 
     free(temp);
-    *samples = result;
+
+    t->title = result_title;
+    t->data = result_data;
+    t->samples = result_samples;
     return 0;
 
 __sem_fail:
     ret = -errno;
 
-__free_result:
-    free(result);
+__fail:
+    if(result_title)
+        free(result_title);
 
-__free_temp:
-    free(temp);
+    if(result_data)
+        free(result_data);
+
+    if(temp)
+        free(temp);
+
+    if(result_samples)
+        free(result_samples);
+
     return ret;
 }
 
-int read_data_from_file(struct trace *t, uint8_t **data)
-{
-    int ret;
-    size_t read;
-
-    uint8_t *result;
-    result = calloc(1, t->owner->data_size);
-    if(!result)
-    {
-        err("Failed to allocate memory for trace data\n");
-        return -ENOMEM;
-    }
-
-    ret = sem_wait(&t->owner->file_lock);
-    if(ret < 0)
-    {
-        err("Failed to wait on trace set file lock\n");
-        goto __sem_fail;
-    }
-
-    read = fseek(t->owner->ts_file, t->start_offset + t->owner->title_size, SEEK_SET);
-    if(read)
-    {
-        err("Failed to seek file to data position\n");
-        ret = -EIO;
-        goto __free_result;
-    }
-
-    read = fread(result, 1, t->owner->data_size, t->owner->ts_file);
-    if(read != t->owner->data_size)
-    {
-        err("Failed to read data from file (read %li expecting %li)\n",
-            read, t->owner->data_size);
-        ret = -EIO;
-        goto __free_result;
-    }
-
-    ret = sem_post(&t->owner->file_lock);
-    if(ret < 0)
-    {
-        err("Failed to post to trace set file lock\n");
-        goto __sem_fail;
-    }
-
-    *data = result;
-    return 0;
-
-__sem_fail:
-    ret = -errno;
-
-__free_result:
-    free(result);
-    return ret;
-}
-
-int trace_title(struct trace *t, char **title)
-{
-    int ret;
-    char *result;
-
-    if(!t || !title)
-    {
-        err("Invalid trace or title pointer\n");
-        return -EINVAL;
-    }
-
-    if(t->buffered_title)
-    {
-        *title = t->buffered_title;
-        return 0;
-    }
-
-    *title = NULL;
-    if(t->owner->prev && t->owner->tfm)
-    {
-        ret = t->owner->tfm->title(t, &result);
-        if(ret < 0)
-        {
-            err("Failed to get title from transformation\n");
-            return ret;
-        }
-    }
-    else
-    {
-        ret = read_title_from_file(t, &result);
-        if(ret < 0)
-        {
-            err("Failed to read title from file\n");
-            return ret;
-        }
-    }
-
-    t->buffered_title = result;
-    *title = result;
-    return 0;
-}
-
-int __trace_buffer_data(struct trace *t)
-{
-    int ret;
-    uint8_t *result;
-
-    if(t->owner->prev && t->owner->tfm)
-    {
-        ret = t->owner->tfm->data(t, &result);
-        if(ret < 0)
-        {
-            err("Failed to get data from transformation\n");
-            return ret;
-        }
-    }
-    else
-    {
-        ret = read_data_from_file(t, &result);
-        if(ret < 0)
-        {
-            err("Failed to read data from file\n");
-            return ret;
-        }
-    }
-
-    t->buffered_data = result;
-    return 0;
-}
-
-int __trace_data_generic(struct trace *t, uint8_t **data,
-                         size_t offs, size_t len)
-{
-    int ret;
-    if(t->buffered_data)
-    {
-        *data = &t->buffered_data[offs];
-        return len;
-    }
-
-    if(offs == -1 || len == -1)
-    {
-        *data = NULL;
-        return 0;
-    }
-
-    ret = __trace_buffer_data(t);
-    if(ret < 0)
-    {
-        err("Failed to buffer trace data\n");
-        *data = NULL;
-        return ret;
-    }
-
-    *data = &t->buffered_data[offs];
-    return len;
-}
-
-int trace_data_all(struct trace *t, uint8_t **data)
-{
-    if(!t || !data)
-    {
-        err("Invalid trace or data pointer\n");
-        return -EINVAL;
-    }
-
-    return __trace_data_generic(t, data, 0, t->owner->data_size);
-}
-
-int trace_data_input(struct trace *t, uint8_t **data)
-{
-    if(!t || !data)
-    {
-        err("Invalid trace or data pointer\n");
-        return -EINVAL;
-    }
-
-    return __trace_data_generic(t, data,
-                                t->owner->input_offs,
-                                t->owner->input_len);
-}
-
-int trace_data_output(struct trace *t, uint8_t **data)
-{
-    if(!t || !data)
-    {
-        err("Invalid trace or data pointer\n");
-        return -EINVAL;
-    }
-
-    return __trace_data_generic(t, data,
-                                t->owner->output_offs,
-                                t->owner->output_len);
-}
-
-int trace_data_key(struct trace *t, uint8_t **data)
-{
-    if(!t || !data)
-    {
-        err("Invalid trace or data pointer\n");
-        return -EINVAL;
-    }
-
-    return __trace_data_generic(t, data,
-                                t->owner->key_offs,
-                                t->owner->key_len);
-}
-
-size_t trace_samples(struct trace *t, float **samples)
-{
-    int ret;
-    float *result;
-
-    if(!t || !samples)
-    {
-        err("Invalid trace or sample pointer\n");
-        return -EINVAL;
-    }
-
-    if(t->buffered_samples)
-    {
-        *samples = t->buffered_samples;
-        return 0;
-    }
-
-    if(t->owner->prev && t->owner->tfm)
-    {
-        ret = t->owner->tfm->samples(t, &result);
-        if(ret < 0)
-        {
-            err("Failed to get samples from transformation\n");
-            return ret;
-        }
-    }
-    else
-    {
-        ret = read_samples_from_file(t, &result);
-        if(ret < 0)
-        {
-            err("Failed to read samples from file\n");
-            return ret;
-        }
-    }
-
-    t->buffered_samples = result;
-    *samples = result;
-    return 0;
-}
+//int trace_title(struct trace *t, char **title)
+//{
+//    if(!t || !title)
+//    {
+//        err("Invalid trace or title pointer\n");
+//        return -EINVAL;
+//    }
+//
+//    *title = t->title;
+//    return 0;
+//}
+//
+//int trace_data(struct trace *t, uint8_t **data)
+//{
+//    if(!t || !data)
+//    {
+//        err("Invalid trace or data pointer\n");
+//        return -EINVAL;
+//    }
+//
+//    *data = t->data;
+//    return 0;
+//}
+//
+//int trace_samples(struct trace *t, float **samples)
+//{
+//    if(!t || !samples)
+//    {
+//        err("Invalid trace or sample pointer\n");
+//        return -EINVAL;
+//    }
+//
+//    *samples = t->samples;
+//    return 0;
+//}

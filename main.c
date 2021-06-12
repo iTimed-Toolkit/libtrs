@@ -42,10 +42,31 @@ static const char *aes_leakage_t_strings[] = {
         STR_AT_IDX(AES128_R10_HW_SBOXIN)
 };
 
+static const char *verify_t_strings[] = {
+        STR_AT_IDX(AES128)
+};
+
 #define NUM_TABLE_ENTRIES(table)        (sizeof(table) / (sizeof((table)[0])))
 #define IF_NEXT(c, dothis)              if(*(c)) { dothis; }
 #define IF_NOT_NEXT(c, dothis)          if(!(*(c))) { dothis; }
 #define CHECK_NEXT(c, fail)             IF_NOT_NEXT(c, err("CHECK_NEXT FAILED\n"); fail)
+
+#define PARSE_ENUM_FUNC(type, table)                \
+    int __parse_enum_ ## type(char **config,        \
+                                type *res) {        \
+    char *tok = strsep(config, SEPARATORS);         \
+    for(int i = 0;                                  \
+        i < NUM_TABLE_ENTRIES(table); i++) {        \
+        if(strcmp(tok, (table)[i]) == 0) {          \
+            *res = i; return 0; } }                 \
+    err("No matching enum found in table\n");       \
+    return -EINVAL; }
+
+PARSE_ENUM_FUNC(port_t, port_t_strings);
+PARSE_ENUM_FUNC(fill_order_t, fill_order_t_strings);
+PARSE_ENUM_FUNC(block_t, block_t_strings);
+PARSE_ENUM_FUNC(aes_leakage_t, aes_leakage_t_strings);
+PARSE_ENUM_FUNC(verify_t, verify_t_strings);
 
 int __parse_string(char **config, char **res)
 {
@@ -146,24 +167,6 @@ int __parse_memsize(char **config, size_t *size)
     return 0;
 }
 
-int __parse_enum(char **config, int *res, const char *enum_table[], int entries)
-{
-    int i;
-    char *tok = strsep(config, SEPARATORS);
-
-    for(i = 0; i < entries; i++)
-    {
-        if(strcmp(tok, enum_table[i]) == 0)
-        {
-            *res = i;
-            return 0;
-        }
-    }
-
-    err("No matching enum found in table\n");
-    return -EINVAL;
-}
-
 #define string_tt       char *
 #define bool_tt         bool
 #define int_tt          int
@@ -187,10 +190,9 @@ int __parse_enum(char **config, int *res, const char *enum_table[], int entries)
         err("Failed to parse " #name " " #type "\n");    \
         return ret; }
 
-#define __parse_enum_nodecl(name, table, c)         \
+#define __parse_enum_nodecl(name, type, c)         \
     CHECK_NEXT(c, return -EINVAL);                  \
-    ret = __parse_enum(c, &(name), table,           \
-                        NUM_TABLE_ENTRIES(table));  \
+    ret = __parse_enum_ ## type (c, &(name));           \
     if(ret < 0) {                                   \
         err("Failed to parse " #name " enum\n");      \
         return ret; }
@@ -199,9 +201,9 @@ int __parse_enum(char **config, int *res, const char *enum_table[], int entries)
     type ## _tt name = init_ ## type;               \
     __parse_arg_nodecl(name, type, c)
 
-#define parse_enum(name, table, c)                  \
-    int name = init_enum;                           \
-    __parse_enum_nodecl(name, table, c)
+#define parse_enum(name, type, c)                  \
+    type name = init_enum;                         \
+    __parse_enum_nodecl(name, type, c)
 
 #define parse_arg_optional(name, type, c)           \
     type ## _tt name = init_ ## type;               \
@@ -235,8 +237,12 @@ PARSE_FUNC(tfm_save,
            parse_arg(path, string, config),
            path);
 
+PARSE_FUNC(tfm_synchronize,
+           parse_arg(max_distance, int, config),
+           max_distance);
+
 PARSE_FUNC(tfm_wait_on,
-           parse_enum(port, port_t_strings, config);
+           parse_enum(port, port_t, config);
                    parse_arg(bufsize, memsize, config),
            port, bufsize)
 
@@ -247,23 +253,26 @@ PARSE_FUNC(tfm_visualize,
                    __parse_arg_nodecl(args.plots, int, config);
                    __parse_arg_nodecl(args.samples, int, config);
 
-                   for(int i = 0; i < 3; i++)
-           {
-                   __parse_enum_nodecl(args.order[i], fill_order_t_strings, config);
+                   for(int i = 0; i < 3; i++) {
+                   __parse_enum_nodecl(args.order[i], fill_order_t, config);
            }
 
-           // optionally get filename
-           IF_NEXT(config, if(*(*config) != '(') { __parse_arg_nodecl(args.filename, string, config))},
+                   // optionally get filename
+                   IF_NEXT(config, if(*(*config) != '(' && *(*config) != '\0') { __parse_arg_nodecl(args.filename, string, config)) },
            &args)
 
 PARSE_FUNC(tfm_average,
            parse_arg(per_sample, bool, config),
            per_sample)
 
-PARSE_FUNC(tfm_block_select,
-           parse_arg(blocksize, int, config);
-                   parse_enum(block, block_t_strings, config),
-           blocksize, block)
+PARSE_FUNC(tfm_verify,
+           parse_enum(which, verify_t, config),
+           which);
+
+//PARSE_FUNC(tfm_block_select,
+//           parse_arg(blocksize, int, config);
+//                   parse_enum(block, block_t, config),
+//           blocksize, block)
 
 PARSE_FUNC(tfm_split_tvla,
            parse_arg(which, bool, config),
@@ -276,6 +285,10 @@ PARSE_FUNC(tfm_narrow,
                    parse_arg(num_samples, int, config),
            first_trace, num_traces, first_sample, num_samples)
 
+PARSE_FUNC(tfm_append,
+           parse_arg(path, string, config),
+           path);
+
 PARSE_FUNC(tfm_static_align,
            parse_arg(confidence, double, config);
                    parse_arg(max_shift, int, config);
@@ -285,14 +298,19 @@ PARSE_FUNC(tfm_static_align,
            confidence, max_shift, ref_trace, 1, &lower, &upper);
 
 PARSE_FUNC(tfm_io_correlation,
+           parse_arg(verify_data, bool, config)
            parse_arg(granularity, int, config);
                    parse_arg(num, int, config),
-           granularity, num)
+           verify_data, granularity, num)
 
 PARSE_FUNC(tfm_aes_intermediate,
            parse_arg(verify_data, bool, config);
-                   parse_enum(model, aes_leakage_t_strings, config),
+                   parse_enum(model, aes_leakage_t, config),
            verify_data, model)
+
+PARSE_FUNC(tfm_aes_knownkey,
+           parse_arg(verify_data, bool, config),
+           verify_data)
 
 struct async_render_entry
 {
@@ -418,6 +436,8 @@ int parse_extras(char **config, struct trace_set *ts, struct parse_args *parsed)
             return -EINVAL;
         }
     }
+
+    return 0;
 }
 
 int parse_transform(char *line, struct trace_set **ts,
@@ -436,6 +456,8 @@ int parse_transform(char *line, struct trace_set **ts,
         ret = __parse_tfm_source(&curr, ts);
     else if(strcmp(type, "save") == 0)
         ret = __parse_tfm_save(&curr, &tfm);
+    else if(strcmp(type, "synchronize") == 0)
+        ret = __parse_tfm_synchronize(&curr, &tfm);
     else if(strcmp(type, "wait_on") == 0)
         ret = __parse_tfm_wait_on(&curr, &tfm);
     else if(strcmp(type, "visualize") == 0)
@@ -444,14 +466,18 @@ int parse_transform(char *line, struct trace_set **ts,
         // analysis
     else if(strcmp(type, "average") == 0)
         ret = __parse_tfm_average(&curr, &tfm);
-    else if(strcmp(type, "block_select") == 0)
-        ret = __parse_tfm_block_select(&curr, &tfm);
+    else if(strcmp(type, "verify") == 0)
+        ret = __parse_tfm_verify(&curr, &tfm);
+//    else if(strcmp(type, "block_select") == 0)
+//        ret = __parse_tfm_block_select(&curr, &tfm);
 
         // traces
     else if(strcmp(type, "split_tvla") == 0)
         ret = __parse_tfm_split_tvla(&curr, &tfm);
     else if(strcmp(type, "narrow") == 0)
         ret = __parse_tfm_narrow(&curr, &tfm);
+    else if(strcmp(type, "append") == 0)
+        ret = __parse_tfm_append(&curr, &tfm);
 
         // alignment
     else if(strcmp(type, "static_align") == 0)
@@ -462,6 +488,13 @@ int parse_transform(char *line, struct trace_set **ts,
         ret = __parse_tfm_io_correlation(&curr, &tfm);
     else if(strcmp(type, "aes_intermediate") == 0)
         ret = __parse_tfm_aes_intermediate(&curr, &tfm);
+    else if(strcmp(type, "aes_knownkey") == 0)
+        ret = __parse_tfm_aes_knownkey(&curr, &tfm);
+
+        // comments
+    else if(strcmp(type, ";") == 0 ||
+            strcmp(type, "#") == 0)
+        return 1;
 
     else
     {
@@ -487,11 +520,11 @@ int parse_transform(char *line, struct trace_set **ts,
 
     IF_NEXT(&curr,
             ret = parse_extras(&curr, *ts, parsed);
-            if(ret < 0)
-            {
-                err("Failed to parse extras\n");
-                return ret;
-            }
+                    if(ret < 0)
+                    {
+                        err("Failed to parse extras\n");
+                        return ret;
+                    }
     )
 
     new_entry = calloc(1, sizeof(struct trace_set_entry));
@@ -571,7 +604,8 @@ int parse_config(char *fname, struct parse_args *parsed)
                     goto out;
                 }
 
-                last_depth = depth;
+                if(ret != 1)
+                    last_depth = depth;
             }
         }
         else break;
@@ -594,14 +628,13 @@ int main(int argc, char *argv[])
     LIST_HEAD_INIT_INLINE(parsed.async_renders);
     LIST_HEAD_INIT_INLINE(parsed.trace_sets);
 
-    parsed.main_render = NULL;
-
     if(argc != 2)
     {
         err("Usage: libtrace_evaluate [cfg filename]\n");
         return -EINVAL;
     }
 
+    parsed.main_render = NULL;
     ret = parse_config(argv[1], &parsed);
     if(ret < 0)
     {

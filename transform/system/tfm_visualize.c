@@ -9,7 +9,7 @@
 #include <string.h>
 #include <pthread.h>
 
-#define TFM_DATA(tfm)   ((struct viz_args *) (tfm)->tfm_data)
+#define TFM_DATA(tfm)   ((struct viz_args *) (tfm)->data)
 #define GNUPLOT_CMD     "gnuplot"
 
 #define IS_MULTIPLOT(tfm)   ((tfm)->rows != 1 || (tfm)->cols != 1)
@@ -71,7 +71,7 @@ void *__draw_gnuplot_thread(void *arg)
     FILE *gnuplot;
 
     struct trace_set *ts = arg;
-    struct tfm_visualize_data *tfm_arg = ts->tfm_data;
+    struct tfm_visualize_data *tfm_arg = ts->tfm_state;
     struct viz_args *viz_args = tfm_arg->viz_args;
 
     struct __tfm_viz_entry *curr;
@@ -108,7 +108,7 @@ void *__draw_gnuplot_thread(void *arg)
 
         fprintf(gnuplot, "set samples %i\n", viz_args->samples);
     }
-    fprintf(gnuplot, "unset key\n");
+//    fprintf(gnuplot, "unset key\n");
 
     if(IS_MULTIPLOT(viz_args))
     {
@@ -166,14 +166,6 @@ void *__draw_gnuplot_thread(void *arg)
             goto __done;
         }
 
-        ret = sem_post(&tfm_arg->lock);
-        if(ret < 0)
-        {
-            err("Failed to post to queue lock\n");
-            ret = -errno;
-            goto __done;
-        }
-
         critical("Displaying entry for base %li\n", curr->base);
 
         if(IS_MULTIPLOT(viz_args))
@@ -193,7 +185,7 @@ void *__draw_gnuplot_thread(void *arg)
                     index = __plot_indices(viz_args, r, c, p);
                     if(curr->traces[index])
                     {
-                        if(curr->traces[index]->buffered_samples)
+                        if(curr->traces[index]->samples)
                         {
                             fprintf(gnuplot,
                                     " '-' binary endian=little array=%i dx=%li "
@@ -201,9 +193,9 @@ void *__draw_gnuplot_thread(void *arg)
                                     viz_args->samples, ts_num_samples(ts) /
                                                        viz_args->samples);
 
-                            if(curr->traces[index]->buffered_title)
+                            if(curr->traces[index]->title)
                                 fprintf(gnuplot, " title \"%s\"",
-                                        curr->traces[index]->buffered_title);
+                                        curr->traces[index]->title);
 
                             if(p != viz_args->plots - 1)
                                 fprintf(gnuplot, ",");
@@ -225,7 +217,7 @@ void *__draw_gnuplot_thread(void *arg)
                     {
                         for(s = 0; s < ts_num_samples(ts);
                             s += (int) (ts_num_samples(ts) / viz_args->samples))
-                            fwrite(&curr->traces[index]->buffered_samples[s],
+                            fwrite(&curr->traces[index]->samples[s],
                                    sizeof(float), 1, gnuplot);
                     }
                 }
@@ -241,6 +233,14 @@ void *__draw_gnuplot_thread(void *arg)
 
         free(curr->traces);
         free(curr);
+
+        ret = sem_post(&tfm_arg->lock);
+        if(ret < 0)
+        {
+            err("Failed to post to queue lock\n");
+            ret = -errno;
+            goto __done;
+        }
     }
 
 __done:
@@ -258,13 +258,6 @@ int __tfm_visualize_init(struct trace_set *ts)
 
     ts->num_samples = ts->prev->num_samples;
     ts->num_traces = ts->prev->num_traces;
-
-    ts->input_offs = ts->prev->input_offs;
-    ts->input_len = ts->prev->input_len;
-    ts->output_offs = ts->prev->output_offs;
-    ts->output_len = ts->prev->output_len;
-    ts->key_offs = ts->prev->key_offs;
-    ts->key_len = ts->prev->key_len;
 
     ts->title_size = ts->prev->title_size;
     ts->data_size = ts->prev->data_size;
@@ -296,7 +289,7 @@ int __tfm_visualize_init(struct trace_set *ts)
     }
 
     LIST_HEAD_INIT_INLINE(tfm_data->list);
-    ts->tfm_data = tfm_data;
+    ts->tfm_state = tfm_data;
     tfm_data->viz_args = TFM_DATA(ts->tfm);
 
     ret = pthread_create(&tfm_data->handle, NULL, __draw_gnuplot_thread, ts);
@@ -304,7 +297,7 @@ int __tfm_visualize_init(struct trace_set *ts)
     {
         err("Failed to create draw thread\n");
         ret = -errno;
-        ts->tfm_data = NULL;
+        ts->tfm_state = NULL;
         goto __destroy_signal;
     }
 
@@ -331,7 +324,15 @@ size_t __tfm_visualize_trace_size(struct trace_set *ts)
     return ts_trace_size(ts->prev);
 }
 
-int __tfm_visualize_fetch(struct trace *t, char *title, float *samples)
+void __tfm_visualize_exit(struct trace_set *ts)
+{
+    struct tfm_visualize_data *tfm = ts->tfm_state;
+
+//    sem_post(&tfm->signal);
+    pthread_join(tfm->handle, NULL);
+}
+
+int __tfm_visualize_fetch(struct trace *t)
 {
     bool found;
     int ret, index;
@@ -347,7 +348,7 @@ int __tfm_visualize_fetch(struct trace *t, char *title, float *samples)
     }
 
     tfm = TFM_DATA(t->owner->tfm);
-    tfm_data = t->owner->tfm_data;
+    tfm_data = t->owner->tfm_state;
 
     ret = sem_wait(&tfm_data->lock);
     if(ret < 0)
@@ -432,7 +433,7 @@ int __tfm_visualize_fetch(struct trace *t, char *title, float *samples)
 
         // could take a long time
         debug("Getting trace %li\n", TRACE_IDX(t));
-        ret = trace_get(t->owner->prev, &curr->traces[index], TRACE_IDX(t), true);
+        ret = trace_get(t->owner->prev, &curr->traces[index], TRACE_IDX(t));
         if(ret < 0)
         {
             err("Failed to get trace from previous set\n");
@@ -470,13 +471,19 @@ int __tfm_visualize_fetch(struct trace *t, char *title, float *samples)
         }
     }
 
-    if(title)
-        memcpy(title, curr->traces[index]->buffered_title,
-               t->owner->title_size * sizeof(char));
+    ret = copy_title(t, curr->traces[index]);
+    if(ret >= 0)
+        ret = copy_data(t, curr->traces[index]);
 
-    if(samples)
-        memcpy(samples, curr->traces[index]->buffered_samples,
-               t->owner->num_samples * sizeof(float));
+    if(ret >= 0)
+        ret = copy_samples(t, curr->traces[index]);
+
+    if(ret < 0)
+    {
+        err("Failed to copy something\n");
+        passthrough_free_all(t);
+        return ret;
+    }
 
     ret = sem_post(&tfm_data->lock);
     if(ret < 0)
@@ -488,35 +495,20 @@ int __tfm_visualize_fetch(struct trace *t, char *title, float *samples)
     return 0;
 }
 
-int __tfm_visualize_title(struct trace *t, char **title)
+int __tfm_visualize_get(struct trace *t)
 {
     int ret;
-    char *result;
 
-    if(!t || !title)
-    {
-        err("Invalid trace or destination pointer\n");
-        return -EINVAL;
-    }
-
-    result = calloc(t->owner->title_size, sizeof(char));
-    if(!result)
-    {
-        err("Failed to allocate memory for title\n");
-        return -ENOMEM;
-    }
-
-    ret = __tfm_visualize_fetch(t, result, NULL);
+    ret = __tfm_visualize_fetch(t);
     if(ret < 0)
     {
         err("Failed to get trace data from buffer\n");
-        free(result);
         return ret;
     }
 
     if(ret == 1)
     {
-        ret = passthrough_title(t, &result);
+        ret = passthrough_all(t);
         if(ret < 0)
         {
             err("Failed to passthrough title\n");
@@ -524,76 +516,12 @@ int __tfm_visualize_title(struct trace *t, char **title)
         }
     }
 
-    *title = result;
     return 0;
 }
 
-int __tfm_visualize_data(struct trace *t, uint8_t **data)
+void __tfm_visualize_free(struct trace *t)
 {
-    return passthrough_data(t, data);
-}
-
-int __tfm_visualize_samples(struct trace *t, float **samples)
-{
-    int ret;
-    float *result;
-
-    if(!t || !samples)
-    {
-        err("Invalid trace or destination pointer\n");
-        return -EINVAL;
-    }
-
-    result = calloc(t->owner->num_samples, sizeof(float));
-    if(!result)
-    {
-        err("Failed to allocate memory for samples\n");
-        return -ENOMEM;
-    }
-
-    ret = __tfm_visualize_fetch(t, NULL, result);
-    if(ret < 0)
-    {
-        err("Failed to get trace data from buffer\n");
-        free(result);
-        return ret;
-    }
-
-    if(ret == 1)
-    {
-        ret = passthrough_samples(t, &result);
-        if(ret < 0)
-        {
-            err("Failed to passthrough samples\n");
-            return ret;
-        }
-    }
-
-    *samples = result;
-    return 0;
-}
-
-void __tfm_visualize_exit(struct trace_set *ts)
-{
-    struct tfm_visualize_data *tfm = ts->tfm_data;
-
-//    sem_post(&tfm->signal);
-    pthread_join(tfm->handle, NULL);
-}
-
-void __tfm_visualize_free_title(struct trace *t)
-{
-    free(t->buffered_title);
-}
-
-void __tfm_visualize_free_data(struct trace *t)
-{
-    passthrough_free_data(t);
-}
-
-void __tfm_visualize_free_samples(struct trace *t)
-{
-    free(t->buffered_samples);
+    passthrough_free_all(t);
 }
 
 int tfm_visualize(struct tfm **tfm, struct viz_args *args)
@@ -608,8 +536,8 @@ int tfm_visualize(struct tfm **tfm, struct viz_args *args)
 
     ASSIGN_TFM_FUNCS(res, __tfm_visualize);
 
-    res->tfm_data = calloc(1, sizeof(struct viz_args));
-    if(!res->tfm_data)
+    res->data = calloc(1, sizeof(struct viz_args));
+    if(!res->data)
     {
         err("Failed to allocate memory for transformation variables\n");
         free(res);

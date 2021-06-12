@@ -143,7 +143,7 @@ size_t ts_trace_size(struct trace_set *ts);
  * (title, associated data, and samples).
  * @return 0 on success, or a standard errno error code on failure/
  */
-int trace_get(struct trace_set *ts, struct trace **t, size_t index, bool prebuffer);
+int trace_get(struct trace_set *ts, struct trace **t, size_t index);
 
 /**
  * Free a trace, removing all data, samples, and title from memory.
@@ -159,7 +159,7 @@ int trace_free(struct trace *t);
  * @param title Where to place a pointer to the title.
  * @return 0 on success, or a standard errno error code on failure.
  */
-int trace_title(struct trace *t, char **title);
+//int trace_title(struct trace *t, char **title);
 
 /**
  * Get the associated data from a trace. Note that, by default, it seems
@@ -171,34 +171,7 @@ int trace_title(struct trace *t, char **title);
  * @param data Where to place a pointer to the trace's data.
  * @return 0 on success, or a standard errno error code on failure.
  */
-int trace_data_all(struct trace *t, uint8_t **data);
-
-/**
- * Get the associated input data from a trace.
- *
- * @param t The trace to operate on.
- * @param data Where to place a pointer to the trace's input data.
- * @return 0 on success, or a standard errno error code on failure.
- */
-int trace_data_input(struct trace *t, uint8_t **data);
-
-/**
- * Get the associated output data from a trace.
- *
- * @param t The trace to operate on.
- * @param data Where to place a pointer to the trace's output data.
- * @return 0 on success, or a standard errno error code on failure.
- */
-int trace_data_output(struct trace *t, uint8_t **data);
-
-/**
- * Get the associated key data from a trace.
- *
- * @param t The trace to operate on.
- * @param data Where to place a pointer to the trace's key data.
- * @return 0 on success, or a standard errno error code on failure.
- */
-int trace_data_key(struct trace *t, uint8_t **data);
+//int trace_data(struct trace *t, uint8_t **data);
 
 /**
  * Get the samples from a trace. These are postprocessed already,
@@ -209,6 +182,6 @@ int trace_data_key(struct trace *t, uint8_t **data);
  * @param samples Where to place a pointer to the trace's samples.
  * @return 0 on success, or a standard errno error code on failure.
  */
-size_t trace_samples(struct trace *t, float **samples);
+//int trace_samples(struct trace *t, float **samples);
 
 #endif //LIBTRS_TRACE_SET_H

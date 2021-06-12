@@ -23,9 +23,6 @@ struct trace_set
 
     // commonly used, buffered headers
     size_t title_size, data_size;
-    size_t input_offs, input_len,
-            output_offs, output_len,
-            key_offs, key_len;
     enum datatype
     {
         DT_BYTE = 0x1, DT_SHORT = 0x2,
@@ -42,7 +39,7 @@ struct trace_set
     struct trace_set *prev;
     struct tfm *tfm;
 
-    void *tfm_data;
+    void *tfm_state;
     int (*tfm_next)(void *, int port,
                     int nargs, ...);
     void *tfm_next_arg;
@@ -53,9 +50,9 @@ struct trace
     struct trace_set *owner;
     size_t start_offset;
 
-    char *buffered_title;
-    uint8_t *buffered_data;
-    float *buffered_samples;
+    char *title;
+    uint8_t *data;
+    float *samples;
 };
 
 typedef enum
@@ -87,9 +84,20 @@ static log_level_t libtrace_log_level = WARN;
 /* Trace interface */
 int trace_free_memory(struct trace *t);
 int trace_copy(struct trace **res, struct trace *prev);
-int read_title_from_file(struct trace *t, char **title);
-int read_samples_from_file(struct trace *t, float **samples);
-int read_data_from_file(struct trace *t, uint8_t **data);
+int read_trace_from_file(struct trace *t);
+
+/* Backend interface */
+struct backend_intf
+{
+    int (*open)(struct trace_set **, char *);
+    int (*close)(struct trace_set *);
+
+    int (*read_title)(struct trace *, char **);
+    int (*read_samples)(struct trace *, float **);
+    int (*read_data)(struct trace *, uint8_t **);
+
+    int (*write_title)(struct trace *, char *);
+};
 
 /* Header interface */
 int read_headers(struct trace_set *ts);

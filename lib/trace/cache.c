@@ -23,6 +23,7 @@ struct trace_cache
     } *sets;
 
     size_t hits, misses, accesses;
+    size_t stores, evictions;
 };
 
 size_t __find_num_traces(struct trace_set *ts, size_t size_bytes, int assoc)
@@ -186,6 +187,8 @@ int tc_cache_manual(struct trace_cache **cache, size_t id, size_t nsets, size_t 
     res->hits = 0;
     res->misses = 0;
     res->accesses = 0;
+    res->stores = 0;
+    res->evictions = 0;
 
     *cache = res;
     return 0;
@@ -328,10 +331,11 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
 
     if(cache->accesses % 1000000 == 0)
     {
-        warn("Cache %li: %li accesses\n\t\t%li hits (%.5f)\n\t\t%li misses (%.5f)\n",
+        warn("Cache %li: %li accesses\n\t\t%li hits (%.5f)\n\t\t%li misses (%.5f)\n\t\t%li stores, %li evictions (holding %li)\n",
              cache->cache_id, cache->accesses,
              cache->hits, (float) cache->hits / (float) cache->accesses,
-             cache->misses, (float) cache->misses / (float) cache->accesses);
+             cache->misses, (float) cache->misses / (float) cache->accesses,
+             cache->stores, cache->evictions, (cache->stores - cache->evictions));
     }
 
     ret = sem_post(&cache->cache_lock);
@@ -506,11 +510,15 @@ int tc_store(struct trace_cache *cache, size_t index, struct trace *trace, bool 
         return -EINVAL;
     }
 
+    cache->stores++;
     if(curr_set->valid[way])
     {
         debug("Evicting trace %li, way %i from cache set %li\n",
               TRACE_IDX(curr_set->traces[way]), way, set);
+
+        cache->evictions++;
         trace_free_memory(curr_set->traces[way]);
+
         curr_set->traces[way] = NULL;
         curr_set->valid[way] = false;
     }

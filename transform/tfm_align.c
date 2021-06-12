@@ -10,7 +10,7 @@
 #include <errno.h>
 #include <math.h>
 
-#define TFM_DATA(tfm)   ((struct tfm_static_align *) (tfm)->tfm_data)
+#define TFM_DATA(tfm)   ((struct tfm_static_align *) (tfm)->data)
 
 struct tfm_static_align
 {
@@ -26,13 +26,6 @@ int __tfm_static_align_init(struct trace_set *ts)
 {
     ts->num_samples = ts->prev->num_samples;
     ts->num_traces = ts->prev->num_traces;
-
-    ts->input_offs = ts->prev->input_offs;
-    ts->input_len = ts->prev->input_len;
-    ts->output_offs = ts->prev->output_offs;
-    ts->output_len = ts->prev->output_len;
-    ts->key_offs = ts->prev->key_offs;
-    ts->key_len = ts->prev->key_len;
 
     ts->title_size = ts->prev->title_size;
     ts->data_size = ts->prev->data_size;
@@ -52,32 +45,27 @@ size_t __tfm_static_align_trace_size(struct trace_set *ts)
     return ts_trace_size(ts->prev);
 }
 
+void __tfm_static_align_exit(struct trace_set *ts)
+{}
+
 int __do_align(struct trace *t, double *best_conf, int *best_shift)
 {
     int ret, r, i;
     int shift_valid_lower, shift_valid_upper;
-    float *ref_samples, *curr_samples, *pearson, *temp;
+    float *pearson, *temp;
 
     struct trace *ref_trace, *curr_trace;
     struct accumulator *acc;
     struct tfm_static_align *tfm = TFM_DATA(t->owner->tfm);
 
-    ret = trace_get(t->owner->prev, &curr_trace, TRACE_IDX(t), false);
+    ret = trace_get(t->owner->prev, &curr_trace, TRACE_IDX(t));
     if(ret < 0)
     {
         err("Failed to get trace to align from previous trace set\n");
         return ret;
     }
 
-    ret = trace_samples(curr_trace, &curr_samples);
-    if(ret < 0)
-    {
-        err("Failed to get samples from trace to align\n");
-        trace_free(curr_trace);
-        return ret;
-    }
-
-    if(!curr_samples)
+    if(!curr_trace->samples)
     {
         debug("No valid previous trace\n");
         *best_conf = 0;
@@ -99,21 +87,14 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
         goto __free_temp;
     }
 
-    ret = trace_get(t->owner->prev, &ref_trace, tfm->ref_trace, false);
+    ret = trace_get(t->owner->prev, &ref_trace, tfm->ref_trace);
     if(ret < 0)
     {
         err("Failed to get reference trace from previous trace set\n");
         goto __free_accumulator;
     }
 
-    ret = trace_samples(ref_trace, &ref_samples);
-    if(ret < 0)
-    {
-        err("Failed to get reference trace samples from previous trace\n");
-        goto __free_ref;
-    }
-
-    if(!ref_samples)
+    if(!ref_trace->samples)
     {
         err("No samples for reference trace\n");
         ret = -EINVAL;
@@ -147,10 +128,10 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
                 memset(&temp[shift_valid_upper], 0, (2 * tfm->max_shift - shift_valid_upper) * sizeof(float));
 
             memcpy(&temp[shift_valid_lower],
-                   &curr_samples[i + shift_valid_lower - tfm->max_shift],
+                   &curr_trace->samples[i + shift_valid_lower - tfm->max_shift],
                    (shift_valid_upper - shift_valid_lower) * sizeof(float));
 
-            ret = stat_accumulate_dual_array(acc, temp, &ref_samples[i], 2 * tfm->max_shift, 1);
+            ret = stat_accumulate_dual_array(acc, temp, &ref_trace->samples[i], 2 * tfm->max_shift, 1);
             if(ret < 0)
             {
                 err("Failed to accumulate\n");
@@ -192,22 +173,12 @@ __free_trace:
     return ret;
 }
 
-int __tfm_static_align_title(struct trace *t, char **title)
-{
-    return passthrough_title(t, title);
-}
-
-int __tfm_static_align_data(struct trace *t, uint8_t **data)
-{
-    return passthrough_data(t, data);
-}
-
-int __tfm_static_align_samples(struct trace *t, float **samples)
+int __tfm_static_align_get(struct trace *t)
 {
     int ret;
     double best_conf = 0;
     int best_shift = 0;
-    float *result = NULL, *shift;
+    float *result = NULL;
 
     struct trace *prev_trace;
     struct tfm_static_align *tfm = TFM_DATA(t->owner->tfm);
@@ -233,21 +204,14 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
         }
 
         // these should never fail, since they succeeded in __do_align above
-        ret = trace_get(t->owner->prev, &prev_trace, TRACE_IDX(t), false);
+        ret = trace_get(t->owner->prev, &prev_trace, TRACE_IDX(t));
         if(ret < 0)
         {
             err("Failed to get trace to align from previous trace sets\n");
             goto __free_result;
         }
 
-        ret = trace_samples(prev_trace, &shift);
-        if(ret < 0)
-        {
-            err("Failed to get samples from trace to align\n");
-            goto __free_prev_trace;
-        }
-
-        if(!shift)
+        if(!prev_trace->samples)
         {
             // typically this would just mean the previous transformation does
             // not create a trace for this index (not an error) but in this case
@@ -260,17 +224,21 @@ int __tfm_static_align_samples(struct trace *t, float **samples)
 
         if(best_shift > 0)
         {
-            memcpy(result, &shift[best_shift], (ts_num_samples(t->owner) - best_shift) * sizeof(float));
-            memcpy(&result[ts_num_samples(t->owner) - best_shift], shift, best_shift * sizeof(float));
+            memcpy(result, &prev_trace->samples[best_shift], (ts_num_samples(t->owner) - best_shift) * sizeof(float));
+            memcpy(&result[ts_num_samples(t->owner) - best_shift], prev_trace->samples, best_shift * sizeof(float));
         }
         else if(best_shift < 0)
         {
-            memcpy(result, &shift[ts_num_samples(t->owner) + best_shift], -1 * best_shift * sizeof(float));
-            memcpy(&result[-1 * best_shift], shift, (ts_num_samples(t->owner) + best_shift) * sizeof(float));
+            memcpy(result, &prev_trace->samples[ts_num_samples(t->owner) + best_shift], -1 * best_shift * sizeof(float));
+            memcpy(&result[-1 * best_shift], prev_trace->samples, (ts_num_samples(t->owner) + best_shift) * sizeof(float));
         }
-        else memcpy(result, shift, ts_num_samples(t->owner) * sizeof(float));
+        else memcpy(result, prev_trace->samples, ts_num_samples(t->owner) * sizeof(float));
     }
     else goto __out;
+
+    ret = copy_title(t, prev_trace);
+    if(ret >= 0)
+        ret = copy_data(t, prev_trace);
 
 __free_prev_trace:
     trace_free(prev_trace);
@@ -278,31 +246,19 @@ __free_prev_trace:
 __free_result:
     if(ret < 0)
     {
+        passthrough_free_all(t);
         free(result);
         result = NULL;
     }
 
 __out:
-    *samples = result;
+    t->samples = result;
     return ret;
 }
 
-void __tfm_static_align_exit(struct trace_set *ts)
-{}
-
-void __tfm_static_align_free_title(struct trace *t)
+void __tfm_static_align_free(struct trace *t)
 {
-    passthrough_free_title(t);
-}
-
-void __tfm_static_align_free_data(struct trace *t)
-{
-    passthrough_free_data(t);
-}
-
-void __tfm_static_align_free_samples(struct trace *t)
-{
-    free(t->buffered_samples);
+    passthrough_free_all(t);
 }
 
 int tfm_static_align(struct tfm **tfm, double confidence,
@@ -319,8 +275,8 @@ int tfm_static_align(struct tfm **tfm, double confidence,
 
     ASSIGN_TFM_FUNCS(res, __tfm_static_align);
 
-    res->tfm_data = calloc(1, sizeof(struct tfm_static_align));
-    if(!res->tfm_data)
+    res->data = calloc(1, sizeof(struct tfm_static_align));
+    if(!res->data)
     {
         err("Failed to allocate memory for transformation variables\n");
         goto __fail_free_res;
@@ -354,7 +310,7 @@ int tfm_static_align(struct tfm **tfm, double confidence,
 __fail_free_res:
     if(res)
     {
-        if(res->tfm_data)
+        if(res->data)
         {
             if(TFM_DATA(res)->ref_samples_lower)
                 free(TFM_DATA(res)->ref_samples_lower);
@@ -362,7 +318,7 @@ __fail_free_res:
             if(TFM_DATA(res)->ref_samples_higher)
                 free(TFM_DATA(res)->ref_samples_higher);
 
-            free(res->tfm_data);
+            free(res->data);
         }
 
         free(res);

@@ -1,7 +1,8 @@
 #include "transform.h"
 #include "__tfm_internal.h"
-
 #include "__trace_internal.h"
+
+#include "crypto.h"
 
 #include <errno.h>
 
@@ -24,6 +25,17 @@ static inline int pm_generic(uint8_t *data, int index, int div, float *res)
 
     *res = sum;
     return 0;
+}
+
+static inline int pm_generic_verify(uint8_t *data, int index, int div, float *res)
+{
+    if(!verify_aes128(data))
+    {
+        err("Data failed validation\n");
+        return -EINVAL;
+    }
+
+    return pm_generic(data, index, div, res);
 }
 
 int pm_8bit(uint8_t *data, int index, float *res)
@@ -50,6 +62,38 @@ int pm_64bit(uint8_t *data, int index, float *res)
 int pm_128bit(uint8_t *data, int index, float *res)
 {
     return pm_generic(data, index, 16, res);
+}
+
+int pm_8bit_verify(uint8_t *data, int index, float *res)
+{
+    if(!verify_aes128(data))
+    {
+        err("Data failed verification\n");
+        return -EINVAL;
+    }
+
+    *res = (float) hamming_weight(data[index]);
+    return 0;
+}
+
+int pm_16bit_verify(uint8_t *data, int index, float *res)
+{
+    return pm_generic_verify(data, index, 2, res);
+}
+
+int pm_32bit_verify(uint8_t *data, int index, float *res)
+{
+    return pm_generic_verify(data, index, 4, res);
+}
+
+int pm_64bit_verify(uint8_t *data, int index, float *res)
+{
+    return pm_generic_verify(data, index, 8, res);
+}
+
+int pm_128bit_verify(uint8_t *data, int index, float *res)
+{
+    return pm_generic_verify(data, index, 16, res);
 }
 
 struct tfm_io_correlation_arg
@@ -90,7 +134,7 @@ void tfm_io_correlation_progress_title(char *dst, int len, size_t index, int cou
     snprintf(dst, len, "CPA %li", index);
 }
 
-int tfm_io_correlation(struct tfm **tfm, int granularity, int num)
+int tfm_io_correlation(struct tfm **tfm, bool verify_data, int granularity, int num)
 {
     int ret;
     struct tfm_io_correlation_arg *arg;
@@ -108,23 +152,23 @@ int tfm_io_correlation(struct tfm **tfm, int granularity, int num)
     switch(granularity)
     {
         case 8:
-            model = pm_8bit;
+            model = verify_data ? pm_8bit_verify : pm_8bit;
             break;
 
         case 16:
-            model = pm_16bit;
+            model = verify_data ? pm_16bit_verify : pm_16bit;
             break;
 
         case 32:
-            model = pm_32bit;
+            model = verify_data ? pm_32bit_verify : pm_32bit;
             break;
 
         case 64:
-            model = pm_64bit;
+            model = verify_data ? pm_64bit_verify : pm_64bit;
             break;
 
         case 128:
-            model = pm_128bit;
+            model = verify_data ? pm_128bit_verify : pm_128bit;
             break;
 
         default:

@@ -7,7 +7,7 @@
 #include <errno.h>
 #include <string.h>
 
-#define TFM_DATA(tfm)   ((struct tfm_narrow *) (tfm)->tfm_data)
+#define TFM_DATA(tfm)   ((struct tfm_narrow *) (tfm)->data)
 
 struct tfm_narrow
 {
@@ -21,13 +21,6 @@ int __tfm_narrow_init(struct trace_set *ts)
 
     ts->num_samples = tfm->num_samples;
     ts->num_traces = tfm->num_traces;
-
-    ts->input_offs = ts->prev->input_offs;
-    ts->input_len = ts->prev->input_len;
-    ts->output_offs = ts->prev->output_offs;
-    ts->output_len = ts->prev->output_len;
-    ts->key_offs = ts->prev->key_offs;
-    ts->key_len = ts->prev->key_len;
 
     ts->title_size = ts->prev->title_size;
     ts->data_size = ts->prev->data_size;
@@ -47,53 +40,28 @@ size_t __tfm_narrow_trace_size(struct trace_set *ts)
     return ts_trace_size(ts->prev);
 }
 
-int __tfm_narrow_title(struct trace *t, char **title)
+
+void __tfm_narrow_exit(struct trace_set *ts)
+{}
+
+int __tfm_narrow_get(struct trace *t)
 {
     int ret;
-    struct tfm_narrow *tfm = TFM_DATA(t->owner->tfm);
-
-    t->start_offset += tfm->first_trace;
-    ret = passthrough_title(t, title);
-    t->start_offset -= tfm->first_trace;
-
-    return ret;
-}
-
-int __tfm_narrow_data(struct trace *t, uint8_t **data)
-{
-    int ret;
-    struct tfm_narrow *tfm = TFM_DATA(t->owner->tfm);
-
-    t->start_offset += tfm->first_trace;
-    ret = passthrough_data(t, data);
-    t->start_offset -= tfm->first_trace;
-
-    return ret;
-}
-
-int __tfm_narrow_samples(struct trace *t, float **samples)
-{
-    int ret;
-    float *prev_samples, *res;
-    struct trace *prev_trace;
+    float *res;
 
     struct tfm_narrow *tfm = TFM_DATA(t->owner->tfm);
 
-    ret = trace_get(t->owner->prev, &prev_trace, TRACE_IDX(t) + tfm->first_trace, false);
+    t->start_offset += (tfm->first_trace * t->owner->trace_length);
+    ret = passthrough_all(t);
+    t->start_offset -= (tfm->first_trace * t->owner->trace_length);
+
     if(ret < 0)
     {
-        err("Failed to get trace from previous trace set\n");
+        err("Failed to passthrough previous trace\n");
         return ret;
     }
 
-    ret = trace_samples(prev_trace, &prev_samples);
-    if(ret < 0)
-    {
-        err("Failed to get samples from previous trace\n");
-        goto __out;
-    }
-
-    if(prev_samples)
+    if(t->samples)
     {
         res = calloc(t->owner->num_samples, sizeof(float));
         if(!res)
@@ -102,34 +70,19 @@ int __tfm_narrow_samples(struct trace *t, float **samples)
             return -ENOMEM;
         }
 
-        memcpy(res, &prev_samples[tfm->first_sample],
+        memcpy(res, &t->samples[tfm->first_sample],
                t->owner->num_samples * sizeof(float));
-        *samples = res;
+
+        free(t->samples);
+        t->samples = res;
     }
-    else *samples = NULL;
-    ret = 0;
 
-__out:
-    trace_free(prev_trace);
-    return ret;
+    return 0;
 }
 
-void __tfm_narrow_exit(struct trace_set *ts)
-{}
-
-void __tfm_narrow_free_title(struct trace *t)
+void __tfm_narrow_free(struct trace *t)
 {
-    passthrough_free_title(t);
-}
-
-void __tfm_narrow_free_data(struct trace *t)
-{
-    passthrough_free_data(t);
-}
-
-void __tfm_narrow_free_samples(struct trace *t)
-{
-    free(t->buffered_samples);
+    passthrough_free_all(t);
 }
 
 int tfm_narrow(struct tfm **tfm,
@@ -146,8 +99,8 @@ int tfm_narrow(struct tfm **tfm,
 
     ASSIGN_TFM_FUNCS(res, __tfm_narrow);
 
-    res->tfm_data = calloc(1, sizeof(struct tfm_narrow));
-    if(!res->tfm_data)
+    res->data = calloc(1, sizeof(struct tfm_narrow));
+    if(!res->data)
     {
         free(res);
         return -ENOMEM;

@@ -386,13 +386,6 @@ int __parse_headers(struct trace_set *ts)
     ts->data_size = 0;
     ts->datatype = DT_NONE;
 
-    ts->input_offs = 0;
-    ts->input_len = 0;
-    ts->output_offs = 0;
-    ts->output_len = 0;
-    ts->key_offs = 0;
-    ts->key_len = 0;
-
     ts->yscale = 0.0f;
 
     debug("Parsing headers for trace set %li\n", ts->set_id);
@@ -471,36 +464,6 @@ int __parse_headers(struct trace_set *ts)
 
             if(ts->datatype == DT_FLOAT)
                 ts->yscale = 1.0f;
-        }
-        else if(tag == INPUT_OFFSET)
-        {
-            ts->input_offs = ts->headers[i].val.integer;
-            debug("Found input offset = %li\n", ts->input_offs);
-        }
-        else if(tag == INPUT_LENGTH)
-        {
-            ts->input_len = ts->headers[i].val.integer;
-            debug("Found input length = %li\n", ts->input_len);
-        }
-        else if(tag == OUTPUT_OFFSET)
-        {
-            ts->output_offs = ts->headers[i].val.integer;
-            debug("Found output offset = %li\n", ts->output_offs);
-        }
-        else if(tag == OUTPUT_LENGTH)
-        {
-            ts->output_len = ts->headers[i].val.integer;
-            debug("Found output length = %li\n", ts->output_len);
-        }
-        else if(tag == KEY_OFFSET)
-        {
-            ts->key_offs = ts->headers[i].val.integer;
-            debug("Found key offset = %li\n", ts->key_offs);
-        }
-        else if(tag == KEY_LENGTH)
-        {
-            ts->key_len = ts->headers[i].val.integer;
-            debug("Found key length = %li\n", ts->key_len);
         }
         else if(tag == SCALE_Y)
         {
@@ -649,27 +612,6 @@ int write_default_headers(struct trace_set *ts)
     if(ret == 0) ret = __write_tag_len_data(ts->ts_file, SAMPLE_CODING, &ts->datatype);
     if(ret == 0) ret = __write_tag_len_data(ts->ts_file, TITLE_SPACE, &ts->title_size);
     if(ret == 0) ret = __write_tag_len_data(ts->ts_file, LENGTH_DATA, &ts->data_size);
-
-    if(ret == 0 && ts->data_size != 0)
-    {
-        if(ts->input_len != 0)
-        {
-            ret = __write_tag_len_data(ts->ts_file, INPUT_LENGTH, &ts->input_len);
-            if(ret == 0) ret = __write_tag_len_data(ts->ts_file, INPUT_OFFSET, &ts->input_offs);
-        }
-
-        if(ts->output_len != 0)
-        {
-            if(ret == 0) ret = __write_tag_len_data(ts->ts_file, OUTPUT_LENGTH, &ts->output_len);
-            if(ret == 0) ret = __write_tag_len_data(ts->ts_file, OUTPUT_OFFSET, &ts->output_offs);
-        }
-
-        if(ts->key_len != 0)
-        {
-            if(ret == 0) ret = __write_tag_len_data(ts->ts_file, KEY_LENGTH, &ts->key_len);
-            if(ret == 0) ret = __write_tag_len_data(ts->ts_file, KEY_OFFSET, &ts->key_offs);
-        }
-    }
 
     if(ret < 0)
     {

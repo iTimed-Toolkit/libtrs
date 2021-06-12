@@ -11,7 +11,7 @@
 #include <string.h>
 #include <math.h>
 
-#define TFM_DATA(tfm)   ((struct tfm_wait_on *) (tfm)->tfm_data)
+#define TFM_DATA(tfm)   ((struct tfm_wait_on *) (tfm)->data)
 
 struct tfm_wait_on
 {
@@ -23,7 +23,6 @@ struct __request_entry
 {
     struct list_head list;
     int index;
-
     sem_t *signal;
 };
 
@@ -38,6 +37,7 @@ struct __waiter_entry
     size_t ntraces;
     struct trace_cache *available;
     struct list_head traces_wanted;
+    struct list_head traces_blocked;
 };
 
 int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
@@ -82,45 +82,45 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
 
             if(pushed_title)
             {
-                new_trace->buffered_title = calloc(curr_waiter->set->title_size, sizeof(char));
-                if(!new_trace->buffered_title)
+                new_trace->title = calloc(curr_waiter->set->title_size, sizeof(char));
+                if(!new_trace->title)
                 {
                     err("Failed to allocate entry title\n");
                     goto __free_trace;
                 }
 
-                memcpy(new_trace->buffered_title, pushed_title,
+                memcpy(new_trace->title, pushed_title,
                        curr_waiter->set->title_size * sizeof(char));
             }
-            else new_trace->buffered_title = NULL;
+            else new_trace->title = NULL;
 
             if(pushed_data)
             {
-                new_trace->buffered_data = calloc(curr_waiter->set->data_size, sizeof(uint8_t));
-                if(!new_trace->buffered_data)
+                new_trace->data = calloc(curr_waiter->set->data_size, sizeof(uint8_t));
+                if(!new_trace->data)
                 {
                     err("Failed to allocate entry data\n");
                     goto __free_trace;
                 }
 
-                memcpy(new_trace->buffered_data, pushed_data,
+                memcpy(new_trace->data, pushed_data,
                        curr_waiter->set->data_size * sizeof(uint8_t));
             }
-            else new_trace->buffered_data = NULL;
+            else new_trace->data = NULL;
 
             if(pushed_samples)
             {
-                new_trace->buffered_samples = calloc(curr_waiter->set->num_samples, sizeof(float));
-                if(!new_trace->buffered_samples)
+                new_trace->samples = calloc(curr_waiter->set->num_samples, sizeof(float));
+                if(!new_trace->samples)
                 {
                     err("Failed to allocate entry samples\n");
                     goto __free_trace;
                 }
 
-                memcpy(new_trace->buffered_samples, pushed_samples,
+                memcpy(new_trace->samples, pushed_samples,
                        curr_waiter->set->num_samples * sizeof(float));
             }
-            else new_trace->buffered_samples = NULL;
+            else new_trace->samples = NULL;
 
             new_trace->owner = curr_waiter->set;
             new_trace->start_offset = index;
@@ -220,7 +220,7 @@ int __tfm_wait_on_init(struct trace_set *ts)
 
     if(ts->prev->tfm_next)
     {
-        if(ts->prev->tfm_next != __tfm_wait_on_push)
+        if((void *) ts->prev->tfm_next != (void *) __tfm_wait_on_push)
         {
             err("Previous trace set already has a (different) forward transformation\n");
             return -EINVAL;
@@ -284,9 +284,9 @@ int __tfm_wait_on_init(struct trace_set *ts)
     }
     list_add_tail(&entry->list, queue);
 
-    ts->tfm_data = queue;
+    ts->tfm_state = queue;
     ts->prev->tfm_next_arg = queue;
-    ts->prev->tfm_next = __tfm_wait_on_push;
+    ts->prev->tfm_next = (void *) __tfm_wait_on_push;
     return 0;
 
 __free_entry:
@@ -310,14 +310,88 @@ size_t __tfm_wait_on_trace_size(struct trace_set *ts)
            sizeof(struct trace);
 }
 
+void __tfm_wait_on_exit(struct trace_set *ts)
+{
+    struct __waiter_entry *curr;
+    struct tfm_wait_on *tfm = TFM_DATA(ts->tfm);
+    struct list_head *queue = ts->tfm_state;
+
+    list_for_each_entry(curr, queue, list)
+    {
+        if(curr->port == tfm->port && curr->set == ts)
+            break;
+    }
+
+    if(curr->port == tfm->port && curr->set == ts)
+    {
+        // todo: wait for consumer list to drain and then free everything in buffers?
+        list_del(&curr->list);
+        free(curr);
+    }
+    else err("Unable to find registered waiter entry for given port and trace set\n");
+}
+
+int __wait_for_entry(int index, struct __waiter_entry *curr_waiter)
+{
+    int ret;
+    struct __request_entry *request, *curr_request;
+    sem_t signal;
+
+    debug("Setting up wait request for index %i\n", index);
+    ret = sem_init(&signal, 0, 0);
+    if(ret < 0)
+    {
+        err("Failed to create consumer signal\n");
+        return -errno;
+    }
+
+    request = calloc(1, sizeof(struct __request_entry));
+    if(!request)
+    {
+        err("Failed to allocate trace index request\n");
+        return -ENOMEM;
+    }
+
+    LIST_HEAD_INIT_INLINE(request->list);
+    request->index = index;
+    request->signal = &signal;
+
+    list_for_each_entry(curr_request, &curr_waiter->traces_wanted, list)
+    {
+        if(curr_request->index > index)
+            break;
+    }
+    list_add_tail(&request->list, &curr_request->list);
+
+    ret = sem_post(&curr_waiter->lock);
+    if(ret < 0)
+    {
+        err("Failed to post to queue entry lock\n");
+        return -errno;
+    }
+
+    debug("Waiting for trace %i\n", index);
+    ret = sem_wait(&signal);
+    if(ret < 0)
+    {
+        err("Failed to wait on consumer signal\n");
+        return -errno;
+    }
+
+    debug("Came out of wait for trace %i\n", index);
+    sem_destroy(&signal);
+
+    // already unlinked by push
+    free(request);
+    return 0;
+}
+
 int __search_for_entry(struct list_head *queue,
                        port_t port, struct trace_set *ts, int index,
                        struct trace **res, struct trace_cache **cache)
 {
     int ret;
     struct __waiter_entry *curr_waiter = NULL;
-    struct __request_entry *request, *curr_request;
-    sem_t signal;
 
     if(!queue || !ts || !res)
     {
@@ -350,52 +424,12 @@ int __search_for_entry(struct list_head *queue,
 
         if(!*res)
         {
-            debug("Setting up wait request for index %i\n", index);
-            ret = sem_init(&signal, 0, 0);
+            ret = __wait_for_entry(index, curr_waiter);
             if(ret < 0)
             {
-                err("Failed to create consumer signal\n");
-                return -errno;
+                err("Failed to wait for entry to be pushed\n");
+                return ret;
             }
-
-            request = calloc(1, sizeof(struct __request_entry));
-            if(!request)
-            {
-                err("Failed to allocate trace index request\n");
-                return -ENOMEM;
-            }
-
-            LIST_HEAD_INIT_INLINE(request->list);
-            request->index = index;
-            request->signal = &signal;
-
-            list_for_each_entry(curr_request, &curr_waiter->traces_wanted, list)
-            {
-                if(curr_request->index > index)
-                    break;
-            }
-            list_add_tail(&request->list, &curr_request->list);
-
-            ret = sem_post(&curr_waiter->lock);
-            if(ret < 0)
-            {
-                err("Failed to post to queue entry lock\n");
-                return -errno;
-            }
-
-            debug("Waiting for trace %i\n", index);
-            ret = sem_wait(&signal);
-            if(ret < 0)
-            {
-                err("Failed to wait on consumer signal\n");
-                return -errno;
-            }
-
-            debug("Came out of wait for trace %i\n", index);
-            sem_destroy(&signal);
-
-            // already unlinked by push
-            free(request);
 
             ret = sem_wait(&curr_waiter->lock);
             if(ret < 0)
@@ -435,15 +469,14 @@ int __search_for_entry(struct list_head *queue,
     }
 }
 
-int __tfm_wait_on_title(struct trace *t, char **title)
+int __tfm_wait_on_get(struct trace *t)
 {
     int ret;
-    char *result = NULL;
     struct trace *trace;
     struct trace_cache *cache;
 
     struct tfm_wait_on *tfm = TFM_DATA(t->owner->tfm);
-    struct list_head *queue = t->owner->tfm_data;
+    struct list_head *queue = t->owner->tfm_state;
 
     ret = __search_for_entry(queue, tfm->port, t->owner,
                              TRACE_IDX(t), &trace, &cache);
@@ -453,128 +486,27 @@ int __tfm_wait_on_title(struct trace *t, char **title)
         return ret;
     }
 
-    if(trace->buffered_title)
-    {
-        result = calloc(t->owner->title_size, sizeof(char));
-        if(!result)
-        {
-            err("Failed to allocate result memory\n");
-            return -ENOMEM;
-        }
+    ret = copy_title(t, trace);
+    if(ret >= 0)
+        ret = copy_data(t, trace);
 
-        memcpy(result, trace->buffered_title, t->owner->title_size);
-    }
+    if(ret >= 0)
+        ret = copy_samples(t, trace);
 
-    tc_deref(cache, TRACE_IDX(t), trace);
-    *title = result;
-    return 0;
-}
-
-int __tfm_wait_on_data(struct trace *t, uint8_t **data)
-{
-    int ret;
-    uint8_t *result = NULL;
-    struct trace *trace;
-    struct trace_cache *cache;
-
-    struct tfm_wait_on *tfm = TFM_DATA(t->owner->tfm);
-    struct list_head *queue = t->owner->tfm_data;
-
-    ret = __search_for_entry(queue, tfm->port, t->owner,
-                             TRACE_IDX(t), &trace, &cache);
     if(ret < 0)
     {
-        err("Failed to search for trace entry\n");
+        err("Failed to copy something\n");
+        passthrough_free_all(t);
         return ret;
     }
 
-    if(trace->buffered_data)
-    {
-        result = calloc(t->owner->data_size, sizeof(uint8_t));
-        if(!result)
-        {
-            err("Failed to allocate result memory\n");
-            return -ENOMEM;
-        }
-
-        memcpy(result, trace->buffered_data, t->owner->data_size);
-    }
-
     tc_deref(cache, TRACE_IDX(t), trace);
-    *data = result;
     return 0;
 }
 
-int __tfm_wait_on_samples(struct trace *t, float **samples)
+void __tfm_wait_on_free(struct trace *t)
 {
-    int ret;
-    float *result = NULL;
-    struct trace *trace;
-    struct trace_cache *cache;
-
-    struct tfm_wait_on *tfm = TFM_DATA(t->owner->tfm);
-    struct list_head *queue = t->owner->tfm_data;
-
-    ret = __search_for_entry(queue, tfm->port, t->owner,
-                             TRACE_IDX(t), &trace, &cache);
-    if(ret < 0)
-    {
-        err("Failed to search for trace entry\n");
-        return ret;
-    }
-
-    if(trace->buffered_samples)
-    {
-        result = calloc(t->owner->num_samples, sizeof(float));
-        if(!result)
-        {
-            err("Failed to allocate result memory\n");
-            return -ENOMEM;
-        }
-
-        memcpy(result, trace->buffered_samples,
-               t->owner->num_samples * sizeof(float));
-    }
-
-    tc_deref(cache, TRACE_IDX(t), trace);
-    *samples = result;
-    return 0;
-}
-
-void __tfm_wait_on_exit(struct trace_set *ts)
-{
-    struct __waiter_entry *curr;
-    struct tfm_wait_on *tfm = TFM_DATA(ts->tfm);
-    struct list_head *queue = ts->tfm_data;
-
-    list_for_each_entry(curr, queue, list)
-    {
-        if(curr->port == tfm->port && curr->set == ts)
-            break;
-    }
-
-    if(curr->port == tfm->port && curr->set == ts)
-    {
-        // todo: wait for consumer list to drain and then free everything in buffers?
-        list_del(&curr->list);
-        free(curr);
-    }
-    else err("Unable to find registered waiter entry for given port and trace set\n");
-}
-
-void __tfm_wait_on_free_title(struct trace *t)
-{
-    free(t->buffered_title);
-}
-
-void __tfm_wait_on_free_data(struct trace *t)
-{
-    free(t->buffered_data);
-}
-
-void __tfm_wait_on_free_samples(struct trace *t)
-{
-    free(t->buffered_samples);
+    passthrough_free_all(t);
 }
 
 int tfm_wait_on(struct tfm **tfm, port_t port, size_t bufsize)
@@ -589,8 +521,8 @@ int tfm_wait_on(struct tfm **tfm, port_t port, size_t bufsize)
 
     ASSIGN_TFM_FUNCS(res, __tfm_wait_on);
 
-    res->tfm_data = calloc(1, sizeof(struct tfm_wait_on));
-    if(!res->tfm_data)
+    res->data = calloc(1, sizeof(struct tfm_wait_on));
+    if(!res->data)
     {
         err("Failed to allocate memory for transformation variables\n");
         free(res);

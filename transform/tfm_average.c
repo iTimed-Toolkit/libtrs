@@ -9,7 +9,7 @@
 #include <string.h>
 #include <errno.h>
 
-#define TFM_DATA(tfm)   ((struct tfm_average *) (tfm)->tfm_data)
+#define TFM_DATA(tfm)   ((struct tfm_average *) (tfm)->data)
 
 struct tfm_average
 {
@@ -30,10 +30,6 @@ int __tfm_average_init(struct trace_set *ts)
         ts->num_traces = 1;
     }
 
-    ts->input_offs = ts->input_len =
-    ts->output_offs = ts->output_len =
-    ts->key_offs = ts->key_len = 0;
-
     ts->title_size = strlen("Average") + 1;
     ts->data_size = 0;
     ts->datatype = DT_FLOAT;
@@ -52,22 +48,13 @@ size_t __tfm_average_trace_size(struct trace_set *ts)
     return ts_trace_size(ts->prev);
 }
 
-int __tfm_average_title(struct trace *t, char **title)
-{
-    *title = "Average";
-    return 0;
-}
+void __tfm_average_exit(struct trace_set *ts)
+{}
 
-int __tfm_average_data(struct trace *t, uint8_t **data)
-{
-    *data = NULL;
-    return 0;
-}
-
-int __tfm_average_samples(struct trace *t, float **samples)
+int __tfm_average_get(struct trace *t)
 {
     int i, ret;
-    float *result = NULL, *curr_samples;
+    float *result = NULL;
 
     struct trace *curr;
     struct accumulator *acc;
@@ -84,23 +71,16 @@ int __tfm_average_samples(struct trace *t, float **samples)
 
         for(i = 0; i < ts_num_traces(t->owner->prev); i++)
         {
-            ret = trace_get(t->owner->prev, &curr, i, false);
+            ret = trace_get(t->owner->prev, &curr, i);
             if(ret < 0)
             {
                 err("Failed to get trace from previous trace set\n");
                 goto __free_accumulator;
             }
 
-            ret = trace_samples(curr, &curr_samples);
-            if(ret < 0)
+            if(curr->samples)
             {
-                err("Failed to get samples to average from trace\n");
-                goto __free_accumulator;
-            }
-
-            if(curr_samples)
-            {
-                ret = stat_accumulate_single_array(acc, curr_samples,
+                ret = stat_accumulate_single_array(acc, curr->samples,
                                                    ts_num_samples(t->owner->prev));
                 if(ret < 0)
                 {
@@ -113,7 +93,7 @@ int __tfm_average_samples(struct trace *t, float **samples)
             curr = NULL;
         }
 
-        ret = stat_get_mean_all(acc, samples);
+        ret = stat_get_mean_all(acc, &t->samples);
         if(ret < 0)
         {
             err("Failed to get mean from accumulator\n");
@@ -138,23 +118,16 @@ int __tfm_average_samples(struct trace *t, float **samples)
 
         for(i = 0; i < ts_num_traces(t->owner->prev); i++)
         {
-            ret = trace_get(t->owner->prev, &curr, i, false);
+            ret = trace_get(t->owner->prev, &curr, i);
             if(ret < 0)
             {
                 err("Failed to get trace from previous trace set\n");
                 goto __free_result;
             }
 
-            ret = trace_samples(curr, &curr_samples);
-            if(ret < 0)
+            if(curr->samples)
             {
-                err("Failed to get samples to average from trace\n");
-                goto __free_trace;
-            }
-
-            if(curr_samples)
-            {
-                ret = stat_accumulate_single_many(acc, curr_samples,
+                ret = stat_accumulate_single_many(acc, curr->samples,
                                                   ts_num_samples(t->owner->prev));
                 if(ret < 0)
                 {
@@ -175,14 +148,15 @@ int __tfm_average_samples(struct trace *t, float **samples)
             trace_free(curr);
         }
 
-        *samples = result;
+        t->title = "Average";
+        t->data = NULL;
+        t->samples = result;
         result = NULL;
     }
 
 __free_accumulator:
     stat_free_accumulator(acc);
 
-__free_trace:
     if(curr)
         trace_free(curr);
 
@@ -193,18 +167,9 @@ __free_result:
     return ret;
 }
 
-void __tfm_average_exit(struct trace_set *ts)
-{}
-
-void __tfm_average_free_title(struct trace *t)
-{}
-
-void __tfm_average_free_data(struct trace *t)
-{}
-
-void __tfm_average_free_samples(struct trace *t)
+void __tfm_average_free(struct trace *t)
 {
-    free(t->buffered_samples);
+    free(t->samples);
 }
 
 int tfm_average(struct tfm **tfm, bool per_sample)
@@ -219,8 +184,8 @@ int tfm_average(struct tfm **tfm, bool per_sample)
 
     ASSIGN_TFM_FUNCS(res, __tfm_average);
 
-    res->tfm_data = calloc(1, sizeof(struct tfm_average));
-    if(!res->tfm_data)
+    res->data = calloc(1, sizeof(struct tfm_average));
+    if(!res->data)
     {
         err("Failed to allocate memory for transformation variables\n");
         free(res);

@@ -22,6 +22,7 @@ void *__ts_render_func(void *thread_arg)
     struct __ts_render_arg *arg = (struct __ts_render_arg *) thread_arg;
     struct trace *trace;
 
+    debug("Hello from thread %i, ts %p\n", arg->thread_index, arg->ts);
     while(1)
     {
         ret = sem_wait(&arg->thread_signal);
@@ -32,14 +33,17 @@ void *__ts_render_func(void *thread_arg)
             return NULL;
         }
 
+        debug("Thread %i has woken up with trace set %p\n", arg->thread_index, arg->ts);
+
         // exit condition
         if(arg->ts == NULL)
         {
+            debug("Thread %i exiting cleanly\n", arg->thread_index);
             arg->ret = 0;
             return NULL;
         }
 
-        ret = trace_get(arg->ts, &trace, arg->trace_index, true);
+        ret = trace_get(arg->ts, &trace, arg->trace_index);
         if(ret < 0)
         {
             err("Thread %i failed to get trace at index %li\n",
@@ -55,6 +59,9 @@ void *__ts_render_func(void *thread_arg)
 
             return NULL;
         }
+
+        if(TRACE_IDX(trace) % 100000 == 0)
+            err("%s\n", trace->title);
 
         trace_free(trace);
 
@@ -173,11 +180,21 @@ void *__ts_render_controller(void *controller_arg)
             {
                 err("Detected error for thread %i\n", i);
 
-                // this is good until we have better error detection/recovery
-                exit(-1);
                 ret = args[i].ret;
                 goto __done;
             }
+        }
+    }
+
+    debug("Done, waiting for workers to finish\n");
+    for(i = 0; i < arg->nthreads; i++)
+    {
+        ret = sem_wait(&done_signal);
+        if(ret < 0)
+        {
+            err("Failed to wait for done signal\n");
+            ret = -errno;
+            goto __done;
         }
     }
 

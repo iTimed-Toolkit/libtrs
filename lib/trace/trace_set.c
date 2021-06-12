@@ -56,7 +56,7 @@ int ts_open(struct trace_set **ts, const char *path)
 
     ts_result->prev = NULL;
     ts_result->tfm = NULL;
-    ts_result->tfm_data = NULL;
+    ts_result->tfm_state = NULL;
     ts_result->tfm_next = NULL;
     ts_result->tfm_next_arg = NULL;
 
@@ -139,7 +139,7 @@ int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *
 
     ts_result->prev = prev;
     ts_result->tfm = transform;
-    ts_result->tfm_data = NULL;
+    ts_result->tfm_state = NULL;
     ts_result->tfm_next = NULL;
     ts_result->tfm_next_arg = NULL;
 
