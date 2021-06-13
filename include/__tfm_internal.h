@@ -34,15 +34,8 @@ int copy_title(struct trace *to, struct trace *from);
 int copy_data(struct trace *to, struct trace *from);
 int copy_samples(struct trace *to, struct trace *from);
 
-int passthrough_title(struct trace *trace);
-int passthrough_data(struct trace *trace);
-int passthrough_samples(struct trace *trace);
-int passthrough_all(struct trace *trace);
-
-void passthrough_free_title(struct trace *t);
-void passthrough_free_data(struct trace *t);
-void passthrough_free_samples(struct trace *t);
-void passthrough_free_all(struct trace *t);
+int passthrough(struct trace *trace);
+void passthrough_free(struct trace *t);
 
 struct cpa_args
 {
@@ -56,5 +49,26 @@ struct cpa_args
 };
 
 int tfm_cpa(struct tfm **tfm, struct cpa_args *args);
+
+struct block_args
+{
+    int (*consumer_init)(struct trace_set *, void *);
+    int (*consumer_exit)(struct trace_set *, void *);
+
+    int (*initialize)(struct trace *, void **block, void *arg);
+    bool (*trace_interesting)(struct trace *, void *arg);
+    bool (*trace_matches)(struct trace *, void *block, void *arg);
+    int (*accumulate)(struct trace *, void *block, void *arg);
+    int (*finalize)(struct trace *, void *block, void *arg);
+
+    enum
+    {
+        DONE_LISTLEN
+    } criteria;
+
+    void *arg;
+};
+
+int tfm_block(struct tfm **tfm, struct block_args *arg);
 
 #endif //LIBTRS___TFM_INTERNAL_H

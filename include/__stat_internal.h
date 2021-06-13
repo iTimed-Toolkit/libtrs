@@ -10,6 +10,17 @@
         float *a;           \
     } (name);
 
+typedef enum
+{
+    CAP_AVG =       (1 << 0),
+    CAP_DEV =       (1 << 1),
+    CAP_COV =       (1 << 2),
+    CAP_MAX =       (1 << 3),
+    CAP_MIN =       (1 << 4),
+    CAP_MAXABS =    (1 << 5),
+    CAP_MINABS =    (1 << 6)
+} capability_t;
+
 // structs
 struct accumulator
 {

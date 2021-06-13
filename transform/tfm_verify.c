@@ -88,7 +88,7 @@ int __tfm_verify_get(struct trace *t)
     }
 
     if(verified)
-        return passthrough_all(t);
+        return passthrough(t);
     else
     {
         err("Trace %li failed verification\n", TRACE_IDX(t));
@@ -101,7 +101,7 @@ int __tfm_verify_get(struct trace *t)
 
 void __tfm_verify_free(struct trace *t)
 {
-    passthrough_free_all(t);
+    passthrough_free(t);
 }
 
 int tfm_verify(struct tfm **tfm, verify_t which)

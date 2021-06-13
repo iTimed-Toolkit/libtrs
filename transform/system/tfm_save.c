@@ -789,7 +789,7 @@ int __tfm_save_get(struct trace *t)
 
 void __tfm_save_free(struct trace *t)
 {
-    passthrough_free_all(t);
+    passthrough_free(t);
 }
 
 int tfm_save(struct tfm **tfm, char *path_prefix)

@@ -101,58 +101,7 @@ int copy_samples(struct trace *to, struct trace *from)
     return 0;
 }
 
-int passthrough_title(struct trace *trace)
-{
-    int ret;
-    struct trace *prev_trace;
-
-    ret = trace_get(trace->owner->prev, &prev_trace, TRACE_IDX(trace));
-    if(ret < 0)
-    {
-        err("Failed to get trace from previous trace set\n");
-        return ret;
-    }
-
-    ret = copy_title(trace, prev_trace);
-    trace_free(prev_trace);
-    return ret;
-}
-
-int passthrough_data(struct trace *trace)
-{
-    int ret;
-    struct trace *prev_trace;
-
-    ret = trace_get(trace->owner->prev, &prev_trace, TRACE_IDX(trace));
-    if(ret < 0)
-    {
-        err("Failed to get trace from previous trace set\n");
-        return ret;
-    }
-
-    ret = copy_data(trace, prev_trace);
-    trace_free(prev_trace);
-    return ret;
-}
-
-int passthrough_samples(struct trace *trace)
-{
-    int ret;
-    struct trace *prev_trace;
-
-    ret = trace_get(trace->owner->prev, &prev_trace, TRACE_IDX(trace));
-    if(ret < 0)
-    {
-        err("Failed to get trace from previous trace set\n");
-        return ret;
-    }
-
-    ret = copy_samples(trace, prev_trace);
-    trace_free(prev_trace);
-    return ret;
-}
-
-int passthrough_all(struct trace *trace)
+int passthrough(struct trace *trace)
 {
     int ret;
     struct trace *prev_trace;
@@ -183,6 +132,7 @@ int passthrough_all(struct trace *trace)
         goto __fail;
     }
 
+    trace_free(prev_trace);
     return 0;
 
 __fail:
@@ -195,28 +145,11 @@ __fail:
     if(trace->samples)
         free(trace->samples);
 
+    trace_free(prev_trace);
     return ret;
 }
 
-void passthrough_free_title(struct trace *t)
-{
-    if(t->title)
-        free(t->title);
-}
-
-void passthrough_free_data(struct trace *t)
-{
-    if(t->data)
-        free(t->data);
-}
-
-void passthrough_free_samples(struct trace *t)
-{
-    if(t->samples)
-        free(t->samples);
-}
-
-void passthrough_free_all(struct trace *t)
+void passthrough_free(struct trace *t)
 {
     if(t->title)
         free(t->title);

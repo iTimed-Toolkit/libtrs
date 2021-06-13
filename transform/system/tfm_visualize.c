@@ -108,7 +108,7 @@ void *__draw_gnuplot_thread(void *arg)
 
         fprintf(gnuplot, "set samples %i\n", viz_args->samples);
     }
-//    fprintf(gnuplot, "unset key\n");
+    fprintf(gnuplot, "unset key\n");
 
     if(IS_MULTIPLOT(viz_args))
     {
@@ -481,7 +481,7 @@ int __tfm_visualize_fetch(struct trace *t)
     if(ret < 0)
     {
         err("Failed to copy something\n");
-        passthrough_free_all(t);
+        passthrough_free(t);
         return ret;
     }
 
@@ -508,7 +508,7 @@ int __tfm_visualize_get(struct trace *t)
 
     if(ret == 1)
     {
-        ret = passthrough_all(t);
+        ret = passthrough(t);
         if(ret < 0)
         {
             err("Failed to passthrough title\n");
@@ -521,7 +521,7 @@ int __tfm_visualize_get(struct trace *t)
 
 void __tfm_visualize_free(struct trace *t)
 {
-    passthrough_free_all(t);
+    passthrough_free(t);
 }
 
 int tfm_visualize(struct tfm **tfm, struct viz_args *args)

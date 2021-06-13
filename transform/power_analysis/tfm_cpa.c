@@ -94,6 +94,12 @@ size_t __tfm_cpa_trace_size(struct trace_set *ts)
     return ts->title_size + ts->num_samples * sizeof(float);
 }
 
+void __tfm_cpa_exit(struct trace_set *ts)
+{
+    struct cpa_args *tfm = TFM_DATA(ts->tfm);
+    tfm->consumer_exit(ts, tfm->init_args);
+}
+
 int __tfm_cpa_get(struct trace *t)
 {
     int i, j, ret;
@@ -258,12 +264,6 @@ __free_accumulator:
 __free_pm:
     free(pm);
     return ret;
-}
-
-void __tfm_cpa_exit(struct trace_set *ts)
-{
-    struct cpa_args *tfm = TFM_DATA(ts->tfm);
-    tfm->consumer_exit(ts, tfm->init_args);
 }
 
 void __tfm_cpa_free(struct trace *t)

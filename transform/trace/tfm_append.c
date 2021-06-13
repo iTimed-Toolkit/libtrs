@@ -68,7 +68,7 @@ int __tfm_append_get(struct trace *t)
     struct trace *prev_trace;
 
     if(TRACE_IDX(t) < ts_num_traces(t->owner->prev))
-        return passthrough_all(t);
+        return passthrough(t);
     else
     {
         index = TRACE_IDX(t) - ts_num_traces(t->owner->prev);
@@ -90,7 +90,7 @@ int __tfm_append_get(struct trace *t)
         if(ret < 0)
         {
             err("Failed to copy something\n");
-            passthrough_free_all(t);
+            passthrough_free(t);
         }
 
         trace_free(prev_trace);
@@ -100,7 +100,7 @@ int __tfm_append_get(struct trace *t)
 
 void __tfm_append_free(struct trace *t)
 {
-    passthrough_free_all(t);
+    passthrough_free(t);
 }
 
 int tfm_append(struct tfm **tfm, const char *path)

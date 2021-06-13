@@ -31,18 +31,15 @@ size_t __tfm_nop_trace_size(struct trace_set *ts)
 
 void __tfm_nop_exit(struct trace_set *ts){}
 
-
-
 int __tfm_nop_get(struct trace *t)
 {
-    return passthrough_all(t);
+    return passthrough(t);
 }
 
 void __tfm_nop_free(struct trace *t)
 {
-    passthrough_free_all(t);
+    passthrough_free(t);
 }
-
 
 int tfm_nop(struct tfm **tfm)
 {

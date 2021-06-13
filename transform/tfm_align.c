@@ -246,7 +246,7 @@ __free_prev_trace:
 __free_result:
     if(ret < 0)
     {
-        passthrough_free_all(t);
+        passthrough_free(t);
         free(result);
         result = NULL;
     }
@@ -258,7 +258,7 @@ __out:
 
 void __tfm_static_align_free(struct trace *t)
 {
-    passthrough_free_all(t);
+    passthrough_free(t);
 }
 
 int tfm_static_align(struct tfm **tfm, double confidence,

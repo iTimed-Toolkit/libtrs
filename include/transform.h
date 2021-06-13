@@ -16,14 +16,6 @@ struct tfm;
 
 typedef enum
 {
-    BLOCK_MAX = 0,
-    BLOCK_MIN,
-    BLOCK_MAXABS,
-    BLOCK_MINABS
-} block_t;
-
-typedef enum
-{
     PORT_ECHO = 0,
     PORT_CPA_PROGRESS,
     PORT_CPA_SPLIT_PM,
@@ -42,6 +34,19 @@ typedef enum
     AES128
 } verify_t;
 
+typedef enum
+{
+    SUMMARY_AVG,
+    SUMMARY_DEV,
+    SUMMARY_MIN,
+    SUMMARY_MAX
+} summary_t;
+
+typedef enum
+{
+    ALONG_DATA,
+} filter_t;
+
 struct viz_args
 {
     char *filename;
@@ -59,9 +64,7 @@ int tfm_visualize(struct tfm **tfm, struct viz_args *args);
 int tfm_average(struct tfm **tfm, bool per_sample);
 int tfm_verify(struct tfm **tfm, verify_t which);
 
-int tfm_block_reduce(struct tfm **tfm, int blocksize, block_t block);
-int tfm_block_maxabs(struct tfm **tfm, bool per_sample, int blocksize);
-int tfm_block_select(struct tfm **tfm, int blocksize, block_t block);
+int tfm_reduce_along(struct tfm **tfm, summary_t stat, filter_t along);
 
 // Traces
 int tfm_split_tvla(struct tfm **tfm, bool which);

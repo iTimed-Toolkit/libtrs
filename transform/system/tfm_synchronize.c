@@ -207,7 +207,7 @@ int __synchronize(struct tfm_synchronize *tfm, size_t index)
     return 0;
 }
 
-int __finalize(struct tfm_synchronize *tfm, size_t index)
+int __sync_finalize(struct tfm_synchronize *tfm, size_t index)
 {
     int ret;
     struct __tfm_synchronize_entry *curr;
@@ -280,14 +280,14 @@ int __tfm_synchronize_get(struct trace *t)
         return ret;
     }
 
-    ret = passthrough_all(t);
+    ret = passthrough(t);
     if(ret < 0)
     {
         err("Failed to passthrough title\n");
         return ret;
     }
 
-    ret = __finalize(TFM_DATA(t->owner->tfm), TRACE_IDX(t));
+    ret = __sync_finalize(TFM_DATA(t->owner->tfm), TRACE_IDX(t));
     if(ret < 0)
     {
         err("Failed to finalize\n");
@@ -299,7 +299,7 @@ int __tfm_synchronize_get(struct trace *t)
 
 void __tfm_synchronize_free(struct trace *t)
 {
-    passthrough_free_all(t);
+    passthrough_free(t);
 }
 
 int tfm_synchronize(struct tfm **tfm, int max_distance)

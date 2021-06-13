@@ -91,7 +91,7 @@ int __tfm_split_tvla_get(struct trace *t)
     }
 
     if(type == tfm->which)
-        ret = passthrough_all(t);
+        ret = passthrough(t);
     else
     {
         t->title = NULL;
@@ -107,7 +107,7 @@ __out:
 
 void __tfm_split_tvla_free(struct trace *t)
 {
-    passthrough_free_all(t);
+    passthrough_free(t);
 }
 
 int tfm_split_tvla(struct tfm **tfm, bool which)

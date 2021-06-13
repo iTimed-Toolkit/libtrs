@@ -28,11 +28,19 @@ static const char *fill_order_t_strings[] = {
         STR_AT_IDX(PLOTS)
 };
 
-static const char *block_t_strings[] = {
-        STR_AT_IDX(BLOCK_MAX),
-        STR_AT_IDX(BLOCK_MIN),
-        STR_AT_IDX(BLOCK_MAXABS),
-        STR_AT_IDX(BLOCK_MINABS)
+static const char *verify_t_strings[] = {
+        STR_AT_IDX(AES128)
+};
+
+static const char *summary_t_strings[] = {
+        STR_AT_IDX(SUMMARY_AVG),
+        STR_AT_IDX(SUMMARY_DEV),
+        STR_AT_IDX(SUMMARY_MIN),
+        STR_AT_IDX(SUMMARY_MAX)
+};
+
+static const char *filter_t_strings[] = {
+        STR_AT_IDX(ALONG_DATA)
 };
 
 static const char *aes_leakage_t_strings[] = {
@@ -42,9 +50,6 @@ static const char *aes_leakage_t_strings[] = {
         STR_AT_IDX(AES128_R10_HW_SBOXIN)
 };
 
-static const char *verify_t_strings[] = {
-        STR_AT_IDX(AES128)
-};
 
 #define NUM_TABLE_ENTRIES(table)        (sizeof(table) / (sizeof((table)[0])))
 #define IF_NEXT(c, dothis)              if(*(c)) { dothis; }
@@ -64,9 +69,10 @@ static const char *verify_t_strings[] = {
 
 PARSE_ENUM_FUNC(port_t, port_t_strings);
 PARSE_ENUM_FUNC(fill_order_t, fill_order_t_strings);
-PARSE_ENUM_FUNC(block_t, block_t_strings);
-PARSE_ENUM_FUNC(aes_leakage_t, aes_leakage_t_strings);
 PARSE_ENUM_FUNC(verify_t, verify_t_strings);
+PARSE_ENUM_FUNC(summary_t, summary_t_strings);
+PARSE_ENUM_FUNC(filter_t, filter_t_strings);
+PARSE_ENUM_FUNC(aes_leakage_t, aes_leakage_t_strings);
 
 int __parse_string(char **config, char **res)
 {
@@ -269,10 +275,10 @@ PARSE_FUNC(tfm_verify,
            parse_enum(which, verify_t, config),
            which);
 
-//PARSE_FUNC(tfm_block_select,
-//           parse_arg(blocksize, int, config);
-//                   parse_enum(block, block_t, config),
-//           blocksize, block)
+PARSE_FUNC(tfm_reduce_along,
+           parse_enum(stat, summary_t, config);
+           parse_enum(along, filter_t, config),
+           stat, along);
 
 PARSE_FUNC(tfm_split_tvla,
            parse_arg(which, bool, config),
@@ -468,8 +474,8 @@ int parse_transform(char *line, struct trace_set **ts,
         ret = __parse_tfm_average(&curr, &tfm);
     else if(strcmp(type, "verify") == 0)
         ret = __parse_tfm_verify(&curr, &tfm);
-//    else if(strcmp(type, "block_select") == 0)
-//        ret = __parse_tfm_block_select(&curr, &tfm);
+    else if(strcmp(type, "reduce_along") == 0)
+        ret = __parse_tfm_reduce_along(&curr, &tfm);
 
         // traces
     else if(strcmp(type, "split_tvla") == 0)

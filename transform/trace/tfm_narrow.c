@@ -52,7 +52,7 @@ int __tfm_narrow_get(struct trace *t)
     struct tfm_narrow *tfm = TFM_DATA(t->owner->tfm);
 
     t->start_offset += (tfm->first_trace * t->owner->trace_length);
-    ret = passthrough_all(t);
+    ret = passthrough(t);
     t->start_offset -= (tfm->first_trace * t->owner->trace_length);
 
     if(ret < 0)
@@ -82,7 +82,7 @@ int __tfm_narrow_get(struct trace *t)
 
 void __tfm_narrow_free(struct trace *t)
 {
-    passthrough_free_all(t);
+    passthrough_free(t);
 }
 
 int tfm_narrow(struct tfm **tfm,

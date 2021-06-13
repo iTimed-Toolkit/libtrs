@@ -496,7 +496,7 @@ int __tfm_wait_on_get(struct trace *t)
     if(ret < 0)
     {
         err("Failed to copy something\n");
-        passthrough_free_all(t);
+        passthrough_free(t);
         return ret;
     }
 
@@ -506,7 +506,7 @@ int __tfm_wait_on_get(struct trace *t)
 
 void __tfm_wait_on_free(struct trace *t)
 {
-    passthrough_free_all(t);
+    passthrough_free(t);
 }
 
 int tfm_wait_on(struct tfm **tfm, port_t port, size_t bufsize)
