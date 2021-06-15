@@ -104,7 +104,7 @@ int aes128_knownkey_models(uint8_t *data, int index, float *res)
         }
     }
 
-    *res = (float) hamming_weight(state[byte_index] ^ 0x80);
+    *res = (float) hamming_weight(state[byte_index]);
     return 0;
 }
 

@@ -1,10 +1,14 @@
-cmake_minimum_required(VERSION 3.17)
+cmake_minimum_required(VERSION 3.14)
 project(libtrs C CUDA)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_FLAGS "-O3 -Wall -mavx2")
+set(CMAKE_C_FLAGS "-O3 -Wall -mavx512f")
+set(CMAKE_C_COMPILER "/home/ghaas/.local/bin/gcc")
+set(CMAKE_CXX_COMPILER "/home/ghaas/.local/bin/gcc")
 
 include_directories(include)
+include_directories(/home/ghaas/.local/include)
+link_directories(/home/ghaas/.local/lib)
 
 # core trace library
 add_library(trace lib/trace/trace_set.c lib/trace/cache.c
