@@ -11,10 +11,12 @@ struct tfm_reduce_along_config
 {
     summary_t stat;
     filter_t along;
+    filter_param_t param;
 };
 
 struct tfm_reduce_along_block
 {
+    int count;
     void *cmp_data;
     struct accumulator *acc;
 };
@@ -24,10 +26,13 @@ int tfm_reduce_along_init(struct trace_set *ts, void *arg)
     struct tfm_reduce_along_config *cfg = arg;
     switch(cfg->along)
     {
+        case ALONG_NUM:
+            ts->data_size = 0;
+            ts->num_samples = ts->prev->num_samples;
+            break;
+
         case ALONG_DATA:
             ts->data_size = ts->prev->data_size;
-
-            // don't know number of traces yet
             ts->num_samples = ts->prev->num_samples;
             break;
 
@@ -60,6 +65,10 @@ int tfm_reduce_along_initialize(struct trace *t, void **block, void *arg)
 
     switch(cfg->along)
     {
+        case ALONG_NUM:
+            new->count = 0;
+            break;
+
         case ALONG_DATA:
             new->cmp_data = calloc(1, t->owner->data_size);
             if(!new->cmp_data)
@@ -101,6 +110,9 @@ bool tfm_reduce_along_interesting(struct trace *t, void *arg)
     struct tfm_reduce_along_config *cfg = arg;
     switch(cfg->along)
     {
+        case ALONG_NUM:
+            return true;
+
         case ALONG_DATA:
             return (t->data && t->samples);
 
@@ -117,6 +129,9 @@ bool tfm_reduce_along_matches(struct trace *t, void *block, void *arg)
 
     switch(cfg->along)
     {
+        case ALONG_NUM:
+            return blk->count < cfg->param.num;
+
         case ALONG_DATA:
             return memcmp(blk->cmp_data, t->data, t->owner->data_size) == 0;
 
@@ -136,6 +151,8 @@ int tfm_reduce_along_accumulate(struct trace *t, void *block, void *arg)
     {
         switch(cfg->along)
         {
+            case ALONG_NUM:
+                blk->count++;
             case ALONG_DATA:
                 ret = stat_accumulate_single_array(blk->acc, t->samples,
                                                    (int) t->owner->num_samples);
@@ -169,6 +186,9 @@ int tfm_reduce_along_finalize(struct trace *t, void *block, void *arg)
 
     switch(cfg->along)
     {
+        case ALONG_NUM:
+            break;
+
         case ALONG_DATA:
             t->data = calloc(1, t->owner->data_size);
             if(!t->data)
@@ -211,13 +231,15 @@ int tfm_reduce_along_finalize(struct trace *t, void *block, void *arg)
         return ret;
     }
 
-    free(blk->cmp_data);
+    if(blk->cmp_data)
+        free(blk->cmp_data);
+
     stat_free_accumulator(blk->acc);
     free(blk);
     return 0;
 }
 
-int tfm_reduce_along(struct tfm **tfm, summary_t stat, filter_t along)
+int tfm_reduce_along(struct tfm **tfm, summary_t stat, filter_t along, filter_param_t param)
 {
     int ret;
     struct block_args block_args = {
@@ -243,6 +265,7 @@ int tfm_reduce_along(struct tfm **tfm, summary_t stat, filter_t along)
 
     cfg->stat = stat;
     cfg->along = along;
+    cfg->param = param;
     block_args.arg = cfg;
 
     ret = tfm_block(tfm, &block_args);

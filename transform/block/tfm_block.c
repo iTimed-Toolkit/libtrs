@@ -114,13 +114,7 @@ int __block_accumulate(struct tfm_block_state *state,
 
     struct __tfm_block_block *curr, *new;
 
-    ret = sem_wait(&state->lock);
-    if(ret < 0)
-    {
-        err("Failed to wait on state lock semaphore\n");
-        return -errno;
-    }
-
+    sem_acquire(&state->lock);
     list_for_each_entry(curr, &state->blocks, list)
     {
         if(tfm->trace_matches(curr_trace, curr->block, tfm->arg))
@@ -130,7 +124,7 @@ int __block_accumulate(struct tfm_block_state *state,
             if(ret < 0)
             {
                 err("Failed to accumulate trace into block\n");
-                return ret;
+                goto __unlock;
             }
 
             break;
@@ -140,6 +134,12 @@ int __block_accumulate(struct tfm_block_state *state,
     if(!found)
     {
         new = calloc(1, sizeof(struct __tfm_block_block));
+        if(!new)
+        {
+            err("Failed to allocate new meta-block entry\n");
+            ret = -ENOMEM;
+            goto __unlock;
+        }
 
         LIST_HEAD_INIT_INLINE(new->list);
         new->done = false;
@@ -149,14 +149,15 @@ int __block_accumulate(struct tfm_block_state *state,
         if(ret < 0)
         {
             err("Failed to initialize new block\n");
-            return -ENOMEM;
+            free(new);
+            goto __unlock;
         }
 
         ret = tfm->accumulate(curr_trace, new->block, tfm->arg);
         if(ret < 0)
         {
             err("Failed to accumulate trace into new block\n");
-            return ret;
+            goto __unlock;
         }
 
         list_add_tail(&new->list, &curr->list);
@@ -173,14 +174,10 @@ int __block_accumulate(struct tfm_block_state *state,
         }
     }
 
-    ret = sem_post(&state->lock);
-    if(ret < 0)
-    {
-        err("Failed to post to state lock semaphore\n");
-        return -errno;
-    }
-
-    return 0;
+    ret = 0;
+__unlock:
+    sem_release(&state->lock);
+    return ret;
 }
 
 int __block_finalize(struct tfm_block_state *state,
@@ -197,13 +194,7 @@ int __block_finalize(struct tfm_block_state *state,
         return -EINVAL;
     }
 
-    ret = sem_wait(&state->lock);
-    if(ret < 0)
-    {
-        err("Failed to wait on state lock\n");
-        return -EINVAL;
-    }
-
+    sem_acquire(&state->lock);
     list_for_each_entry(curr, &state->blocks, list)
     {
         if(curr->index == TRACE_IDX(res) && curr->done)
@@ -219,7 +210,7 @@ int __block_finalize(struct tfm_block_state *state,
         if(ret < 0)
         {
             err("Failed to finalize block into result trace\n");
-            return ret;
+            goto __unlock;
         }
 
         state->nblocks--;
@@ -229,13 +220,18 @@ int __block_finalize(struct tfm_block_state *state,
     else
     {
         err("Failed to find correct result block in list\n");
-        return -EINVAL;
+        ret = -EINVAL;
+        goto __unlock;
     }
 
     if(res->title)
     {
-        err("Consumer set a title value\n");
-        return -EINVAL;
+        if(strlen(res->title) >= TITLE_SIZE)
+        {
+            err("Consumer set a too-long title value\n");
+            ret = -EINVAL;
+            goto __unlock;
+        }
     }
     else
     {
@@ -243,20 +239,15 @@ int __block_finalize(struct tfm_block_state *state,
         if(!res->title)
         {
             err("Failed to allocate title memory\n");
-            return -ENOMEM;
+            ret = -ENOMEM;
+            goto __unlock;
         }
-
         snprintf(res->title, TITLE_SIZE, "Block %li\n", TRACE_IDX(res));
     }
 
-    ret = sem_post(&state->lock);
-    if(ret < 0)
-    {
-        err("Failed to post to state lock\n");
-        return -EINVAL;
-    }
-
-    return 0;
+__unlock:
+    sem_release(&state->lock);
+    return ret;
 }
 
 int __tfm_block_get(struct trace *t)

@@ -1,7 +1,6 @@
 #include "trace.h"
 #include "__trace_internal.h"
 
-#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -220,7 +219,7 @@ int ts_create_cache(struct trace_set *ts, size_t size_bytes, size_t assoc)
 
 int tc_free(struct trace_cache *cache)
 {
-    int ret, i, j;
+    int i, j;
     debug("Freeing cache %li\n", cache->cache_id);
 
     if(!cache)
@@ -229,22 +228,14 @@ int tc_free(struct trace_cache *cache)
         return -EINVAL;
     }
 
-    ret = sem_wait(&cache->cache_lock);
-    if(ret < 0)
-    {
-        err("Failed to wait on cache lock semaphore: %s\n", strerror(errno));
-        return -errno;
-    }
-
+    sem_acquire(&cache->cache_lock);
     sem_destroy(&cache->cache_lock);
+
     for(i = 0; i < cache->nsets; i++)
     {
         if(cache->sets[i].initialized)
         {
-            ret = sem_wait(&cache->sets[i].set_lock);
-            if(ret < 0)
-                return -errno;
-
+            sem_acquire(&cache->sets[i].set_lock);
             sem_destroy(&cache->sets[i].set_lock);
 
             for(j = 0; j < cache->nways; j++)
@@ -286,13 +277,7 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
     set = index % cache->nsets;
     curr_set = &cache->sets[set];
 
-    ret = sem_wait(&cache->cache_lock);
-    if(ret < 0)
-    {
-        err("Failed to wait on cache lock semaphore: %s\n", strerror(errno));
-        return -errno;
-    }
-
+    sem_acquire(&cache->cache_lock);
     if(!curr_set->initialized)
     {
         ret = __initialize_set(cache, set);
@@ -310,22 +295,9 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
               set, cache->misses);
 
         if(keep_lock)
-        {
-            ret = sem_wait(&curr_set->set_lock);
-            if(ret < 0)
-            {
-                err("Failed to wait on set lock semaphore: %s\n", strerror(errno));
-                return -errno;
-            }
-        }
+        sem_acquire(&curr_set->set_lock);
 
-        ret = sem_post(&cache->cache_lock);
-        if(ret < 0)
-        {
-            err("Failed to post to cache lock semaphore: %s\n", strerror(errno));
-            return -errno;
-        }
-
+        sem_release(&cache->cache_lock);
         return 0;
     }
 
@@ -338,19 +310,8 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
              cache->stores, cache->evictions, (cache->stores - cache->evictions));
     }
 
-    ret = sem_post(&cache->cache_lock);
-    if(ret < 0)
-    {
-        err("Failed to post to cache lock semaphore: %s\n", strerror(errno));
-        return -errno;
-    }
-
-    ret = sem_wait(&curr_set->set_lock);
-    if(ret < 0)
-    {
-        err("Failed to wait on set lock semaphore: %s\n", strerror(errno));
-        return -errno;
-    }
+    sem_release(&cache->cache_lock);
+    sem_acquire(&curr_set->set_lock);
 
     *trace = NULL;
     for(i = 0; i < cache->nways; i++)
@@ -373,15 +334,7 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
         }
     }
 
-    if(*trace)
-    {
-        ret = sem_post(&curr_set->set_lock);
-        if(ret < 0)
-        {
-            err("Failed to post to set lock semaphore: %s\n", strerror(errno));
-            return -errno;
-        }
-    }
+    if(*trace) sem_release(&curr_set->set_lock)
     else
     {
         __sync_fetch_and_add(&cache->misses, 1);
@@ -389,14 +342,7 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
               cache->misses);
 
         if(!keep_lock)
-        {
-            ret = sem_post(&curr_set->set_lock);
-            if(ret < 0)
-            {
-                err("Failed to post to set lock semaphore: %s\n", strerror(errno));
-                return -errno;
-            }
-        }
+        sem_release(&curr_set->set_lock);
     }
 
     return 0;
@@ -421,13 +367,7 @@ int tc_store(struct trace_cache *cache, size_t index, struct trace *trace, bool 
     set = index % cache->nsets;
     curr_set = &cache->sets[set];
 
-    ret = sem_wait(&cache->cache_lock);
-    if(ret < 0)
-    {
-        err("Failed to wait on cache lock semaphore: %s\n", strerror(errno));
-        return -errno;
-    }
-
+    sem_acquire(&cache->cache_lock);
     if(!curr_set->initialized)
     {
         ret = __initialize_set(cache, set);
@@ -441,31 +381,12 @@ int tc_store(struct trace_cache *cache, size_t index, struct trace *trace, bool 
         new_set = true;
 
         // go ahead and grab this lock
-        ret = sem_wait(&curr_set->set_lock);
-        if(ret < 0)
-        {
-            err("Failed to wait on set lock semaphore: %s\n", strerror(errno));
-            return -errno;
-        }
+        sem_acquire(&curr_set->set_lock);
     }
 
-    ret = sem_post(&cache->cache_lock);
-    if(ret < 0)
-    {
-        err("Failed to post to cache lock semaphore: %s\n", strerror(errno));
-        ret = -errno;
-        goto __free_tc_set;
-    }
-
+    sem_release(&cache->cache_lock);
     if(!keep_lock && !new_set)
-    {
-        ret = sem_wait(&curr_set->set_lock);
-        if(ret < 0)
-        {
-            err("Failed to wait on set lock semaphore: %s\n", strerror(errno));
-            return -errno;
-        }
-    }
+    sem_acquire(&curr_set->set_lock);
 
     // first pass - look for empty slots, pick the one with highest lru value
     way = -1;
@@ -499,14 +420,7 @@ int tc_store(struct trace_cache *cache, size_t index, struct trace *trace, bool 
     if(highest_lru == -1)
     {
         err("No available slot found, cannot cache trace\n");
-
-        ret = sem_post(&curr_set->set_lock);
-        if(ret < 0)
-        {
-            err("Failed to post to set lock semaphore: %s\n", strerror(errno));
-            return -errno;
-        }
-
+        sem_release(&curr_set->set_lock);
         return -EINVAL;
     }
 
@@ -529,36 +443,13 @@ int tc_store(struct trace_cache *cache, size_t index, struct trace *trace, bool 
     curr_set->traces[way] = trace;
     __update_lru(cache, set, way, false);
 
-    ret = sem_post(&curr_set->set_lock);
-    if(ret < 0)
-    {
-        err("Failed to post to set lock semaphore: %s\n", strerror(errno));
-        return -errno;
-    }
-
+    sem_release(&curr_set->set_lock);
     return 0;
-
-__free_tc_set:
-    sem_wait(&curr_set->set_lock);
-
-    if(curr_set->valid)
-        free(curr_set->valid);
-
-    if(curr_set->lru)
-        free(curr_set->lru);
-
-    if(curr_set->refcount)
-        free(curr_set->refcount);
-
-    if(curr_set->traces)
-        free(curr_set->traces);
-
-    return ret;
 }
 
 int tc_deref(struct trace_cache *cache, size_t index, struct trace *trace)
 {
-    int i, ret;
+    int i;
     size_t set;
     struct tc_set *curr_set;
 
@@ -581,10 +472,7 @@ int tc_deref(struct trace_cache *cache, size_t index, struct trace *trace)
         return -EINVAL;
     }
 
-    ret = sem_wait(&curr_set->set_lock);
-    if(ret < 0)
-        return -errno;
-
+    sem_acquire(&curr_set->set_lock);
     for(i = 0; i < cache->nways; i++)
     {
         // this is the correct entry
@@ -603,19 +491,13 @@ int tc_deref(struct trace_cache *cache, size_t index, struct trace *trace)
                     trace, curr_set->traces[i]);
                 trace_free_memory(trace);
 
-                ret = sem_post(&curr_set->set_lock);
-                if(ret < 0)
-                    return -errno;
-
+                sem_release(&curr_set->set_lock);
                 return COHESIVE_CACHES ? (-EINVAL) : (0);
             }
             break;
         }
     }
 
-    ret = sem_post(&curr_set->set_lock);
-    if(ret < 0)
-        return -errno;
-
+    sem_release(&curr_set->set_lock);
     return 0;
 }

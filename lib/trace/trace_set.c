@@ -92,7 +92,7 @@ int ts_close(struct trace_set *ts)
 
     if(ts->ts_file)
     {
-        sem_wait(&ts->file_lock);
+        sem_acquire(&ts->file_lock);
         sem_destroy(&ts->file_lock);
         fclose(ts->ts_file);
     }

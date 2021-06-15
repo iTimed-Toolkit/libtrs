@@ -86,6 +86,7 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
                 if(!new_trace->title)
                 {
                     err("Failed to allocate entry title\n");
+                    ret = -ENOMEM;
                     goto __free_trace;
                 }
 
@@ -100,6 +101,7 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
                 if(!new_trace->data)
                 {
                     err("Failed to allocate entry data\n");
+                    ret = -ENOMEM;
                     goto __free_trace;
                 }
 
@@ -114,6 +116,7 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
                 if(!new_trace->samples)
                 {
                     err("Failed to allocate entry samples\n");
+                    ret = -ENOMEM;
                     goto __free_trace;
                 }
 
@@ -125,18 +128,12 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
             new_trace->owner = curr_waiter->set;
             new_trace->start_offset = index;
 
-            ret = sem_wait(&curr_waiter->lock);
-            if(ret < 0)
-            {
-                err("Failed to wait on entry lock\n");
-                return -errno;
-            }
-
+            sem_acquire(&curr_waiter->lock);
             ret = tc_store(curr_waiter->available, index, new_trace, false);
             if(ret < 0)
             {
                 err("Failed to store new trace in cache\n");
-                return ret;
+                goto __unlock;
             }
 
             // also deref to set true refcount to 0
@@ -144,7 +141,7 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
             if(ret < 0)
             {
                 err("Failed to set refcount to 0\n");
-                return ret;
+                goto __unlock;
             }
 
             // wake up any consumers
@@ -158,12 +155,7 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
                              curr_req->index, index);
 
                         list_del(&curr_req->list);
-                        ret = sem_post(curr_req->signal);
-                        if(ret < 0)
-                        {
-                            err("Failed to post to consumer signal\n");
-                            return -errno;
-                        }
+                        sem_release(curr_req->signal);
                     }
 
                     continue;
@@ -172,29 +164,22 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
                 else
                 {
                     list_del(&curr_req->list);
-                    ret = sem_post(curr_req->signal);
-                    if(ret < 0)
-                    {
-                        err("Failed to post to consumer signal\n");
-                        return -errno;
-                    }
+                    sem_release(curr_req->signal);
                 }
             }
 
-            ret = sem_post(&curr_waiter->lock);
-            if(ret < 0)
-            {
-                err("Failed to post to entry lock\n");
-                return -errno;
-            }
+            sem_release(&curr_waiter->lock);
         }
     }
 
     return 0;
 
+__unlock:
+    sem_release(&curr_waiter->lock);
+
 __free_trace:
     trace_free_memory(new_trace);
-    return -ENOMEM;
+    return ret;
 }
 
 int __tfm_wait_on_init(struct trace_set *ts)
@@ -363,21 +348,9 @@ int __wait_for_entry(int index, struct __waiter_entry *curr_waiter)
     }
     list_add_tail(&request->list, &curr_request->list);
 
-    ret = sem_post(&curr_waiter->lock);
-    if(ret < 0)
-    {
-        err("Failed to post to queue entry lock\n");
-        return -errno;
-    }
-
+    sem_release(&curr_waiter->lock);
     debug("Waiting for trace %i\n", index);
-    ret = sem_wait(&signal);
-    if(ret < 0)
-    {
-        err("Failed to wait on consumer signal\n");
-        return -errno;
-    }
-
+    sem_acquire(&signal);
     debug("Came out of wait for trace %i\n", index);
     sem_destroy(&signal);
 
@@ -408,13 +381,7 @@ int __search_for_entry(struct list_head *queue,
     if(curr_waiter->port == port &&
        curr_waiter->set == ts)
     {
-        ret = sem_wait(&curr_waiter->lock);
-        if(ret < 0)
-        {
-            err("Failed to wait on queue entry lock\n");
-            return -errno;
-        }
-
+        sem_wait(&curr_waiter->lock);
         ret = tc_lookup(curr_waiter->available, index, res, false);
         if(ret < 0)
         {
@@ -431,13 +398,7 @@ int __search_for_entry(struct list_head *queue,
                 return ret;
             }
 
-            ret = sem_wait(&curr_waiter->lock);
-            if(ret < 0)
-            {
-                err("Failed to wait on queue entry lock\n");
-                return -errno;
-            }
-
+            sem_acquire(&curr_waiter->lock);
             ret = tc_lookup(curr_waiter->available, index, res, false);
             if(ret < 0)
             {
@@ -453,13 +414,7 @@ int __search_for_entry(struct list_head *queue,
         }
 
         *cache = curr_waiter->available;
-        ret = sem_post(&curr_waiter->lock);
-        if(ret < 0)
-        {
-            err("Failed to post to queue entry lock\n");
-            return -errno;
-        }
-
+        sem_release(&curr_waiter->lock);
         return 0;
     }
     else

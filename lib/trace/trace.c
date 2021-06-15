@@ -257,19 +257,14 @@ int read_trace_from_file(struct trace *t)
         }
     }
 
-    ret = sem_wait(&t->owner->file_lock);
-    if(ret < 0)
-    {
-        err("Failed to wait on trace set file lock\n");
-        goto __sem_fail;
-    }
+    sem_acquire(&t->owner->file_lock);
 
     ret = fseek(t->owner->ts_file, t->start_offset, SEEK_SET);
     if(ret)
     {
         err("Failed to seek file to trace position\n");
         ret = -EIO;
-        goto __fail;
+        goto __fail_unlock;
     }
 
     read = fread(result_title, 1, t->owner->title_size, t->owner->ts_file);
@@ -278,7 +273,7 @@ int read_trace_from_file(struct trace *t)
         err("Failed to read title from file (read %li expecting %li)\n",
             read, t->owner->title_size);
         ret = -EIO;
-        goto __fail;
+        goto __fail_unlock;
     }
 
     read = fread(result_data, 1, t->owner->data_size, t->owner->ts_file);
@@ -287,7 +282,7 @@ int read_trace_from_file(struct trace *t)
         err("Failed to read data from file (read %li expecting %li)\n",
             read, t->owner->data_size);
         ret = -EIO;
-        goto __fail;
+        goto __fail_unlock;
     }
 
     read = fread(temp, t->owner->datatype & 0xF, t->owner->num_samples, t->owner->ts_file);
@@ -296,15 +291,10 @@ int read_trace_from_file(struct trace *t)
         err("Failed to read samples from file (read %li expecting %li)\n",
             read, t->owner->num_samples);
         ret = -EIO;
-        goto __fail;
+        goto __fail_unlock;
     }
 
-    ret = sem_post(&t->owner->file_lock);
-    if(ret < 0)
-    {
-        err("Failed to post to trace set file lock\n");
-        goto __sem_fail;
-    }
+    sem_release(&t->owner->file_lock);
 
     // expand samples
     switch(t->owner->datatype)
@@ -341,8 +331,8 @@ int read_trace_from_file(struct trace *t)
     t->samples = result_samples;
     return 0;
 
-__sem_fail:
-    ret = -errno;
+__fail_unlock:
+    sem_release(&t->owner->file_lock);
 
 __fail:
     if(result_title)

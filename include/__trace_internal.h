@@ -1,9 +1,11 @@
 #ifndef LIBTRS___TRACE_INTERNAL_H
 #define LIBTRS___TRACE_INTERNAL_H
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 #include <semaphore.h>
 
 struct trace_cache;
@@ -77,6 +79,14 @@ static log_level_t libtrace_log_level = WARN;
 #define warn(...)               __msg(WARN, __VA_ARGS__)
 #define err(...)                __msg(ERR, __VA_ARGS__)
 #define critical(...)           __msg(CRITICAL, __VA_ARGS__)
+
+#define sem_acquire(sem)                                                        \
+    { int sem_ret = sem_wait((sem)); if(sem_ret < 0) {                          \
+    err("Failed to acquire sem " #sem ": %s\n", strerror(errno)); exit(-1);} }
+
+#define sem_release(sem)                                                        \
+    { int sem_ret = sem_post((sem)); if(sem_ret < 0) {                          \
+    err("Failed to release sem " #sem ": %s\n", strerror(errno)); exit(-1);} }
 
 #define TRACE_IDX(t)  (((t)->start_offset - (t)->owner->trace_start)  / \
                             (t)->owner->trace_length)

@@ -14,7 +14,7 @@ typedef enum
 {
     CAP_AVG =       (1 << 0),
     CAP_DEV =       (1 << 1),
-    CAP_COV =       (1 << 2),
+    CAP_COV =       (1 << 2), // also implies pearson
     CAP_MAX =       (1 << 3),
     CAP_MIN =       (1 << 4),
     CAP_MAXABS =    (1 << 5),
@@ -40,6 +40,18 @@ struct accumulator
     ACCUMULATOR(cov);
     ACCUMULATOR(max);
     ACCUMULATOR(min);
+
+    int (*get_mean)(struct accumulator *, int, float *);
+    int (*get_dev)(struct accumulator *, int, float *);
+    int (*get_cov)(struct accumulator *, int, float *);
+    int (*get_pearson)(struct accumulator *, int, float *);
+    int (*get_max)(struct accumulator *, int, float *);
+    int (*get_min)(struct accumulator *, int, float *);
+
+    int (*get_mean_all)(struct accumulator *, float **);
+    int (*get_dev_all)(struct accumulator *, float **);
+    int (*get_cov_all)(struct accumulator *, float **);
+    int (*get_pearson_all)(struct accumulator *, float **);
 
 #if USE_GPU
     void *gpu_vars;

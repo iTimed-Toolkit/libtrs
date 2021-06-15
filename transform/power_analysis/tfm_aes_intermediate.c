@@ -34,17 +34,6 @@ int aes128_round10_hw_sbox_in(uint8_t *data, int index, float *res)
     return 0;
 }
 
-int aes128_round10_hw_sbox_in_verify(uint8_t *data, int index, float *res)
-{
-    if(!verify_aes128(data))
-    {
-        err("Data failed validation\n");
-        return -EINVAL;
-    }
-
-    return aes128_round10_hw_sbox_in(data, index, res);
-}
-
 int aes128_round10_out_hd(uint8_t *data, int index, float *res)
 {
     int key_index = (index / 256);
@@ -55,18 +44,6 @@ int aes128_round10_out_hd(uint8_t *data, int index, float *res)
 
     *res = (float) hamming_distance(state, data[16 + shift_rows_indices[key_index]]);
     return 0;
-}
-
-
-int aes128_round10_out_hd_verify(uint8_t *data, int index, float *res)
-{
-    if(!verify_aes128(data))
-    {
-        err("Data failed validation\n");
-        return -EINVAL;
-    }
-
-    return aes128_round10_out_hd(data, index, res);
 }
 
 int aes128_round0_hw_sbox_out(uint8_t *data, int index, float *res)
@@ -80,15 +57,15 @@ int aes128_round0_hw_sbox_out(uint8_t *data, int index, float *res)
     return 0;
 }
 
-int aes128_round0_hw_sbox_out_verify(uint8_t *data, int index, float *res)
-{
-    if(!verify_aes128(data))
-    {
-        err("Data failed validation\n");
-        return -EINVAL;
-    }
 
-    return aes128_round0_hw_sbox_out(data, index, res);
+int aes128_round0_hw_addkey_out(uint8_t *data, int index, float *res)
+{
+    int key_index = (index / 256);
+    uint8_t key_guess = (index % 256), state;
+
+    state = data[key_index] ^ key_guess;
+    *res = (float) hamming_weight(state);
+    return 0;
 }
 
 int aes128_round0_round1_hd(uint8_t *data, int index, float *res)
@@ -101,17 +78,6 @@ int aes128_round0_round1_hd(uint8_t *data, int index, float *res)
     *res = (float) hamming_distance(data[shift_rows_inv_indices[key_index]], state);
 
     return 0;
-}
-
-int aes128_round0_round1_hd_verify(uint8_t *data, int index, float *res)
-{
-    if(!verify_aes128(data))
-    {
-        err("Data failed validation\n");
-        return -EINVAL;
-    }
-
-    return aes128_round0_round1_hd(data, index, res);
 }
 
 struct tfm_aes_intermediate_arg
@@ -132,7 +98,8 @@ int tfm_aes_intermediate_init(struct trace_set *ts, void *arg)
     switch(aes_arg->leakage_model)
     {
         case AES128_R0_R1_HD_NOMC:
-        case AES128_R0_HW_SBOXOUT:
+        case AES128_RO_HW_ADDKEY_OUT:
+        case AES128_R0_HW_SBOX_OUT:
         case AES128_R10_OUT_HD:
         case AES128_R10_HW_SBOXIN:
             ts->num_traces = 16 * 256 / PMS_PER_THREAD;
@@ -167,7 +134,7 @@ void tfm_aes_intermediate_progress_title(char *dst, int len, size_t index, int c
     snprintf(dst, len, "CPA %li pm %02X (%i traces)", key_index, key_guess, count);
 }
 
-int tfm_aes_intermediate(struct tfm **tfm, bool verify_data, aes_leakage_t leakage_model)
+int tfm_aes_intermediate(struct tfm **tfm, aes_leakage_t leakage_model)
 {
     int ret;
     struct tfm_aes_intermediate_arg *arg;
@@ -185,23 +152,23 @@ int tfm_aes_intermediate(struct tfm **tfm, bool verify_data, aes_leakage_t leaka
     switch(leakage_model)
     {
         case AES128_R0_R1_HD_NOMC:
-            if(verify_data) model = aes128_round0_round1_hd_verify;
-            else model = aes128_round0_round1_hd;
+            model = aes128_round0_round1_hd;
             break;
 
-        case AES128_R0_HW_SBOXOUT:
-            if(verify_data) model = aes128_round0_hw_sbox_out_verify;
-            else model = aes128_round0_hw_sbox_out;
+        case AES128_RO_HW_ADDKEY_OUT:
+            model = aes128_round0_hw_addkey_out;
+            break;
+
+        case AES128_R0_HW_SBOX_OUT:
+            model = aes128_round0_hw_sbox_out;
             break;
 
         case AES128_R10_OUT_HD:
-            if(verify_data) model = aes128_round10_out_hd_verify;
-            else model = aes128_round10_out_hd;
+            model = aes128_round10_out_hd;
             break;
 
         case AES128_R10_HW_SBOXIN:
-            if(verify_data) model = aes128_round10_hw_sbox_in_verify;
-            else model = aes128_round10_hw_sbox_in;
+            model = aes128_round10_hw_sbox_in;
             break;
 
         default:

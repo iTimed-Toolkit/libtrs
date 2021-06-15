@@ -40,12 +40,14 @@ static const char *summary_t_strings[] = {
 };
 
 static const char *filter_t_strings[] = {
+        STR_AT_IDX(ALONG_NUM),
         STR_AT_IDX(ALONG_DATA)
 };
 
 static const char *aes_leakage_t_strings[] = {
         STR_AT_IDX(AES128_R0_R1_HD_NOMC),
-        STR_AT_IDX(AES128_R0_HW_SBOXOUT),
+        STR_AT_IDX(AES128_RO_HW_ADDKEY_OUT),
+        STR_AT_IDX(AES128_R0_HW_SBOX_OUT),
         STR_AT_IDX(AES128_R10_OUT_HD),
         STR_AT_IDX(AES128_R10_HW_SBOXIN)
 };
@@ -64,7 +66,7 @@ static const char *aes_leakage_t_strings[] = {
         i < NUM_TABLE_ENTRIES(table); i++) {        \
         if(strcmp(tok, (table)[i]) == 0) {          \
             *res = i; return 0; } }                 \
-    err("No matching enum found in table\n");       \
+    err("No matching enum found in table for %s\n", tok);       \
     return -EINVAL; }
 
 PARSE_ENUM_FUNC(port_t, port_t_strings);
@@ -218,7 +220,8 @@ int __parse_memsize(char **config, size_t *size)
 #define PARSE_FUNC(tfm_name, exec, ...)             \
     int __parse_ ## tfm_name (char **config,        \
                             struct tfm **tfm) {     \
-    int ret; exec; ret = tfm_name(tfm, __VA_ARGS__);\
+    int ret; exec;                                  \
+    ret = tfm_name(tfm, ## __VA_ARGS__);            \
     if(ret < 0) {                                   \
         err("Failed to create " #tfm_name  "\n");   \
         return ret;} return 0; }
@@ -277,8 +280,19 @@ PARSE_FUNC(tfm_verify,
 
 PARSE_FUNC(tfm_reduce_along,
            parse_enum(stat, summary_t, config);
-           parse_enum(along, filter_t, config),
-           stat, along);
+           parse_enum(along, filter_t, config);
+           filter_param_t param;
+           if(along == ALONG_NUM)
+               __parse_arg_nodecl(param.num, int, config),
+           stat, along, param);
+
+PARSE_FUNC(tfm_select_along,
+           parse_enum(stat, summary_t, config);
+           parse_enum(along, filter_t, config);
+           filter_param_t param;
+           if(along == ALONG_NUM)
+               __parse_arg_nodecl(param.num, int, config),
+           stat, along, param);
 
 PARSE_FUNC(tfm_split_tvla,
            parse_arg(which, bool, config),
@@ -310,13 +324,10 @@ PARSE_FUNC(tfm_io_correlation,
            verify_data, granularity, num)
 
 PARSE_FUNC(tfm_aes_intermediate,
-           parse_arg(verify_data, bool, config);
-                   parse_enum(model, aes_leakage_t, config),
-           verify_data, model)
+           parse_enum(model, aes_leakage_t, config),
+           model)
 
-PARSE_FUNC(tfm_aes_knownkey,
-           parse_arg(verify_data, bool, config),
-           verify_data)
+PARSE_FUNC(tfm_aes_knownkey,)
 
 struct async_render_entry
 {
@@ -476,6 +487,8 @@ int parse_transform(char *line, struct trace_set **ts,
         ret = __parse_tfm_verify(&curr, &tfm);
     else if(strcmp(type, "reduce_along") == 0)
         ret = __parse_tfm_reduce_along(&curr, &tfm);
+    else if(strcmp(type, "select_along") == 0)
+        ret = __parse_tfm_select_along(&curr, &tfm);
 
         // traces
     else if(strcmp(type, "split_tvla") == 0)

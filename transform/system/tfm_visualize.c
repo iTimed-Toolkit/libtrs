@@ -108,7 +108,7 @@ void *__draw_gnuplot_thread(void *arg)
 
         fprintf(gnuplot, "set samples %i\n", viz_args->samples);
     }
-    fprintf(gnuplot, "unset key\n");
+//    fprintf(gnuplot, "unset key\n");
 
     if(IS_MULTIPLOT(viz_args))
     {
@@ -132,21 +132,8 @@ void *__draw_gnuplot_thread(void *arg)
     // main loop
     while(1)
     {
-        ret = sem_wait(&tfm_arg->signal);
-        if(ret < 0)
-        {
-            err("Failed to wait on queue signal\n");
-            ret = -errno;
-            goto __done;
-        }
-
-        ret = sem_wait(&tfm_arg->lock);
-        if(ret < 0)
-        {
-            err("Failed to wait on queue lock\n");
-            ret = -errno;
-            goto __done;
-        }
+        sem_acquire(&tfm_arg->signal);
+        sem_acquire(&tfm_arg->lock);
 
         found = false;
         list_for_each_entry(curr, &tfm_arg->list, list)
@@ -163,11 +150,10 @@ void *__draw_gnuplot_thread(void *arg)
         {
             err("No finished block found after signal\n");
             ret = -EINVAL;
-            goto __done;
+            goto __unlock;
         }
 
         critical("Displaying entry for base %li\n", curr->base);
-
         if(IS_MULTIPLOT(viz_args))
         {
             fprintf(gnuplot,
@@ -205,7 +191,7 @@ void *__draw_gnuplot_thread(void *arg)
                     {
                         err("Invalid entry for index %i\n", index);
                         ret = -EINVAL;
-                        goto __done;
+                        goto __unlock;
                     }
                 }
 
@@ -234,19 +220,14 @@ void *__draw_gnuplot_thread(void *arg)
         free(curr->traces);
         free(curr);
 
-        ret = sem_post(&tfm_arg->lock);
-        if(ret < 0)
-        {
-            err("Failed to post to queue lock\n");
-            ret = -errno;
-            goto __done;
-        }
+        sem_release(&tfm_arg->lock);
     }
 
+__unlock:
+    sem_release(&tfm_arg->lock);
+
 __done:
-
     // todo close gnuplot
-
     tfm_arg->status = ret;
     return NULL;
 }
@@ -350,13 +331,7 @@ int __tfm_visualize_fetch(struct trace *t)
     tfm = TFM_DATA(t->owner->tfm);
     tfm_data = t->owner->tfm_state;
 
-    ret = sem_wait(&tfm_data->lock);
-    if(ret < 0)
-    {
-        err("Failed to lock data buffers\n");
-        return -errno;
-    }
-
+    sem_acquire(&tfm_data->lock);
     curr = NULL, found = false;
     list_for_each_entry(curr, &tfm_data->list, list)
     {
@@ -379,13 +354,7 @@ int __tfm_visualize_fetch(struct trace *t)
            TRACE_IDX(t) < tfm_data->currently_displayed + NUMBER_TRACES(tfm))
         {
             debug("Fetch for %li should pass through instead\n", TRACE_IDX(t));
-            ret = sem_post(&tfm_data->lock);
-            if(ret < 0)
-            {
-                err("Failed to post to data buffers\n");
-                return -errno;
-            }
-
+            sem_release(&tfm_data->lock);
             return 1;
         }
 
@@ -396,7 +365,8 @@ int __tfm_visualize_fetch(struct trace *t)
         if(!new)
         {
             err("Failed to allocate new viz entry\n");
-            return -ENOMEM;
+            ret = -ENOMEM;
+            goto __unlock;
         }
 
         new->base = TRACE_IDX(t) - (TRACE_IDX(t) % NUMBER_TRACES(tfm));
@@ -406,8 +376,8 @@ int __tfm_visualize_fetch(struct trace *t)
         if(!new->traces)
         {
             err("Failed to allocate new trace array\n");
-            free(new);
-            return -ENOMEM;
+            free(new); ret = -ENOMEM;
+            goto __unlock;
         }
 
         LIST_HEAD_INIT_INLINE(new->list);
@@ -424,12 +394,7 @@ int __tfm_visualize_fetch(struct trace *t)
     index = TRACE_IDX(t) % NUMBER_TRACES(tfm);
     if(!curr->traces[index])
     {
-        ret = sem_post(&tfm_data->lock);
-        if(ret < 0)
-        {
-            err("Failed to post to data buffers\n");
-            return -errno;
-        }
+        sem_release(&tfm_data->lock);
 
         // could take a long time
         debug("Getting trace %li\n", TRACE_IDX(t));
@@ -440,12 +405,7 @@ int __tfm_visualize_fetch(struct trace *t)
             return ret;
         }
 
-        ret = sem_wait(&tfm_data->lock);
-        if(ret < 0)
-        {
-            err("Failed to lock data buffers\n");
-            return -errno;
-        }
+        sem_acquire(&tfm_data->lock);
 
         curr->count++;
         critical("Got data for index %i in base %li (%li / %i)\n",
@@ -458,16 +418,12 @@ int __tfm_visualize_fetch(struct trace *t)
             if(tfm_data->status < 0)
             {
                 err("Render thread has crashed\n");
-                return tfm_data->status;
+                ret = tfm_data->status;
+                goto __unlock;
             }
 
             tfm_data->currently_displayed = curr->base;
-            ret = sem_post(&tfm_data->signal);
-            if(ret < 0)
-            {
-                err("Failed to signal a complete visualization block\n");
-                return -errno;
-            }
+            sem_release(&tfm_data->signal);
         }
     }
 
@@ -485,14 +441,10 @@ int __tfm_visualize_fetch(struct trace *t)
         return ret;
     }
 
-    ret = sem_post(&tfm_data->lock);
-    if(ret < 0)
-    {
-        err("Failed to post to data buffers\n");
-        return -errno;
-    }
-
-    return 0;
+    ret = 0;
+__unlock:
+    sem_release(&tfm_data->lock);
+    return ret;
 }
 
 int __tfm_visualize_get(struct trace *t)

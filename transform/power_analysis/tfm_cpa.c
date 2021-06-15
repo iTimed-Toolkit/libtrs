@@ -9,7 +9,7 @@
 #include <errno.h>
 
 #define TFM_DATA(tfm)   ((struct cpa_args *) (tfm)->data)
-#define CPA_REPORT_INTERVAL     10000
+#define CPA_REPORT_INTERVAL     1000
 #define CPA_TITLE_SIZE          128
 
 int __tfm_cpa_init(struct trace_set *ts)
@@ -233,21 +233,24 @@ __next_trace:
     }
     else
     {
-        for(j = 0; j < tfm->num_models; j++)
+        if(t->owner->tfm_next)
         {
-            memset(title, 0, CPA_TITLE_SIZE * sizeof(char));
-
-            tfm->progress_title(title, CPA_TITLE_SIZE,
-                                tfm->num_models * TRACE_IDX(t) + j,
-                                count);
-
-            ret = t->owner->tfm_next(t->owner->tfm_next_arg, PORT_CPA_SPLIT_PM, 4,
-                                     tfm->num_models * TRACE_IDX(t) + j,
-                                     title, NULL, &pearson[j * ts_num_samples(t->owner) / tfm->num_models]);
-            if(ret < 0)
+            for(j = 0; j < tfm->num_models; j++)
             {
-                err("Failed to push pearson to consumer\n");
-                goto __free_trace;
+                memset(title, 0, CPA_TITLE_SIZE * sizeof(char));
+
+                tfm->progress_title(title, CPA_TITLE_SIZE,
+                                    tfm->num_models * TRACE_IDX(t) + j,
+                                    count);
+
+                ret = t->owner->tfm_next(t->owner->tfm_next_arg, PORT_CPA_SPLIT_PM, 4,
+                                         tfm->num_models * TRACE_IDX(t) + j,
+                                         title, NULL, &pearson[j * ts_num_samples(t->owner) / tfm->num_models]);
+                if(ret < 0)
+                {
+                    err("Failed to push pearson to consumer\n");
+                    goto __free_trace;
+                }
             }
         }
 

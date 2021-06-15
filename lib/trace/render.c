@@ -2,7 +2,6 @@
 #include "__trace_internal.h"
 
 #include <stdlib.h>
-#include <errno.h>
 #include <pthread.h>
 
 struct __ts_render_arg
@@ -25,14 +24,7 @@ void *__ts_render_func(void *thread_arg)
     debug("Hello from thread %i, ts %p\n", arg->thread_index, arg->ts);
     while(1)
     {
-        ret = sem_wait(&arg->thread_signal);
-        if(ret < 0)
-        {
-            err("Thread %i failed to wait on signal\n", arg->thread_index);
-            arg->ret = ret;
-            return NULL;
-        }
-
+        sem_acquire(&arg->thread_signal);
         debug("Thread %i has woken up with trace set %p\n", arg->thread_index, arg->ts);
 
         // exit condition
@@ -50,13 +42,7 @@ void *__ts_render_func(void *thread_arg)
                 arg->thread_index, arg->trace_index);
             arg->ret = ret;
 
-            ret = sem_post(arg->done_signal);
-            if(ret < 0)
-            {
-                err("Thread %i failed to post to done signal\n", arg->thread_index);
-                arg->ret = -errno;
-            }
-
+            sem_release(arg->done_signal);
             return NULL;
         }
 
@@ -66,13 +52,10 @@ void *__ts_render_func(void *thread_arg)
         trace_free(trace);
 
         arg->ret = 1;
-        ret = sem_post(arg->done_signal);
-        if(ret < 0)
-        {
-            err("Thread %i failed to post to done signal\n", arg->thread_index);
-            arg->ret = -errno;
-        }
+        sem_release(arg->done_signal);
     }
+
+    err("Thread %i has finished\n", arg->thread_index);
 }
 
 struct render
@@ -149,13 +132,7 @@ void *__ts_render_controller(void *controller_arg)
     while(curr_index < ts_num_traces(arg->ts))
     {
         debug("Waiting for worker thread\n");
-        ret = sem_wait(&done_signal);
-        if(ret < 0)
-        {
-            err("Failed to wait for done signal\n");
-            ret = -errno;
-            goto __done;
-        }
+        sem_acquire(&done_signal);
 
         for(i = 0; i < arg->nthreads; i++)
         {
@@ -166,14 +143,7 @@ void *__ts_render_controller(void *controller_arg)
                 args[i].trace_index = curr_index++;
                 args[i].ret = 0;
 
-                ret = sem_post(&args[i].thread_signal);
-                if(ret < 0)
-                {
-                    err("Failed to post to thread signal for thread %i\n", i);
-                    ret = -errno;
-                    goto __done;
-                }
-
+                sem_release(&args[i].thread_signal);
                 break;
             }
             else if(args[i].ret < 0)
@@ -188,15 +158,7 @@ void *__ts_render_controller(void *controller_arg)
 
     debug("Done, waiting for workers to finish\n");
     for(i = 0; i < arg->nthreads; i++)
-    {
-        ret = sem_wait(&done_signal);
-        if(ret < 0)
-        {
-            err("Failed to wait for done signal\n");
-            ret = -errno;
-            goto __done;
-        }
-    }
+        sem_acquire(&done_signal);
 
     ret = 0;
 __done:
@@ -206,14 +168,7 @@ __kill_threads:
     {
         args[j].ts = NULL;
 
-        ret = sem_post(&args[j].thread_signal);
-        if(ret < 0)
-        {
-            err("Failed to post to thread %i signal\n", j);
-            ret = -errno;
-            goto __out;
-        }
-
+        sem_release(&args[j].thread_signal);
         pthread_join(handles[j], NULL);
     }
 
@@ -229,7 +184,6 @@ __free_handles:
 __destroy_done_signal:
     sem_destroy(&done_signal);
 
-__out:
     arg->ret = ret;
     return NULL;
 }

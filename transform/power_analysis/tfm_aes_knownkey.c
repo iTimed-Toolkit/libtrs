@@ -80,8 +80,7 @@ int aes128_knownkey_models(uint8_t *data, int index, float *res)
         {
             case s_add_round_key:
                 add_key(state, &key_expanded[16 * round]);
-                round++;
-                aes_state = s_sub_bytes;
+                round++; aes_state = s_sub_bytes;
                 break;
 
             case s_sub_bytes:
@@ -105,39 +104,8 @@ int aes128_knownkey_models(uint8_t *data, int index, float *res)
         }
     }
 
-//    if(byte_index == 0)
-//    {
-//        fprintf(stderr, "~~~~ byte_model %i ", byte_model);
-//        fprintf(stderr, "%s ", aes_state == s_add_round_key ? "AddRoundKey" :
-//                              (aes_state == s_sub_bytes ? "SubBytes" :
-//                              (aes_state == s_shift_rows ? "ShiftRows" :
-//                              (aes_state == s_mix_cols ? "MixCols" : "?"))));
-//        fprintf(stderr, "round %i\n", round);
-//
-//        fprintf(stderr, "pt:\t");
-//        for(i = 0; i < 16; i++)
-//            fprintf(stderr, "%02X", data[i]);
-//
-//        fprintf(stderr, "\nstate:\t");
-//        for(i = 0; i < 16; i++)
-//            fprintf(stderr, "%02X", state[i]);
-//        fprintf(stderr, "\n\n");
-//    }
-
-    *res = (float) hamming_weight(state[byte_index]);
+    *res = (float) hamming_weight(state[byte_index] ^ 0x80);
     return 0;
-}
-
-int aes128_knownkey_models_verify(uint8_t *data, int index, float *res)
-{
-    if(!verify_aes128(data))
-    {
-        err("Data failed validation -- continuing\n");
-        *res = 0;
-        return -1;
-    }
-
-    return aes128_knownkey_models(data, index, res);
 }
 
 int tfm_aes_knownkey_init(struct trace_set *ts, void *arg)
@@ -211,17 +179,15 @@ void tfm_aes_knownkey_progress_title(char *dst, int len, size_t index, int count
             }
         }
 
-        snprintf(dst, len, "CPA HW(%s_in_%i[%i]) (%i traces)",
+        snprintf(dst, len, "CPA HW(%s_out_%i[%i]) (%i traces)",
                  aes_state_str, round, byte_index, count);
     }
 }
 
-int tfm_aes_knownkey(struct tfm **tfm, bool verify_data)
+int tfm_aes_knownkey(struct tfm **tfm)
 {
     struct cpa_args cpa_args = {
-            .power_model = (verify_data ?
-                            aes128_knownkey_models_verify :
-                            aes128_knownkey_models),
+            .power_model = aes128_knownkey_models,
             .num_models = PMS_PER_THREAD,
             .consumer_init = tfm_aes_knownkey_init,
             .consumer_exit = tfm_aes_knownkey_exit,

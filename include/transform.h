@@ -44,8 +44,14 @@ typedef enum
 
 typedef enum
 {
+    ALONG_NUM,
     ALONG_DATA,
 } filter_t;
+
+typedef union
+{
+    int num;
+} filter_param_t;
 
 struct viz_args
 {
@@ -64,7 +70,8 @@ int tfm_visualize(struct tfm **tfm, struct viz_args *args);
 int tfm_average(struct tfm **tfm, bool per_sample);
 int tfm_verify(struct tfm **tfm, verify_t which);
 
-int tfm_reduce_along(struct tfm **tfm, summary_t stat, filter_t along);
+int tfm_reduce_along(struct tfm **tfm, summary_t stat, filter_t along, filter_param_t param);
+int tfm_select_along(struct tfm **tfm, summary_t stat, filter_t along, filter_param_t param);
 
 // Traces
 int tfm_split_tvla(struct tfm **tfm, bool which);
@@ -84,12 +91,13 @@ int tfm_io_correlation(struct tfm **tfm, bool verify_data, int granularity, int 
 typedef enum
 {
     AES128_R0_R1_HD_NOMC = 0,
-    AES128_R0_HW_SBOXOUT,
+    AES128_RO_HW_ADDKEY_OUT,
+    AES128_R0_HW_SBOX_OUT,
     AES128_R10_OUT_HD,
     AES128_R10_HW_SBOXIN,
 } aes_leakage_t;
 
-int tfm_aes_intermediate(struct tfm **tfm, bool verify_data, aes_leakage_t leakage_model);
-int tfm_aes_knownkey(struct tfm **tfm, bool verify_data);
+int tfm_aes_intermediate(struct tfm **tfm, aes_leakage_t leakage_model);
+int tfm_aes_knownkey(struct tfm **tfm);
 
 #endif //LIBTRS_TRANSFORM_H

@@ -50,7 +50,9 @@ size_t __tfm_synchronize_trace_size(struct trace_set *ts)
 }
 
 void __tfm_synchronize_exit(struct trace_set *ts)
-{}
+{
+    // todo
+}
 
 int __stall(struct tfm_synchronize *tfm, size_t index)
 {
@@ -96,30 +98,12 @@ int __stall(struct tfm_synchronize *tfm, size_t index)
     }
 
     curr->count++;
-    ret = sem_post(&tfm->list_lock);
-    if(ret < 0)
-    {
-        err("Failed to post to list lock sem\n");
-        return -errno;
-    }
 
+    sem_release(&tfm->list_lock);
     debug("Stalling index %li\n", index);
-
-    ret = sem_wait(&curr->signal);
-    if(ret < 0)
-    {
-        err("Failed to wait on semaphore signal\n");
-        return -errno;
-    }
-
+    sem_acquire(&curr->signal);
     debug("Index %li good to go\n", index);
-
-    ret = sem_wait(&tfm->list_lock);
-    if(ret < 0)
-    {
-        err("Failed to wait on list lock sem\n");
-        return -errno;
-    }
+    sem_acquire(&tfm->list_lock);
 
     curr->count--;
     if(curr->count == 0)
@@ -138,14 +122,8 @@ int __synchronize(struct tfm_synchronize *tfm, size_t index)
     struct __tfm_synchronize_entry *curr, *new;
     bool wait = false, found = false;
 
-    ret = sem_wait(&tfm->list_lock);
-    if(ret < 0)
-    {
-        err("Failed to wait on list lock\n");
-        return -errno;
-    }
-
     // first, check if we should stall
+    sem_acquire(&tfm->list_lock);
     list_for_each_entry(curr, &tfm->requests, list)
     {
         if(curr->index + tfm->max_distance < index)
@@ -197,13 +175,7 @@ int __synchronize(struct tfm_synchronize *tfm, size_t index)
     }
 
     curr->count++;
-    ret = sem_post(&tfm->list_lock);
-    if(ret < 0)
-    {
-        err("Failed to post to list lock sem\n");
-        return -errno;
-    }
-
+    sem_release(&tfm->list_lock);
     return 0;
 }
 
@@ -213,14 +185,8 @@ int __sync_finalize(struct tfm_synchronize *tfm, size_t index)
     struct __tfm_synchronize_entry *curr;
     bool found = false;
 
-    ret = sem_wait(&tfm->list_lock);
-    if(ret < 0)
-    {
-        err("Failed to wait on list lock sem\n");
-        return -errno;
-    }
-
     // wake up any applicable stalled requests
+    sem_acquire(&tfm->list_lock);
     list_for_each_entry(curr, &tfm->waiting, list)
     {
         if(index + tfm->max_distance >= curr->index)
@@ -259,13 +225,7 @@ int __sync_finalize(struct tfm_synchronize *tfm, size_t index)
         return -EINVAL;
     }
 
-    ret = sem_post(&tfm->list_lock);
-    if(ret < 0)
-    {
-        err("Failed to post to list lock sem\n");
-        return -errno;
-    }
-
+    sem_release(&tfm->list_lock);
     return 0;
 }
 
