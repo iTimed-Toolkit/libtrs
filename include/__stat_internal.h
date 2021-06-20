@@ -10,17 +10,6 @@
         float *a;           \
     } (name)
 
-typedef enum
-{
-    CAP_AVG =       (1 << 0),
-    CAP_DEV =       (1 << 1),
-    CAP_COV =       (1 << 2), // also implies pearson
-    CAP_MAX =       (1 << 3),
-    CAP_MIN =       (1 << 4),
-    CAP_MAXABS =    (1 << 5),
-    CAP_MINABS =    (1 << 6)
-} capability_t;
-
 // structs
 struct accumulator
 {
@@ -31,6 +20,7 @@ struct accumulator
         ACC_SINGLE_ARRAY,
         ACC_DUAL_ARRAY
     } type;
+    stat_t capabilities;
 
     int dim0, dim1;
     float count;
@@ -40,53 +30,24 @@ struct accumulator
     ACCUMULATOR(cov);
     ACCUMULATOR(max);
     ACCUMULATOR(min);
+    ACCUMULATOR(maxabs);
+    ACCUMULATOR(minabs);
 
-    int (*get_mean)(struct accumulator *, int, float *);
-    int (*get_dev)(struct accumulator *, int, float *);
-    int (*get_cov)(struct accumulator *, int, float *);
-    int (*get_pearson)(struct accumulator *, int, float *);
-    int (*get_max)(struct accumulator *, int, float *);
-    int (*get_min)(struct accumulator *, int, float *);
-
-    int (*get_mean_all)(struct accumulator *, float **);
-    int (*get_dev_all)(struct accumulator *, float **);
-    int (*get_cov_all)(struct accumulator *, float **);
-    int (*get_pearson_all)(struct accumulator *, float **);
+    int (*reset)(struct accumulator *);
+    int (*free)(struct accumulator *);
+    int (*get)(struct accumulator *, stat_t, int, float *);
+    int (*get_all)(struct accumulator *, stat_t, float **);
 
 #if USE_GPU
     void *gpu_vars;
 #endif
 };
 
-int __get_mean_single(struct accumulator *acc, int index, float *res);
-int __get_mean_dual(struct accumulator *acc, int index, float *res);
-int __get_mean_single_array(struct accumulator *acc, int index, float *res);
-int __get_mean_dual_array(struct accumulator *acc, int index, float *res);
+#define IF_CAP(acc, stat) \
+    if((acc)->capabilities & (stat))
 
-int __get_dev_single(struct accumulator *acc, int index, float *res);
-int __get_dev_dual(struct accumulator *acc, int index, float *res);
-int __get_dev_single_array(struct accumulator *acc, int index, float *res);
-int __get_dev_dual_array(struct accumulator *acc, int index, float *res);
-
-int __get_cov_dual(struct accumulator *acc, int index, float *res);
-int __get_cov_dual_array(struct accumulator *acc, int index, float *res);
-int __get_pearson_dual(struct accumulator *acc, int index, float *res);
-int __get_pearson_dual_array(struct accumulator *acc, int index, float *res);
-
-int __get_mean_single_all(struct accumulator *acc, float **res);
-int __get_mean_dual_all(struct accumulator *acc,  float **res);
-int __get_mean_single_array_all(struct accumulator *acc,  float **res);
-int __get_mean_dual_array_all(struct accumulator *acc,  float **res);
-
-int __get_dev_single_all(struct accumulator *acc,  float **res);
-int __get_dev_dual_all(struct accumulator *acc,  float **res);
-int __get_dev_single_array_all(struct accumulator *acc,  float **res);
-int __get_dev_dual_array_all(struct accumulator *acc,  float **res);
-
-int __get_cov_dual_all(struct accumulator *acc,  float **res);
-int __get_cov_dual_array_all(struct accumulator *acc,  float **res);
-int __get_pearson_dual_all(struct accumulator *acc,  float **res);
-int __get_pearson_dual_array_all(struct accumulator *acc,  float **res);
+#define IF_NOT_CAP(acc, stat) \
+    if(~(acc)->capabilities & (stat))
 
 #if USE_GPU
 int __init_single_array_gpu(struct accumulator *acc, int num);

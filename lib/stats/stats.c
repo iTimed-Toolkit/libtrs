@@ -14,14 +14,16 @@ int stat_reset_accumulator(struct accumulator *acc)
         return -EINVAL;
     }
 
+    if(!acc->reset)
+    {
+        err("Invalid accumulator reset function\n");
+        return -EINVAL;
+    }
+
+    return acc->reset(acc);
+
     switch(acc->type)
     {
-        case ACC_SINGLE:
-            acc->count = 0;
-            acc->m.f = 0;
-            acc->s.f = 0;
-            acc->cov.f = 0;
-            return 0;
 
         case ACC_SINGLE_ARRAY:
             acc->count = 0;
@@ -30,12 +32,6 @@ int stat_reset_accumulator(struct accumulator *acc)
             acc->cov.f = 0;
             return 0;
 
-        case ACC_DUAL:
-            acc->count = 0;
-            memset(acc->m.a, 0, 2 * sizeof(float));
-            memset(acc->s.a, 0, 2 * sizeof(float));
-            acc->cov.f = 0;
-            return 0;
 
         case ACC_DUAL_ARRAY:
             acc->count = 0;
@@ -58,6 +54,14 @@ int stat_free_accumulator(struct accumulator *acc)
         return -EINVAL;
     }
 
+    if(!acc->free)
+    {
+        err("Invalid accumulator free function\n");
+        return -EINVAL;
+    }
+
+    return acc->free(acc);
+
     switch(acc->type)
     {
         case ACC_DUAL_ARRAY:
@@ -78,223 +82,24 @@ int stat_free_accumulator(struct accumulator *acc)
     }
 }
 
-int stat_get_mean(struct accumulator *acc, int index, float *res)
+int stat_get(struct accumulator *acc, stat_t stat, int index, float *res)
 {
     if(!acc || !res)
     {
-        err("Invalid accumulator or result destination\n");
+        err("Invalid accumulator or destination pointer\n");
         return -EINVAL;
     }
 
-    switch(acc->type)
-    {
-        case ACC_SINGLE:
-            return __get_mean_single(acc, index, res);
-
-        case ACC_DUAL:
-            return __get_mean_dual(acc, index, res);
-
-        case ACC_SINGLE_ARRAY:
-            return __get_mean_single_array(acc, index, res);
-
-        case ACC_DUAL_ARRAY:
-            return __get_mean_dual_array(acc, index, res);
-
-        default:
-            err("Unknown accumulator type\n");
-            return -EINVAL;
-    }
+    return acc->get(acc, stat, index, res);
 }
 
-int stat_get_dev(struct accumulator *acc, int index, float *res)
+int stat_get_all(struct accumulator *acc, stat_t stat, float **res)
 {
     if(!acc || !res)
     {
-        err("Invalid accumulator or result destination\n");
+        err("Invalid accumulator or destination pointer\n");
         return -EINVAL;
     }
 
-    switch(acc->type)
-    {
-        case ACC_SINGLE:
-            return __get_dev_single(acc, index, res);
-
-        case ACC_DUAL:
-            return __get_dev_dual(acc, index, res);
-
-        case ACC_SINGLE_ARRAY:
-            return __get_dev_single_array(acc, index, res);
-
-        case ACC_DUAL_ARRAY:
-            return __get_dev_dual_array(acc, index, res);
-
-        default:
-            err("Unknown accumulator type\n");
-            return -EINVAL;
-    }
+    return acc->get_all(acc, stat, res);
 }
-
-int stat_get_cov(struct accumulator *acc, int index, float *res)
-{
-    if(!acc || !res)
-    {
-        err("Invalid accumulator or result destination\n");
-        return -EINVAL;
-    }
-
-    switch(acc->type)
-    {
-        case ACC_SINGLE:
-        case ACC_SINGLE_ARRAY:
-            err("Single accumulators have no covariance\n");
-            return -EINVAL;
-
-        case ACC_DUAL:
-            return __get_cov_dual(acc, index, res);
-
-        case ACC_DUAL_ARRAY:
-            return __get_cov_dual_array(acc, index, res);
-
-        default:
-            err("Unknown accumulator type\n");
-            return -EINVAL;
-    }
-}
-
-int stat_get_pearson(struct accumulator *acc, int index, float *res)
-{
-    if(!acc || !res)
-    {
-        err("Invalid accumulator or result destination\n");
-        return -EINVAL;
-    }
-
-    switch(acc->type)
-    {
-        case ACC_SINGLE:
-        case ACC_SINGLE_ARRAY:
-            err("Single accumulators have no pearson\n");
-            return -EINVAL;
-
-        case ACC_DUAL:
-            return __get_pearson_dual(acc, index, res);
-
-        case ACC_DUAL_ARRAY:
-            return __get_pearson_dual_array(acc, index, res);
-
-        default:
-            err("Unknown accumulator type\n");
-            return -EINVAL;
-    }
-}
-
-int stat_get_mean_all(struct accumulator *acc, float **res)
-{
-    if(!acc || !res)
-    {
-        err("Invalid accumulator or result destination\n");
-        return -EINVAL;
-    }
-
-    switch(acc->type)
-    {
-        case ACC_SINGLE:
-            return __get_mean_single_all(acc, res);
-
-        case ACC_DUAL:
-            return __get_mean_dual_all(acc, res);
-
-        case ACC_SINGLE_ARRAY:
-            return __get_mean_single_array_all(acc, res);
-
-        case ACC_DUAL_ARRAY:
-            return __get_mean_dual_array_all(acc, res);
-
-        default:
-            err("Unknown accumulator type\n");
-            return -EINVAL;
-    }
-}
-
-int stat_get_dev_all(struct accumulator *acc, float **res)
-{
-    if(!acc || !res)
-    {
-        err("Invalid accumulator or result destination\n");
-        return -EINVAL;
-    }
-
-    switch(acc->type)
-    {
-        case ACC_SINGLE:
-            return __get_dev_single_all(acc, res);
-
-        case ACC_DUAL:
-            return __get_dev_dual_all(acc, res);
-
-        case ACC_SINGLE_ARRAY:
-            return __get_dev_single_array_all(acc, res);
-
-        case ACC_DUAL_ARRAY:
-            return __get_dev_dual_array_all(acc, res);
-
-        default:
-            err("Unknown accumulator type\n");
-            return -EINVAL;
-    }
-}
-
-int stat_get_cov_all(struct accumulator *acc, float **res)
-{
-    if(!acc || !res)
-    {
-        err("Invalid accumulator or result destination\n");
-        return -EINVAL;
-    }
-
-    switch(acc->type)
-    {
-        case ACC_SINGLE:
-        case ACC_SINGLE_ARRAY:
-            err("Single accumulators have no pearson\n");
-            return -EINVAL;
-
-        case ACC_DUAL:
-            return __get_cov_dual_all(acc, res);
-
-        case ACC_DUAL_ARRAY:
-            return __get_cov_dual_array_all(acc, res);
-
-        default:
-            err("Unknown accumulator type\n");
-            return -EINVAL;
-    }
-}
-
-int stat_get_pearson_all(struct accumulator *acc, float **res)
-{
-    if(!acc || !res)
-    {
-        err("Invalid accumulator or result destination\n");
-        return -EINVAL;
-    }
-
-    switch(acc->type)
-    {
-        case ACC_SINGLE:
-        case ACC_SINGLE_ARRAY:
-            err("Single accumulators have no pearson\n");
-            return -EINVAL;
-
-        case ACC_DUAL:
-            return __get_pearson_dual_all(acc, res);
-
-        case ACC_DUAL_ARRAY:
-            return __get_pearson_dual_array_all(acc, res);
-
-        default:
-            err("Unknown accumulator type\n");
-            return -EINVAL;
-    }
-}
-
