@@ -213,6 +213,16 @@ int __parse_memsize(char **config, size_t *size)
     type name = init_enum;                         \
     __parse_enum_nodecl(name, type, c)
 
+#define parse_struct(name, type, c, ...)            \
+    type name; __VA_ARGS__;
+
+#define parse_match_region_t(name, c)               \
+    match_region_t name;                            \
+    __parse_arg_nodecl((name).ref_trace, size_t, c);  \
+    __parse_arg_nodecl((name).lower, int, c);         \
+    __parse_arg_nodecl((name).upper, int, c);         \
+    __parse_arg_nodecl((name).confidence, double, c);
+
 #define parse_arg_optional(name, type, c)           \
     type ## _tt name = init_ ## type;               \
     IF_NEXT(c, __parse_arg_nodecl(name, type, c))
@@ -310,12 +320,17 @@ PARSE_FUNC(tfm_append,
            path);
 
 PARSE_FUNC(tfm_static_align,
-           parse_arg(confidence, double, config);
-                   parse_arg(max_shift, int, config);
-                   parse_arg(ref_trace, size_t, config);
-                   parse_arg(lower, int, config);
-                   parse_arg(upper, int, config),
-           confidence, max_shift, ref_trace, 1, &lower, &upper);
+           parse_match_region_t(match, config);
+           parse_arg(max_shift, int, config),
+           &match, max_shift);
+
+PARSE_FUNC(tfm_match,
+           parse_match_region_t(first, config);
+           parse_match_region_t(last, config);
+           parse_match_region_t(pattern, config);
+           parse_arg(avg_len, int, config);
+           parse_arg(max_dev, int, config),
+           &first, &last, &pattern, avg_len, max_dev);
 
 PARSE_FUNC(tfm_io_correlation,
            parse_arg(verify_data, bool, config)
@@ -501,6 +516,8 @@ int parse_transform(char *line, struct trace_set **ts,
         // alignment
     else if(strcmp(type, "static_align") == 0)
         ret = __parse_tfm_static_align(&curr, &tfm);
+    else if(strcmp(type, "match") == 0)
+        ret = __parse_tfm_match(&curr, &tfm);
 
         // correlation
     else if(strcmp(type, "io_correlation") == 0)

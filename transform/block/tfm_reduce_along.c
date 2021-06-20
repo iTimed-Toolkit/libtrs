@@ -252,7 +252,7 @@ int tfm_reduce_along(struct tfm **tfm, summary_t stat, filter_t along, filter_pa
             .accumulate = tfm_reduce_along_accumulate,
             .finalize = tfm_reduce_along_finalize,
 
-            .criteria = DONE_LISTLEN
+            .criteria = DONE_LISTLEN,
     };
 
     struct tfm_reduce_along_config *cfg;

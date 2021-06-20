@@ -46,9 +46,6 @@ void *__ts_render_func(void *thread_arg)
             return NULL;
         }
 
-        if(TRACE_IDX(trace) % 100000 == 0)
-            err("%s\n", trace->title);
-
         trace_free(trace);
 
         arg->ret = 1;

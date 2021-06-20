@@ -14,12 +14,8 @@
 
 struct tfm_static_align
 {
-    double confidence;
+    match_region_t match;
     int max_shift;
-
-    size_t ref_trace, num_regions;
-    int *ref_samples_lower;
-    int *ref_samples_higher;
 };
 
 int __tfm_static_align_init(struct trace_set *ts)
@@ -50,7 +46,7 @@ void __tfm_static_align_exit(struct trace_set *ts)
 
 int __do_align(struct trace *t, double *best_conf, int *best_shift)
 {
-    int ret, r, i;
+    int ret, i;
     int shift_valid_lower, shift_valid_upper;
     float *pearson, *temp;
 
@@ -87,7 +83,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
         goto __free_temp;
     }
 
-    ret = trace_get(t->owner->prev, &ref_trace, tfm->ref_trace);
+    ret = trace_get(t->owner->prev, &ref_trace, tfm->match.ref_trace);
     if(ret < 0)
     {
         err("Failed to get reference trace from previous trace set\n");
@@ -104,39 +100,35 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
     shift_valid_lower = 0;
     shift_valid_upper = 2 * tfm->max_shift;
 
-    for(r = 0; r < tfm->num_regions; r++)
+    for(i = tfm->match.lower; i < tfm->match.upper; i++)
     {
-        for(i = tfm->ref_samples_lower[r];
-            i < tfm->ref_samples_higher[r]; i++)
+        if(i - tfm->max_shift < 0)
         {
-            if(i - tfm->max_shift < 0)
-            {
-                if(tfm->max_shift - i > shift_valid_lower)
-                    shift_valid_lower = tfm->max_shift - i;
-            }
+            if(tfm->max_shift - i > shift_valid_lower)
+                shift_valid_lower = tfm->max_shift - i;
+        }
 
-            if(i + tfm->max_shift >= ts_num_samples(t->owner))
-            {
-                if(ts_num_samples(t->owner) - i + tfm->max_shift < shift_valid_upper)
-                    shift_valid_upper = (int) ts_num_samples(t->owner) - i + tfm->max_shift;
-            }
+        if(i + tfm->max_shift >= ts_num_samples(t->owner))
+        {
+            if(ts_num_samples(t->owner) - i + tfm->max_shift < shift_valid_upper)
+                shift_valid_upper = (int) ts_num_samples(t->owner) - i + tfm->max_shift;
+        }
 
-            if(shift_valid_lower > 0)
-                memset(temp, 0, shift_valid_lower * sizeof(float));
+        if(shift_valid_lower > 0)
+            memset(temp, 0, shift_valid_lower * sizeof(float));
 
-            if(shift_valid_upper < 2 * tfm->max_shift)
-                memset(&temp[shift_valid_upper], 0, (2 * tfm->max_shift - shift_valid_upper) * sizeof(float));
+        if(shift_valid_upper < 2 * tfm->max_shift)
+            memset(&temp[shift_valid_upper], 0, (2 * tfm->max_shift - shift_valid_upper) * sizeof(float));
 
-            memcpy(&temp[shift_valid_lower],
-                   &curr_trace->samples[i + shift_valid_lower - tfm->max_shift],
-                   (shift_valid_upper - shift_valid_lower) * sizeof(float));
+        memcpy(&temp[shift_valid_lower],
+               &curr_trace->samples[i + shift_valid_lower - tfm->max_shift],
+               (shift_valid_upper - shift_valid_lower) * sizeof(float));
 
-            ret = stat_accumulate_dual_array(acc, temp, &ref_trace->samples[i], 2 * tfm->max_shift, 1);
-            if(ret < 0)
-            {
-                err("Failed to accumulate\n");
-                goto __free_ref;
-            }
+        ret = stat_accumulate_dual_array(acc, temp, &ref_trace->samples[i], 2 * tfm->max_shift, 1);
+        if(ret < 0)
+        {
+            err("Failed to accumulate\n");
+            goto __free_ref;
         }
     }
 
@@ -193,7 +185,7 @@ int __tfm_static_align_get(struct trace *t)
     if(TRACE_IDX(t) % 1000 == 0)
         warn("Trace %li, best confidence %f for shift %i\n", TRACE_IDX(t), best_conf, best_shift);
 
-    if(best_conf >= tfm->confidence)
+    if(best_conf >= tfm->match.confidence)
     {
         result = calloc(ts_num_samples(t->owner), sizeof(float));
         if(!result)
@@ -261,9 +253,7 @@ void __tfm_static_align_free(struct trace *t)
     passthrough_free(t);
 }
 
-int tfm_static_align(struct tfm **tfm, double confidence,
-                     int max_shift, size_t ref_trace, size_t num_regions,
-                     int *ref_samples_lower, int *ref_samples_higher)
+int tfm_static_align(struct tfm **tfm, match_region_t *match, int max_shift)
 {
     struct tfm *res = NULL;
     res = calloc(1, sizeof(struct tfm));
@@ -279,50 +269,12 @@ int tfm_static_align(struct tfm **tfm, double confidence,
     if(!res->data)
     {
         err("Failed to allocate memory for transformation variables\n");
-        goto __fail_free_res;
+        return -ENOMEM;
     }
 
-    TFM_DATA(res)->confidence = confidence;
+    memcpy(&TFM_DATA(res)->match, match, sizeof(match_region_t));
     TFM_DATA(res)->max_shift = max_shift;
-    TFM_DATA(res)->ref_trace = ref_trace;
-    TFM_DATA(res)->num_regions = num_regions;
-
-    TFM_DATA(res)->ref_samples_lower = calloc(num_regions, sizeof(int));
-    if(!TFM_DATA(res)->ref_samples_lower)
-    {
-        err("Failed to allocate memory for lower ref samples\n");
-        goto __fail_free_res;
-    }
-
-    TFM_DATA(res)->ref_samples_higher = calloc(num_regions, sizeof(int));
-    if(!TFM_DATA(res)->ref_samples_higher)
-    {
-        err("Failed to allocate memory for higher ref samples\n");
-        goto __fail_free_res;
-    }
-
-    memcpy(TFM_DATA(res)->ref_samples_lower, ref_samples_lower, num_regions * sizeof(int));
-    memcpy(TFM_DATA(res)->ref_samples_higher, ref_samples_higher, num_regions * sizeof(int));
 
     *tfm = res;
     return 0;
-
-__fail_free_res:
-    if(res)
-    {
-        if(res->data)
-        {
-            if(TFM_DATA(res)->ref_samples_lower)
-                free(TFM_DATA(res)->ref_samples_lower);
-
-            if(TFM_DATA(res)->ref_samples_higher)
-                free(TFM_DATA(res)->ref_samples_higher);
-
-            free(res->data);
-        }
-
-        free(res);
-    }
-
-    return -ENOMEM;
 }

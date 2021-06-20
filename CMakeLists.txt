@@ -2,13 +2,9 @@ cmake_minimum_required(VERSION 3.14)
 project(libtrs C CUDA)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_FLAGS "-O3 -Wall -mavx512f")
-set(CMAKE_C_COMPILER "/home/ghaas/.local/bin/gcc")
-set(CMAKE_CXX_COMPILER "/home/ghaas/.local/bin/gcc")
+set(CMAKE_C_FLAGS "-O3 -Wall -mavx2")
 
 include_directories(include)
-include_directories(/home/ghaas/.local/include)
-link_directories(/home/ghaas/.local/lib)
 
 # core trace library
 add_library(trace lib/trace/trace_set.c lib/trace/cache.c
@@ -34,16 +30,21 @@ add_library(crypto_utils lib/crypto/aes.c)
 target_link_libraries(crypto_utils crypto)
 
 # transformations
-add_library(transform transform/tfm.c transform/tfm_align.c
+add_library(transform transform/tfm.c transform/tfm_align.c transform/tfm_match.c
         transform/tfm_average.c transform/trace/tfm_split_tvla.c
         transform/power_analysis/tfm_cpa.c transform/tfm_nop.c transform/system/tfm_save.c
         transform/power_analysis/tfm_io_correlation.c transform/trace/tfm_narrow.c
         transform/power_analysis/tfm_aes_intermediate.c transform/system/tfm_wait_on.c transform/system/tfm_visualize.c
         transform/power_analysis/tfm_aes_knownkey.c
         transform/system/tfm_synchronize.c transform/trace/tfm_append.c transform/tfm_verify.c
-        transform/block/tfm_block.c transform/block/tfm_reduce_along.c transform/block/tfm_select_along.c)
+        transform/tfm_block.c transform/block/tfm_reduce_along.c transform/block/tfm_select_along.c
+        transform/extract/tfm_extract_pattern.c)
 target_link_libraries(transform pthread crypto_utils m stats)
 
 # frontend
 add_executable(libtrace_evaluate main.c)
 target_link_libraries(libtrace_evaluate trace transform)
+
+# miscellaneous
+add_executable(libtrace_misc misc.c)
+target_link_libraries(libtrace_misc trace)

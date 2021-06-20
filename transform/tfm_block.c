@@ -106,8 +106,8 @@ void __tfm_block_exit(struct trace_set *ts)
 }
 
 int __block_accumulate(struct tfm_block_state *state,
-                 struct block_args *tfm,
-                 struct trace *curr_trace)
+                       struct block_args *tfm,
+                       struct trace *curr_trace)
 {
     int ret;
     bool found = false;
@@ -115,6 +115,7 @@ int __block_accumulate(struct tfm_block_state *state,
     struct __tfm_block_block *curr, *new;
 
     sem_acquire(&state->lock);
+
     list_for_each_entry(curr, &state->blocks, list)
     {
         if(tfm->trace_matches(curr_trace, curr->block, tfm->arg))
@@ -160,10 +161,14 @@ int __block_accumulate(struct tfm_block_state *state,
             goto __unlock;
         }
 
-        list_add_tail(&new->list, &curr->list);
+        list_add(&new->list,
+                      &list_last_entry(&state->blocks,
+                                       struct __tfm_block_block,
+                                       list)->list);
         state->nblocks++;
 
-        if(tfm->criteria == DONE_LISTLEN && state->nblocks == LIST_LENGTH)
+        if(tfm->criteria == DONE_SINGULAR ||
+           (tfm->criteria == DONE_LISTLEN && state->nblocks == LIST_LENGTH))
         {
             curr = list_first_entry(&state->blocks, struct __tfm_block_block, list);
             if(!curr->done)
@@ -181,8 +186,8 @@ __unlock:
 }
 
 int __block_finalize(struct tfm_block_state *state,
-               struct block_args *tfm,
-               struct trace *res)
+                     struct block_args *tfm,
+                     struct trace *res)
 {
     int ret;
     bool found = false;
@@ -213,9 +218,15 @@ int __block_finalize(struct tfm_block_state *state,
             goto __unlock;
         }
 
-        state->nblocks--;
-        list_del(&curr->list);
-        free(curr);
+        // this block has more traces to finalize: signal the next one
+        if(ret == 1)
+            curr->index = state->done_index++;
+        else
+        {
+            state->nblocks--;
+            list_del(&curr->list);
+            free(curr);
+        }
     }
     else
     {

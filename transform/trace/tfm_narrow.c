@@ -49,35 +49,44 @@ int __tfm_narrow_get(struct trace *t)
     int ret;
     float *res;
 
+    struct trace *prev_trace;
     struct tfm_narrow *tfm = TFM_DATA(t->owner->tfm);
 
-    t->start_offset += (tfm->first_trace * t->owner->trace_length);
-    ret = passthrough(t);
-    t->start_offset -= (tfm->first_trace * t->owner->trace_length);
-
+    ret = trace_get(t->owner->prev, &prev_trace, TRACE_IDX(t) + tfm->first_trace);
     if(ret < 0)
     {
-        err("Failed to passthrough previous trace\n");
+        err("Failed to get previous trace\n");
         return ret;
     }
 
-    if(t->samples)
+    ret = copy_title(t, prev_trace);
+    if(ret >= 0)
+        ret = copy_data(t, prev_trace);
+
+    if(ret >= 0)
     {
-        res = calloc(t->owner->num_samples, sizeof(float));
-        if(!res)
+        if(prev_trace->samples)
         {
-            err("Failed to allocate memory for trace samples\n");
-            return -ENOMEM;
+            res = calloc(t->owner->num_samples, sizeof(float));
+            if(!res)
+            {
+                err("Failed to allocate memory for trace samples\n");
+                ret = -ENOMEM;
+                goto __out;
+            }
+
+            memcpy(res, &prev_trace->samples[tfm->first_sample],
+                   t->owner->num_samples * sizeof(float));
+            t->samples = res;
         }
 
-        memcpy(res, &t->samples[tfm->first_sample],
-               t->owner->num_samples * sizeof(float));
-
-        free(t->samples);
-        t->samples = res;
+        ret = 0;
     }
+    else err("Failed to copy something\n");
 
-    return 0;
+__out:
+    trace_free(prev_trace);
+    return ret;
 }
 
 void __tfm_narrow_free(struct trace *t)

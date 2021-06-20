@@ -63,7 +63,8 @@ struct block_args
 
     enum
     {
-        DONE_LISTLEN
+        DONE_LISTLEN,
+        DONE_SINGULAR
     } criteria;
 
     void *arg;

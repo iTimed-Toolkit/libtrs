@@ -81,9 +81,16 @@ int tfm_narrow(struct tfm **tfm,
 int tfm_append(struct tfm **tfm, const char *path);
 
 // Align
-int tfm_static_align(struct tfm **tfm, double confidence,
-                     int max_shift, size_t ref_trace, size_t num_regions,
-                     int *ref_samples_lower, int *ref_samples_higher);
+typedef struct
+{
+    size_t ref_trace;
+    int lower, upper;
+    double confidence;
+} match_region_t;
+
+int tfm_static_align(struct tfm **tfm, match_region_t *match, int max_shift);
+int tfm_match(struct tfm **tfm, match_region_t *first, match_region_t *last,
+              match_region_t *pattern, int avg_len, int max_dev);
 
 // Correlation
 int tfm_io_correlation(struct tfm **tfm, bool verify_data, int granularity, int num);
