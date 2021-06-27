@@ -54,6 +54,7 @@ struct block_args
 {
     int (*consumer_init)(struct trace_set *, void *);
     int (*consumer_exit)(struct trace_set *, void *);
+    int (*consumer_init_waiter)(struct trace_set *, port_t, void *);
 
     int (*initialize)(struct trace *, void **block, void *arg);
     bool (*trace_interesting)(struct trace *, void *arg);

@@ -15,7 +15,8 @@ struct __tfm_block_block
 {
     struct list_head list;
     bool done;
-    size_t index;
+    size_t src_index, res_index;
+    int num_out;
 
     void *block;
 };
@@ -91,8 +92,15 @@ __free_state:
 
 int __tfm_block_init_waiter(struct trace_set *ts, port_t port)
 {
-    err("No ports to register\n");
-    return -EINVAL;
+    struct block_args *tfm = TFM_DATA(ts->prev->tfm);
+
+    if(tfm->consumer_init_waiter)
+        return tfm->consumer_init_waiter(ts, port, tfm->arg);
+    else
+    {
+        err("No ports to register\n");
+        return -EINVAL;
+    }
 }
 
 size_t __tfm_block_trace_size(struct trace_set *ts)
@@ -111,24 +119,25 @@ int __block_accumulate(struct tfm_block_state *state,
 {
     int ret;
     bool found = false;
-
     struct __tfm_block_block *curr, *new;
 
-    sem_acquire(&state->lock);
-
-    list_for_each_entry(curr, &state->blocks, list)
+    if(tfm->criteria != DONE_SINGULAR)
     {
-        if(tfm->trace_matches(curr_trace, curr->block, tfm->arg))
+        sem_acquire(&state->lock);
+        list_for_each_entry(curr, &state->blocks, list)
         {
-            found = true;
-            ret = tfm->accumulate(curr_trace, curr->block, tfm->arg);
-            if(ret < 0)
+            if(tfm->trace_matches(curr_trace, curr->block, tfm->arg))
             {
-                err("Failed to accumulate trace into block\n");
-                goto __unlock;
-            }
+                found = true;
+                ret = tfm->accumulate(curr_trace, curr->block, tfm->arg);
+                if(ret < 0)
+                {
+                    err("Failed to accumulate trace into block\n");
+                    goto __unlock;
+                }
 
-            break;
+                break;
+            }
         }
     }
 
@@ -144,7 +153,9 @@ int __block_accumulate(struct tfm_block_state *state,
 
         LIST_HEAD_INIT_INLINE(new->list);
         new->done = false;
-        new->index = TRACE_IDX(curr_trace);
+        new->src_index = TRACE_IDX(curr_trace);
+        new->res_index = TRACE_IDX(curr_trace);
+        new->num_out = 0;
 
         ret = tfm->initialize(curr_trace, &new->block, tfm->arg);
         if(ret < 0)
@@ -161,27 +172,33 @@ int __block_accumulate(struct tfm_block_state *state,
             goto __unlock;
         }
 
-        list_add(&new->list,
-                      &list_last_entry(&state->blocks,
-                                       struct __tfm_block_block,
-                                       list)->list);
+        // need to lock only to append to list
+        if(tfm->criteria == DONE_SINGULAR) sem_acquire(&state->lock);
+
+        list_add_tail(&new->list, &state->blocks);
         state->nblocks++;
 
-        if(tfm->criteria == DONE_SINGULAR ||
-           (tfm->criteria == DONE_LISTLEN && state->nblocks == LIST_LENGTH))
+        if(tfm->criteria == DONE_SINGULAR)
+        {
+            new->done = true;
+            new->res_index = state->done_index++;
+        }
+        else if(tfm->criteria == DONE_LISTLEN && state->nblocks == LIST_LENGTH)
         {
             curr = list_first_entry(&state->blocks, struct __tfm_block_block, list);
             if(!curr->done)
             {
                 curr->done = true;
-                curr->index = state->done_index++;
+                curr->res_index = state->done_index++;
             }
         }
+
+        if(tfm->criteria == DONE_SINGULAR) sem_release(&state->lock);
     }
 
     ret = 0;
 __unlock:
-    sem_release(&state->lock);
+    if(tfm->criteria != DONE_SINGULAR) sem_release(&state->lock);
     return ret;
 }
 
@@ -190,7 +207,7 @@ int __block_finalize(struct tfm_block_state *state,
                      struct trace *res)
 {
     int ret;
-    bool found = false;
+    bool found = false, delete = false;
     struct __tfm_block_block *curr;
 
     if(TRACE_IDX(res) >= state->done_index)
@@ -202,7 +219,7 @@ int __block_finalize(struct tfm_block_state *state,
     sem_acquire(&state->lock);
     list_for_each_entry(curr, &state->blocks, list)
     {
-        if(curr->index == TRACE_IDX(res) && curr->done)
+        if(curr->res_index == TRACE_IDX(res) && curr->done)
         {
             found = true;
             break;
@@ -220,13 +237,11 @@ int __block_finalize(struct tfm_block_state *state,
 
         // this block has more traces to finalize: signal the next one
         if(ret == 1)
-            curr->index = state->done_index++;
-        else
         {
-            state->nblocks--;
-            list_del(&curr->list);
-            free(curr);
+            curr->res_index = state->done_index++;
+            curr->num_out++;
         }
+        else delete = true;
     }
     else
     {
@@ -253,7 +268,15 @@ int __block_finalize(struct tfm_block_state *state,
             ret = -ENOMEM;
             goto __unlock;
         }
-        snprintf(res->title, TITLE_SIZE, "Block %li\n", TRACE_IDX(res));
+        snprintf(res->title, TITLE_SIZE, "Block %li.%i\n",
+                 curr->src_index, curr->num_out - 1);
+    }
+
+    if(delete)
+    {
+        state->nblocks--;
+        list_del(&curr->list);
+        free(curr);
     }
 
 __unlock:

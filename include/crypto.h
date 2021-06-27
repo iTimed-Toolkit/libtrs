@@ -111,6 +111,7 @@ void mix_cols(uint8_t state[16]);
 
 // verification functions
 
+int encrypt_aes128(uint8_t *data, uint8_t *key, uint8_t *out);
 bool verify_aes128(uint8_t *data);
 
 #endif //LIBTRS_CRYPTO_H

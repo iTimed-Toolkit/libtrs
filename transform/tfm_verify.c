@@ -33,7 +33,7 @@ size_t __tfm_verify_trace_size(struct trace_set *ts)
 
 void __tfm_verify_exit(struct trace_set *ts){}
 
-int __verify_generic(struct trace *t, verify_t which, bool *result)
+int __verify_generic(struct trace *t, crypto_t which, bool *result)
 {
     int ret;
     struct trace *prev_trace;
@@ -76,10 +76,10 @@ __out:
 int __tfm_verify_get(struct trace *t)
 {
     int ret;
-    verify_t which;
+    crypto_t which;
     bool verified = false;
 
-    which = (verify_t) t->owner->tfm->data;
+    which = (crypto_t) t->owner->tfm->data;
     ret = __verify_generic(t, which, &verified);
     if(ret < 0)
     {
@@ -104,7 +104,7 @@ void __tfm_verify_free(struct trace *t)
     passthrough_free(t);
 }
 
-int tfm_verify(struct tfm **tfm, verify_t which)
+int tfm_verify(struct tfm **tfm, crypto_t which)
 {
     struct tfm *res;
     res = calloc(1, sizeof(struct tfm));

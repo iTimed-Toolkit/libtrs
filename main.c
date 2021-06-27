@@ -19,7 +19,8 @@ static const char *port_t_strings[] = {
         STR_AT_IDX(PORT_ECHO),
         STR_AT_IDX(PORT_CPA_PROGRESS),
         STR_AT_IDX(PORT_CPA_SPLIT_PM),
-        STR_AT_IDX(PORT_CPA_SPLIT_PM_PROGRESS)
+        STR_AT_IDX(PORT_CPA_SPLIT_PM_PROGRESS),
+        STR_AT_IDX(PORT_EXTRACT_PATTERN_DEBUG)
 };
 
 static const char *fill_order_t_strings[] = {
@@ -28,7 +29,7 @@ static const char *fill_order_t_strings[] = {
         STR_AT_IDX(PLOTS)
 };
 
-static const char *verify_t_strings[] = {
+static const char *crypto_t_strings[] = {
         STR_AT_IDX(AES128)
 };
 
@@ -71,7 +72,7 @@ static const char *aes_leakage_t_strings[] = {
 
 PARSE_ENUM_FUNC(port_t, port_t_strings);
 PARSE_ENUM_FUNC(fill_order_t, fill_order_t_strings);
-PARSE_ENUM_FUNC(verify_t, verify_t_strings);
+PARSE_ENUM_FUNC(crypto_t, crypto_t_strings);
 PARSE_ENUM_FUNC(summary_t, summary_t_strings);
 PARSE_ENUM_FUNC(filter_t, filter_t_strings);
 PARSE_ENUM_FUNC(aes_leakage_t, aes_leakage_t_strings);
@@ -217,7 +218,7 @@ int __parse_memsize(char **config, size_t *size)
     type name; __VA_ARGS__;
 
 #define parse_match_region_t(name, c)               \
-    match_region_t name;                            \
+    match_region_t name;                              \
     __parse_arg_nodecl((name).ref_trace, size_t, c);  \
     __parse_arg_nodecl((name).lower, int, c);         \
     __parse_arg_nodecl((name).upper, int, c);         \
@@ -285,7 +286,7 @@ PARSE_FUNC(tfm_average,
            per_sample)
 
 PARSE_FUNC(tfm_verify,
-           parse_enum(which, verify_t, config),
+           parse_enum(which, crypto_t, config),
            which);
 
 PARSE_FUNC(tfm_reduce_along,
@@ -303,6 +304,16 @@ PARSE_FUNC(tfm_select_along,
            if(along == ALONG_NUM)
                __parse_arg_nodecl(param.num, int, config),
            stat, along, param);
+
+PARSE_FUNC(tfm_extract_pattern,
+           parse_arg(pattern_size, int, config);
+                   parse_arg(expecting, int, config);
+                   parse_arg(avg_len, int, config);
+                   parse_arg(max_dev, int, config);
+                   parse_match_region_t(pattern, config);
+                   parse_enum(data, crypto_t, config),
+                   pattern_size, expecting, avg_len, max_dev,
+                   &pattern, data);
 
 PARSE_FUNC(tfm_split_tvla,
            parse_arg(which, bool, config),
@@ -504,6 +515,8 @@ int parse_transform(char *line, struct trace_set **ts,
         ret = __parse_tfm_reduce_along(&curr, &tfm);
     else if(strcmp(type, "select_along") == 0)
         ret = __parse_tfm_select_along(&curr, &tfm);
+    else if(strcmp(type, "extract_pattern") == 0)
+        ret = __parse_tfm_extract_pattern(&curr, &tfm);
 
         // traces
     else if(strcmp(type, "split_tvla") == 0)

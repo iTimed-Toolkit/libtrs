@@ -69,17 +69,22 @@ void mix_cols(uint8_t state[16])
     }
 }
 
-bool verify_aes128(uint8_t *data)
+int encrypt_aes128(uint8_t *data, uint8_t *key, uint8_t *out)
 {
     int olen;
-    uint8_t enc[16];
 
     EVP_CIPHER_CTX *en_ctx = EVP_CIPHER_CTX_new();
     EVP_CIPHER_CTX_init(en_ctx);
-    EVP_EncryptInit_ex(en_ctx, EVP_aes_128_ecb(), NULL, &data[32], NULL);
+    EVP_EncryptInit_ex(en_ctx, EVP_aes_128_ecb(), NULL, key, NULL);
 
-    EVP_EncryptUpdate(en_ctx, enc, &olen, &data[0], 16);
+    EVP_EncryptUpdate(en_ctx, out, &olen, data, 16);
     EVP_CIPHER_CTX_free(en_ctx);
+    return 0;
+}
 
+bool verify_aes128(uint8_t *data)
+{
+    uint8_t enc[16];
+    encrypt_aes128(&data[0], &data[32], enc);
     return memcmp(enc, &data[16], 16) == 0;
 }

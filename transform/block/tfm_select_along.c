@@ -233,6 +233,7 @@ int tfm_select_along(struct tfm **tfm, summary_t stat, filter_t along, filter_pa
     struct block_args block_args = {
             .consumer_init = tfm_select_along_init,
             .consumer_exit = tfm_select_along_exit,
+            .consumer_init_waiter = NULL,
 
             .initialize = tfm_select_along_initialize,
             .trace_interesting = tfm_select_along_interesting,

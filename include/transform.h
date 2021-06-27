@@ -17,9 +17,12 @@ struct tfm;
 typedef enum
 {
     PORT_ECHO = 0,
+
     PORT_CPA_PROGRESS,
     PORT_CPA_SPLIT_PM,
-    PORT_CPA_SPLIT_PM_PROGRESS
+    PORT_CPA_SPLIT_PM_PROGRESS,
+
+    PORT_EXTRACT_PATTERN_DEBUG
 } port_t;
 
 typedef enum
@@ -32,7 +35,7 @@ typedef enum
 typedef enum
 {
     AES128
-} verify_t;
+} crypto_t;
 
 typedef enum
 {
@@ -60,6 +63,13 @@ struct viz_args
     fill_order_t order[3];
 };
 
+typedef struct
+{
+    size_t ref_trace;
+    int lower, upper;
+    double confidence;
+} match_region_t;
+
 // System
 int tfm_save(struct tfm **tfm, char *path_prefix);
 int tfm_synchronize(struct tfm **tfm, int max_distance);
@@ -68,10 +78,12 @@ int tfm_visualize(struct tfm **tfm, struct viz_args *args);
 
 // Analysis
 int tfm_average(struct tfm **tfm, bool per_sample);
-int tfm_verify(struct tfm **tfm, verify_t which);
+int tfm_verify(struct tfm **tfm, crypto_t which);
 
 int tfm_reduce_along(struct tfm **tfm, summary_t stat, filter_t along, filter_param_t param);
 int tfm_select_along(struct tfm **tfm, summary_t stat, filter_t along, filter_param_t param);
+int tfm_extract_pattern(struct tfm **tfm, int pattern_size, int expecting, int avg_len, int max_dev,
+                        match_region_t *pattern, crypto_t data);
 
 // Traces
 int tfm_split_tvla(struct tfm **tfm, bool which);
@@ -81,12 +93,6 @@ int tfm_narrow(struct tfm **tfm,
 int tfm_append(struct tfm **tfm, const char *path);
 
 // Align
-typedef struct
-{
-    size_t ref_trace;
-    int lower, upper;
-    double confidence;
-} match_region_t;
 
 int tfm_static_align(struct tfm **tfm, match_region_t *match, int max_shift);
 int tfm_match(struct tfm **tfm, match_region_t *first, match_region_t *last,

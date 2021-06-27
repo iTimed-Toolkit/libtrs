@@ -245,6 +245,7 @@ int tfm_reduce_along(struct tfm **tfm, summary_t stat, filter_t along, filter_pa
     struct block_args block_args = {
             .consumer_init = tfm_reduce_along_init,
             .consumer_exit = tfm_reduce_along_exit,
+            .consumer_init_waiter = NULL,
 
             .initialize = tfm_reduce_along_initialize,
             .trace_interesting = tfm_reduce_along_interesting,

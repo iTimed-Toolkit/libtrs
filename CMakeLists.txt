@@ -2,13 +2,14 @@ cmake_minimum_required(VERSION 3.14)
 project(libtrs C CUDA)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_FLAGS "-O3 -Wall -mavx2")
+set(CMAKE_C_FLAGS "-Wall -mavx2 -O3")
 
 include_directories(include)
 
 # core trace library
 add_library(trace lib/trace/trace_set.c lib/trace/cache.c
         lib/trace/header.c lib/trace/trace.c lib/trace/render.c)
+target_compile_options(trace PRIVATE "-O3")
 target_link_libraries(trace pthread)
 
 # statistics
@@ -22,11 +23,12 @@ if (${STATS_USE_GPU} EQUAL 1)
             lib/stats/gpu_dual_array.cu)
 endif ()
 
-target_compile_options(stats PRIVATE "-DUSE_GPU=${STATS_USE_GPU}")
+target_compile_options(stats PRIVATE "-DUSE_GPU=${STATS_USE_GPU} -O3")
 target_link_libraries(stats m)
 
 # crypto
 add_library(crypto_utils lib/crypto/aes.c)
+target_compile_options(crypto_utils PRIVATE "-O3")
 target_link_libraries(crypto_utils crypto)
 
 # transformations
@@ -39,10 +41,12 @@ add_library(transform transform/tfm.c transform/tfm_align.c transform/tfm_match.
         transform/system/tfm_synchronize.c transform/trace/tfm_append.c transform/tfm_verify.c
         transform/tfm_block.c transform/block/tfm_reduce_along.c transform/block/tfm_select_along.c
         transform/extract/tfm_extract_pattern.c)
+target_compile_options(transform PRIVATE "-O3")
 target_link_libraries(transform pthread crypto_utils m stats)
 
 # frontend
 add_executable(libtrace_evaluate main.c)
+target_compile_options(libtrace_evaluate PRIVATE "-O3")
 target_link_libraries(libtrace_evaluate trace transform)
 
 # miscellaneous
