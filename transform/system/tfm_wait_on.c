@@ -240,7 +240,7 @@ int __tfm_wait_on_init(struct trace_set *ts)
     }
 
     // heuristic for associativity
-    assoc = (int) log2(tfm->bufsize) - 10;
+    assoc = 8;
     entry->ntraces = __find_num_traces(ts, tfm->bufsize, assoc);
 
     ret = tc_cache_manual(&entry->available, ts->set_id, entry->ntraces / assoc, assoc);
@@ -403,19 +403,22 @@ int __search_for_entry(struct list_head *queue,
             if(ret < 0)
             {
                 err("Failed to lookup trace in available cache\n")
-                return ret;
+                goto __unlock;
             }
 
             if(!*res)
             {
                 err("Failed to find requested trace after available signaled\n");
-                return -EINVAL;
+                ret = -EINVAL; goto __unlock;
             }
         }
 
         *cache = curr_waiter->available;
+        ret = 0;
+
+__unlock:
         sem_release(&curr_waiter->lock);
-        return 0;
+        return ret;
     }
     else
     {

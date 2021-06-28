@@ -128,7 +128,7 @@ int tfm_extract_pattern_init_waiter(struct trace_set *ts, port_t port, void *arg
 int __search_matches(struct tfm_extract_pattern_config *cfg,
                      struct tfm_extract_pattern_block *blk)
 {
-    int i, last = -1;
+    int i, last = -1, timeout = 0;
     bool first = true;
     struct split_list_entry *new;
 
@@ -139,9 +139,18 @@ int __search_matches(struct tfm_extract_pattern_config *cfg,
     for(i = 1; i < blk->num - 1; i++)
     {
         blk->pearson[i] = fabsf(blk->pearson[i]);
+
+        // Sometimes, we'll have many closely clustered (only a few samples difference)
+        // correlation local maxima which actually correspond to the same pattern match.
+        // Therefore, set a timeout value when we find a true match which must expire
+        // before we accept a new match.
+        if(timeout > 0)
+            timeout--;
+
         if(blk->pearson[i] >= cfg->pattern.confidence &&
            blk->pearson[i - 1] < blk->pearson[i] &&
-           blk->pearson[i + 1] < blk->pearson[i])
+           blk->pearson[i + 1] < blk->pearson[i] &&
+           timeout == 0)
         {
             if(first)
             {
@@ -168,6 +177,7 @@ int __search_matches(struct tfm_extract_pattern_config *cfg,
 
             if(blk->matches)
                 blk->matches[i] = 1.0f;
+            timeout = cfg->max_dev;
         }
     }
 
@@ -252,9 +262,9 @@ int __search_gaps(struct tfm_extract_pattern_config *cfg,
                                                     cfg->ref.mean,
                                                     cfg->ref.dev)) <= CONF);
 
-                    warn("Found %s gap (size %f) @ %i -> %i\n",
-                         predictable ? "predictable" : "unpredictable",
-                         gap, last_index, pos->index);
+                    debug("Found %s gap (size %f) @ %i -> %i\n",
+                          predictable ? "predictable" : "unpredictable",
+                          gap, last_index, pos->index);
 
                     new = calloc(1, sizeof(struct split_list_entry));
                     if(!new)
@@ -382,7 +392,7 @@ int __optimize_gaps(struct tfm_extract_pattern_config *cfg,
                 values_backwards = calloc(num, sizeof(float));
             if(!values_backwards)
             {
-                err("Failed to allocate a temp array\n");
+                err("Failed to allocate a temp array of size %i\n", num);
                 ret = -ENOMEM;
                 goto __free_temp_arrays;
             }
@@ -404,22 +414,22 @@ int __optimize_gaps(struct tfm_extract_pattern_config *cfg,
                              &indices_backwards[num - i - 1]);
         }
 
-        fflush(stderr);
-        fprintf(stderr, "forwards:\n\t");
-        for(i = 0; i < num; i++)
-            fprintf(stderr, "%i\t", indices_forwards[i]);
-        fprintf(stderr, "\n\t");
-        for(i = 0; i < num; i++)
-            fprintf(stderr, "%f\t", values_forwards[i]);
-
-        fprintf(stderr, "\nbackwards:\n\t");
-        for(i = 0; i < num; i++)
-            fprintf(stderr, "%i\t", indices_backwards[i]);
-        fprintf(stderr, "\n\t");
-        for(i = 0; i < num; i++)
-            fprintf(stderr, "%f\t", values_backwards[i]);
-        fprintf(stderr, "\n");
-        fflush(stderr);
+//        fflush(stderr);
+//        fprintf(stderr, "forwards:\n\t");
+//        for(i = 0; i < num; i++)
+//            fprintf(stderr, "%i\t", indices_forwards[i]);
+//        fprintf(stderr, "\n\t");
+//        for(i = 0; i < num; i++)
+//            fprintf(stderr, "%f\t", values_forwards[i]);
+//
+//        fprintf(stderr, "\nbackwards:\n\t");
+//        for(i = 0; i < num; i++)
+//            fprintf(stderr, "%i\t", indices_backwards[i]);
+//        fprintf(stderr, "\n\t");
+//        for(i = 0; i < num; i++)
+//            fprintf(stderr, "%f\t", values_backwards[i]);
+//        fprintf(stderr, "\n");
+//        fflush(stderr);
 
         // if all entries agree, accept those
         mismatch = false;
@@ -427,7 +437,7 @@ int __optimize_gaps(struct tfm_extract_pattern_config *cfg,
         {
             if(indices_forwards[i] != indices_backwards[i])
             {
-                warn("Forward and backward runs don't agree\n");
+                debug("Forward and backward runs don't agree\n");
                 mismatch = true;
                 break;
             }
@@ -437,7 +447,7 @@ int __optimize_gaps(struct tfm_extract_pattern_config *cfg,
                                 blk->gap_mean,
                                 blk->gap_dev)) > CONF)
             {
-                warn("Agreed intermediate not confidently a missed gap\n");
+                debug("Agreed intermediate not confidently a missed gap\n");
                 mismatch = true;
                 break;
             }
@@ -905,7 +915,7 @@ int __send_debug(struct trace *t, struct tfm_extract_pattern_block *blk)
     memset(title, 0, DEBUG_TITLE_SIZE * sizeof(char));
     snprintf(title, DEBUG_TITLE_SIZE, "Trace %i Pearson", blk->index);
     ret = t->owner->tfm_next(t->owner->tfm_next_arg, PORT_EXTRACT_PATTERN_DEBUG, 4,
-                             5 * blk->index + 0,
+                             5 * (blk->index) + 0,
                              title, NULL, blk->pearson);
     if(ret < 0)
     {
@@ -917,7 +927,7 @@ int __send_debug(struct trace *t, struct tfm_extract_pattern_block *blk)
     memset(title, 0, DEBUG_TITLE_SIZE * sizeof(char));
     snprintf(title, DEBUG_TITLE_SIZE, "Trace %i Matches", blk->index);
     ret = t->owner->tfm_next(t->owner->tfm_next_arg, PORT_EXTRACT_PATTERN_DEBUG, 4,
-                             5 * blk->index + 1,
+                             5 * (blk->index) + 1,
                              title, NULL, blk->matches);
     if(ret < 0)
     {
@@ -929,7 +939,7 @@ int __send_debug(struct trace *t, struct tfm_extract_pattern_block *blk)
     memset(title, 0, DEBUG_TITLE_SIZE * sizeof(char));
     snprintf(title, DEBUG_TITLE_SIZE, "Trace %i Predictable Gaps", blk->index);
     ret = t->owner->tfm_next(t->owner->tfm_next_arg, PORT_EXTRACT_PATTERN_DEBUG, 4,
-                             5 * blk->index + 2,
+                             5 * (blk->index) + 2,
                              title, NULL, blk->pred);
     if(ret < 0)
     {
@@ -941,7 +951,7 @@ int __send_debug(struct trace *t, struct tfm_extract_pattern_block *blk)
     memset(title, 0, DEBUG_TITLE_SIZE * sizeof(char));
     snprintf(title, DEBUG_TITLE_SIZE, "Trace %i Unpredictable Gaps", blk->index);
     ret = t->owner->tfm_next(t->owner->tfm_next_arg, PORT_EXTRACT_PATTERN_DEBUG, 4,
-                             5 * blk->index + 3,
+                             5 * (blk->index) + 3,
                              title, NULL, blk->unpred);
     if(ret < 0)
     {
@@ -953,7 +963,7 @@ int __send_debug(struct trace *t, struct tfm_extract_pattern_block *blk)
     memset(title, 0, DEBUG_TITLE_SIZE * sizeof(char));
     snprintf(title, DEBUG_TITLE_SIZE, "Trace %i Tail", blk->index);
     ret = t->owner->tfm_next(t->owner->tfm_next_arg, PORT_EXTRACT_PATTERN_DEBUG, 4,
-                             5 * blk->index + 4,
+                             5 * (blk->index) + 4,
                              title, NULL, blk->tail);
     if(ret < 0)
     {
@@ -1011,7 +1021,14 @@ int tfm_extract_pattern_accumulate(struct trace *t, void *block, void *arg)
         goto __free_debug;
     }
 
-    warn("Trace %li: found %i true matches\n", TRACE_IDX(t), blk->count_true);
+    debug("Trace %li: found %i true matches\n", TRACE_IDX(t), blk->count_true);
+
+    if(blk->count_true == 0)
+    {
+        warn("No true matches in trace %li, discarding\n", TRACE_IDX(t));
+        ret = 0;
+        goto __free_debug;
+    }
 
     // find gaps
     ret = __search_gaps(cfg, blk);
@@ -1021,8 +1038,8 @@ int tfm_extract_pattern_accumulate(struct trace *t, void *block, void *arg)
         goto __free_debug;
     }
 
-    warn("Trace %li: found %i predictable gaps, %i unpredictable gaps\n",
-         TRACE_IDX(t), blk->count_predictable, blk->count_unpredictable);
+    debug("Trace %li: found %i predictable gaps, %i unpredictable gaps\n",
+          TRACE_IDX(t), blk->count_predictable, blk->count_unpredictable);
 
     if(blk->count_unpredictable > 0)
     {
@@ -1038,26 +1055,19 @@ int tfm_extract_pattern_accumulate(struct trace *t, void *block, void *arg)
     blk->missing = cfg->expecting - blk->count_true -
                    blk->count_predictable - blk->count_unpredictable;
 
-    ret = __search_tail(cfg, blk);
-    if(ret < 0)
+    if(blk->missing > 0)
     {
-        err("Failed to find tail matches\n");
-        goto __free_debug;
+        ret = __search_tail(cfg, blk);
+        if(ret < 0)
+        {
+            err("Failed to find tail matches\n");
+            goto __free_debug;
+        }
     }
 
-    warn("Trace %li: found %i confident matches, %i predictable gaps, %i unpredictable gaps, %i tail values: %i confirmed total\n",
+    warn("Trace %li: C = %i, P = %i, U = %i, T = %i, total %i\n",
          TRACE_IDX(t), blk->count_true, blk->count_predictable, blk->count_unpredictable, blk->count_tail,
          blk->count_true + blk->count_predictable + blk->count_unpredictable + blk->count_tail);
-
-//    if(t->owner->tfm_next)
-//    {
-//        ret = __send_debug(t, blk);
-//        if(ret < 0)
-//        {
-//            err("Failed to send debug to consumer\n");
-//            goto __free_debug;
-//        }
-//    }
 
     ret = 0;
 __free_debug:
@@ -1123,8 +1133,11 @@ int tfm_extract_pattern_finalize(struct trace *t, void *block, void *arg)
 
     if(list_empty(&blk->split_list))
     {
-        err("Finalize called with empty split list\n");
-        return -EINVAL;
+        warn("Finalize called with empty split list\n");
+        t->title = NULL;
+        t->data = NULL;
+        t->samples = NULL;
+        goto __done;
     }
 
     if(cfg->debugging && !blk->debug_sent)
@@ -1224,6 +1237,7 @@ int tfm_extract_pattern_finalize(struct trace *t, void *block, void *arg)
 
     memcpy(t->samples, &blk->trace.samples[entry->index], cfg->pattern_size * sizeof(float));
 
+__done:
     if(list_empty(&blk->split_list))
     {
         free(blk->trace.data);
