@@ -11,6 +11,9 @@
 #define TITLE_SIZE      128
 #define LIST_LENGTH     16
 
+#define BLOCK_DEBUG         0
+#define DEBUG_FIRST_INDEX   1400
+
 struct __tfm_block_block
 {
     struct list_head list;
@@ -48,7 +51,7 @@ int __tfm_block_init(struct trace_set *ts)
 
     // its okay to not know the number of traces,
     // but should at least have number of samples
-    ts->num_traces = -2;
+    ts->num_traces = UNKNOWN_NUM_TRACES;
     ts->num_samples = -1;
 
     state = calloc(1, sizeof(struct tfm_block_state));
@@ -58,7 +61,11 @@ int __tfm_block_init(struct trace_set *ts)
         return -ENOMEM;
     }
 
+#if BLOCK_DEBUG
+    state->next_index = DEBUG_FIRST_INDEX;
+#else
     state->next_index = 0;
+#endif
     state->done_index = 0;
     state->nblocks = 0;
     LIST_HEAD_INIT_INLINE(state->blocks);
@@ -217,10 +224,13 @@ int __block_finalize(struct tfm_block_state *state,
     }
 
     sem_acquire(&state->lock);
+    debug("Finalize for trace %li\n", TRACE_IDX(res));
     list_for_each_entry(curr, &state->blocks, list)
     {
+        debug("Found a block with index %li\n", curr->res_index);
         if(curr->res_index == TRACE_IDX(res) && curr->done)
         {
+            debug("This is the correct block!\n");
             found = true;
             break;
         }
@@ -245,7 +255,8 @@ int __block_finalize(struct tfm_block_state *state,
     }
     else
     {
-        err("Failed to find correct result block in list\n");
+        err("Failed to find correct result block in list for index %li\n",
+            TRACE_IDX(res));
         ret = -EINVAL;
         goto __unlock;
     }
@@ -293,6 +304,7 @@ int __tfm_block_get(struct trace *t)
     struct block_args *tfm = TFM_DATA(t->owner->tfm);
     struct tfm_block_state *state = t->owner->tfm_state;
 
+    debug("Getting index %li\n", TRACE_IDX(t));
     while(1)
     {
         if(TRACE_IDX(t) < state->done_index)
@@ -324,6 +336,7 @@ int __tfm_block_get(struct trace *t)
         trace_free(curr_trace);
     }
 
+    debug("About to finalize for trace %li\n", TRACE_IDX(t));
     return __block_finalize(state, tfm, t);
 }
 

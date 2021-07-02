@@ -1,3 +1,4 @@
+#include "trace.h"
 #include "transform.h"
 #include "statistics.h"
 

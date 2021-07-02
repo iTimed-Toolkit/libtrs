@@ -35,6 +35,8 @@ void *__ts_render_func(void *thread_arg)
             return NULL;
         }
 
+        debug("Working on trace %li\n", arg->trace_index);
+
         ret = trace_get(arg->ts, &trace, arg->trace_index);
         if(ret < 0)
         {
@@ -46,6 +48,7 @@ void *__ts_render_func(void *thread_arg)
             return NULL;
         }
 
+        debug("%s\n", trace->title);
         trace_free(trace);
 
         arg->ret = 1;

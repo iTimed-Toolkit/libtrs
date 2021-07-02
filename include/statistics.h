@@ -36,4 +36,18 @@ int stat_get_pearson_all(struct accumulator *acc, float **res);
 int stat_oneshot_max(float *max, float *val, int len);
 int stat_oneshot_min(float *min, float *val, int len);
 
+#if defined(__cplusplus)
+
+extern "C" int gpu_pattern_preprocess(float *pattern, int pattern_len, float **out, float *var);
+extern "C" int gpu_pattern_free(float *pattern);
+extern "C" int gpu_pattern_match(float *data, int data_len, float *pattern, int pattern_len, float s_pattern, float **pearson);
+
+#else
+
+int gpu_pattern_preprocess(float *pattern, int pattern_len, float **out, float *var);
+int gpu_pattern_free(float *pattern);
+int gpu_pattern_match(float *data, int data_len, float *pattern, int pattern_len, float s_pattern, float **pearson);
+
+#endif
+
 #endif //LIBTRS_STATISTICS_H

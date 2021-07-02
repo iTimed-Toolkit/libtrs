@@ -9,7 +9,6 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <string.h>
-#include <math.h>
 
 #define TFM_DATA(tfm)   ((struct tfm_wait_on *) (tfm)->data)
 
@@ -126,7 +125,7 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
             else new_trace->samples = NULL;
 
             new_trace->owner = curr_waiter->set;
-            new_trace->start_offset = index;
+            new_trace->index = index;
 
             sem_acquire(&curr_waiter->lock);
             ret = tc_store(curr_waiter->available, index, new_trace, false);

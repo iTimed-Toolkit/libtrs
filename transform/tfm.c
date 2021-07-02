@@ -8,21 +8,6 @@
 #include <string.h>
 #include <errno.h>
 
-int tfm_destroy(struct tfm *tfm)
-{
-    if(!tfm)
-    {
-        err("Invalid transformation\n");
-        return -EINVAL;
-    }
-
-    if(tfm->data)
-        free(tfm->data);
-
-    free(tfm);
-    return 0;
-}
-
 int copy_title(struct trace *to, struct trace *from)
 {
     char *res;

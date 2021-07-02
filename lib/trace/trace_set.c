@@ -27,33 +27,23 @@ int ts_open(struct trace_set **ts, const char *path)
     }
 
     ts_result->set_id = __atomic_fetch_add(&gbl_set_index, 1, __ATOMIC_RELAXED);
-    debug("Reading new trace set with ID %li\n", ts_result->set_id);
+    debug("Creating new trace set with ID %li\n", ts_result->set_id);
 
-    ts_result->ts_file = fopen(path, "rb");
-    if(!ts_result->ts_file)
+    ret = create_backend(ts_result, path);
+    if(ret < 0)
     {
-        err("Unable to open trace set at %s: %s\n", path, strerror(errno));
-        ret = -errno;
+        err("Failed to create backend for trace set\n");
         goto __free_ts_result;
     }
 
-    ret = read_headers(ts_result);
+    ret = ts_result->backend->open(ts_result);
     if(ret < 0)
     {
-        err("Failed to initialize trace set headers\n");
-        goto __close_ts_file;
-    }
-
-    ret = sem_init(&ts_result->file_lock, 0, 1);
-    if(ret < 0)
-    {
-        err("Failed to initialize file lock semaphore: %s\n", strerror(errno));
-        ret = -errno;
-        goto __free_headers;
+        err("Failed to open backend for trace set\n");
+        goto __free_backend;
     }
 
     ts_result->cache = NULL;
-
     ts_result->prev = NULL;
     ts_result->tfm = NULL;
     ts_result->tfm_state = NULL;
@@ -63,11 +53,8 @@ int ts_open(struct trace_set **ts, const char *path)
     *ts = ts_result;
     return 0;
 
-__free_headers:
-    free_headers(ts_result);
-
-__close_ts_file:
-    fclose(ts_result->ts_file);
+__free_backend:
+    ts_result->backend->close(ts_result);
 
 __free_ts_result:
     free(ts_result);
@@ -78,6 +65,7 @@ __free_ts_result:
 
 int ts_close(struct trace_set *ts)
 {
+    int ret;
     if(!ts)
     {
         err("Invalid trace set\n");
@@ -90,18 +78,18 @@ int ts_close(struct trace_set *ts)
     if(ts->prev && ts->tfm)
         ts->tfm->exit(ts);
 
-    if(ts->ts_file)
+    if(ts->backend)
     {
-        sem_acquire(&ts->file_lock);
-        sem_destroy(&ts->file_lock);
-        fclose(ts->ts_file);
+        ret = ts->backend->close(ts);
+        if(ret < 0)
+        {
+            err("Failed to close backend\n");
+            return ret;
+        }
     }
 
     if(ts->cache)
         tc_free(ts->cache);
-
-    if(ts->headers)
-        free_headers(ts);
 
     free(ts);
     return 0;
@@ -125,18 +113,11 @@ int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *
         return -ENOMEM;
     }
 
-    // no need to seek within a file or parse headers
-    ts_result->ts_file = NULL;
-    ts_result->trace_length = 1;
-    ts_result->trace_start = 0;
-
-    ts_result->num_headers = 0;
-    ts_result->headers = NULL;
-
-    // link previous set
     ts_result->set_id = __atomic_fetch_add(&gbl_set_index, 1, __ATOMIC_RELAXED);
+    ts_result->backend = NULL;
     ts_result->cache = NULL;
 
+    // link previous set
     ts_result->prev = prev;
     ts_result->tfm = transform;
     ts_result->tfm_state = NULL;

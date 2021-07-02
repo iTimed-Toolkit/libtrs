@@ -7,10 +7,20 @@
 
 // opaque structs, no need for user to worry about implementation :)
 struct trace_set;
-struct trace;
 struct tfm;
 
 struct render;
+struct export;
+
+struct trace
+{
+    struct trace_set *owner;
+    size_t index;
+
+    char *title;
+    uint8_t *data;
+    float *samples;
+};
 
 // configuration
 
@@ -79,6 +89,12 @@ int ts_render_async(struct trace_set *ts, size_t nthreads, struct render **rende
  */
 int ts_render_join(struct render *render);
 
+int ts_export(struct trace_set *ts, int port);
+
+int ts_export_async(struct trace_set *ts, int port, struct export **export);
+
+int ts_export_join(struct export *export);
+
 /**
  * Create a trace cache for the given cache set. The specified size
  * includes only the size of the cached traces, and not any associated
@@ -91,13 +107,6 @@ int ts_render_join(struct render *render);
 int ts_create_cache(struct trace_set *ts, size_t size_bytes, size_t assoc);
 
 /**
- * Print the headers found in a given trace set.
- *
- * @param ts The traceset to print.
- */
-void ts_dump_headers(struct trace_set *ts);
-
-/**
  * Get the number of traces in a trace set.
  *
  * @param ts The trace set to operate on.
@@ -105,6 +114,7 @@ void ts_dump_headers(struct trace_set *ts);
  * standard errno error code on failure.
  */
 size_t ts_num_traces(struct trace_set *ts);
+#define UNKNOWN_NUM_TRACES      (SIZE_MAX - 4)
 
 /**
  * Get the number of samples per trace in a trace set.
@@ -151,37 +161,5 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index);
  * @return 0 on success (does not fail).
  */
 int trace_free(struct trace *t);
-
-/**
- * Get the title string from a trace.
- *
- * @param t The trace to operate on.
- * @param title Where to place a pointer to the title.
- * @return 0 on success, or a standard errno error code on failure.
- */
-//int trace_title(struct trace *t, char **title);
-
-/**
- * Get the associated data from a trace. Note that, by default, it seems
- * like Riscure groups all associated data together rather than delimiting
- * by input/output/key. Therefore, it is almost always preferable to use
- * this function rather than the specific functions below.
- *
- * @param t The trace to operate on.
- * @param data Where to place a pointer to the trace's data.
- * @return 0 on success, or a standard errno error code on failure.
- */
-//int trace_data(struct trace *t, uint8_t **data);
-
-/**
- * Get the samples from a trace. These are postprocessed already,
- * such that the specific sample values correspond exactly to the
- * gathered samples and not any specific input encoding.
- *
- * @param t The trace to operate on.
- * @param samples Where to place a pointer to the trace's samples.
- * @return 0 on success, or a standard errno error code on failure.
- */
-//int trace_samples(struct trace *t, float **samples);
 
 #endif //LIBTRS_TRACE_SET_H

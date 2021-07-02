@@ -1,9 +1,11 @@
 #include "trace.h"
 #include "__trace_internal.h"
+#include "__backend_internal.h"
 
 #include <errno.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 
 typedef enum header
 {
@@ -216,7 +218,7 @@ int __write_tag_len_data(FILE *ts_file, uint8_t tag, void *data)
     uint32_t len32;
     uint64_t len64;
 
-    if(TAG_LEN(tag) == 0)
+    if(TAG_LEN(tag) == 0 && tag != TRACE_BLOCK)
         len = strlen(data);
     else
         len = TAG_LEN(tag);
@@ -331,41 +333,6 @@ int __write_tag_len_data(FILE *ts_file, uint8_t tag, void *data)
     return 0;
 }
 
-void ts_dump_headers(struct trace_set *ts)
-{
-    int i;
-
-    if(!ts)
-    {
-        err("Invalid trace set\n");
-        return;
-    }
-
-    for(i = 0; i < ts->num_headers; i++)
-    {
-        printf("%s: ", all_headers[ts->headers[i].tag].desc);
-        switch(all_headers[ts->headers[i].tag].th_type)
-        {
-            case TH_INT:
-                printf("%i\n", ts->headers[i].val.integer);
-                break;
-
-            case TH_FLT:
-                printf("%f\n", ts->headers[i].val.floating);
-                break;
-
-            case TH_BOOL:
-                printf("%i\n", ts->headers[i].val.boolean);
-                break;
-
-            case TH_BYTE:
-            case TH_STR:
-                printf("%s\n", ts->headers[i].val.string);
-                break;
-        }
-    }
-}
-
 int __parse_headers(struct trace_set *ts)
 {
     int i, j, stat;
@@ -389,22 +356,22 @@ int __parse_headers(struct trace_set *ts)
     ts->yscale = 0.0f;
 
     debug("Parsing headers for trace set %li\n", ts->set_id);
-    for(i = 0; i < ts->num_headers; i++)
+    for(i = 0; i < TRS_ARG(ts)->num_headers; i++)
     {
-        stat = __read_tag_and_len(ts->ts_file, &tag, &actual_len);
+        stat = __read_tag_and_len(TRS_ARG(ts)->file, &tag, &actual_len);
         if(stat < 0)
         {
             err("Failed to get next tag and length\n");
             return stat;
         }
 
-        ts->headers[i].tag = tag;
+        TRS_ARG(ts)->headers[i].tag = tag;
         switch(all_headers[tag].th_type)
         {
             case TH_INT:
             case TH_FLT:
             case TH_BOOL:
-                ret = fread(&ts->headers[i].val, 1, actual_len, ts->ts_file);
+                ret = fread(&TRS_ARG(ts)->headers[i].val, 1, actual_len, TRS_ARG(ts)->file);
                 if(ret != actual_len)
                 {
                     err("Failed to read standard tag data from trace set file\n");
@@ -415,15 +382,15 @@ int __parse_headers(struct trace_set *ts)
 
             case TH_STR:
             case TH_BYTE:
-                ts->headers[i].val.bytes = calloc(actual_len + 1, 1);
-                if(!ts->headers[i].val.bytes)
+                TRS_ARG(ts)->headers[i].val.bytes = calloc(actual_len + 1, 1);
+                if(!TRS_ARG(ts)->headers[i].val.bytes)
                 {
                     err("Failed to allocate buffer for tag data\n");
                     stat = -EIO;
                     goto __fail;
                 }
 
-                ret = fread(ts->headers[i].val.bytes, 1, actual_len, ts->ts_file);
+                ret = fread(TRS_ARG(ts)->headers[i].val.bytes, 1, actual_len, TRS_ARG(ts)->file);
                 if(ret != actual_len)
                 {
                     err("Failed to read array tag data from trace set file\n");
@@ -439,27 +406,27 @@ int __parse_headers(struct trace_set *ts)
 
         if(tag == NUMBER_TRACES)
         {
-            ts->num_traces = ts->headers[i].val.integer;
+            ts->num_traces = TRS_ARG(ts)->headers[i].val.integer;
             debug("Found number of traces = %li\n", ts->num_traces);
         }
         else if(tag == NUMBER_SAMPLES)
         {
-            ts->num_samples = ts->headers[i].val.integer;
+            ts->num_samples = TRS_ARG(ts)->headers[i].val.integer;
             debug("Found number of samples = %li\n", ts->num_samples);
         }
         else if(tag == TITLE_SPACE)
         {
-            ts->title_size = ts->headers[i].val.integer;
+            ts->title_size = TRS_ARG(ts)->headers[i].val.integer;
             debug("Found title size = %li\n", ts->title_size);
         }
         else if(tag == LENGTH_DATA)
         {
-            ts->data_size = ts->headers[i].val.integer;
+            ts->data_size = TRS_ARG(ts)->headers[i].val.integer;
             debug("Found data size = %li\n", ts->data_size);
         }
         else if(tag == SAMPLE_CODING)
         {
-            ts->datatype = ts->headers[i].val.integer;
+            ts->datatype = TRS_ARG(ts)->headers[i].val.integer;
             debug("Found sample coding = %i\n", ts->datatype);
 
             if(ts->datatype == DT_FLOAT)
@@ -467,7 +434,7 @@ int __parse_headers(struct trace_set *ts)
         }
         else if(tag == SCALE_Y)
         {
-            ts->yscale = ts->headers[i].val.floating;
+            ts->yscale = TRS_ARG(ts)->headers[i].val.floating;
             debug("Found y scale = %f\n", ts->yscale);
         }
     }
@@ -480,21 +447,21 @@ int __parse_headers(struct trace_set *ts)
         return -EINVAL;
     }
 
-    ts->trace_length = ts->num_samples * (ts->datatype & 0xF) + ts->data_size + ts->title_size;
-    ts->trace_start = ftell(ts->ts_file);
+    TRS_ARG(ts)->trace_length = ts->num_samples * (ts->datatype & 0xF) + ts->data_size + ts->title_size;
+    TRS_ARG(ts)->trace_start = ftell(TRS_ARG(ts)->file);
     return 0;
 
 __fail:
     for(j = 0; j <= i; j++)
     {
         // valid entry
-        if(ts->headers[i].tag != 0)
+        if(TRS_ARG(ts)->headers[i].tag != 0)
         {
-            if(all_headers[ts->headers[i].tag].th_type == TH_STR ||
-               all_headers[ts->headers[i].tag].th_type == TH_BYTE)
+            if(all_headers[TRS_ARG(ts)->headers[i].tag].th_type == TH_STR ||
+               all_headers[TRS_ARG(ts)->headers[i].tag].th_type == TH_BYTE)
             {
-                if(ts->headers[i].val.bytes != NULL)
-                    free(ts->headers[i].val.bytes);
+                if(TRS_ARG(ts)->headers[i].val.bytes != NULL)
+                    free(TRS_ARG(ts)->headers[i].val.bytes);
             }
         }
     }
@@ -558,23 +525,22 @@ int __num_headers(FILE *ts_file)
 int read_headers(struct trace_set *ts)
 {
     int ret;
-
     if(!ts)
     {
         err("Invalid trace set\n");
         return -EINVAL;
     }
 
-    ret = __num_headers(ts->ts_file);
+    ret = __num_headers(TRS_ARG(ts)->file);
     if(ret < 0)
     {
         err("Failed to get number of headers\n");
         return ret;
     }
 
-    ts->num_headers = ret;
-    ts->headers = (struct th_data *) calloc(ret, sizeof(struct th_data));
-    if(!ts->headers)
+    TRS_ARG(ts)->num_headers = ret;
+    TRS_ARG(ts)->headers = (struct th_data *) calloc(ret, sizeof(struct th_data));
+    if(!TRS_ARG(ts)->headers)
     {
         err("Failed to allocate memory for trace set headers\n");
         return -ENOMEM;
@@ -584,8 +550,8 @@ int read_headers(struct trace_set *ts)
     if(ret < 0)
     {
         err("Failed to parse trace set headers\n");
-        free(ts->headers);
-        ts->headers = NULL;
+        free(TRS_ARG(ts)->headers);
+        TRS_ARG(ts)->headers = NULL;
         return ret;
     }
 
@@ -601,17 +567,19 @@ int write_default_headers(struct trace_set *ts)
         return -EINVAL;
     }
 
-    if(!ts->ts_file)
+    if(!TRS_ARG(ts)->file)
     {
         err("Invalid trace set file\n");
         return -EINVAL;
     }
 
-    ret = __write_tag_len_data(ts->ts_file, NUMBER_TRACES, &ts->num_traces);
-    if(ret == 0) ret = __write_tag_len_data(ts->ts_file, NUMBER_SAMPLES, &ts->num_samples);
-    if(ret == 0) ret = __write_tag_len_data(ts->ts_file, SAMPLE_CODING, &ts->datatype);
-    if(ret == 0) ret = __write_tag_len_data(ts->ts_file, TITLE_SPACE, &ts->title_size);
-    if(ret == 0) ret = __write_tag_len_data(ts->ts_file, LENGTH_DATA, &ts->data_size);
+    ret = __write_tag_len_data(TRS_ARG(ts)->file, NUMBER_TRACES, &ts->num_traces);
+    if(ret == 0) ret = __write_tag_len_data(TRS_ARG(ts)->file, NUMBER_SAMPLES, &ts->num_samples);
+    if(ret == 0) ret = __write_tag_len_data(TRS_ARG(ts)->file, SAMPLE_CODING, &ts->datatype);
+    if(ret == 0) ret = __write_tag_len_data(TRS_ARG(ts)->file, TITLE_SPACE, &ts->title_size);
+    if(ret == 0) ret = __write_tag_len_data(TRS_ARG(ts)->file, LENGTH_DATA, &ts->data_size);
+    if(ret == 0) ret = __write_tag_len_data(TRS_ARG(ts)->file, SCALE_Y, &ts->yscale);
+    if(ret == 0) ret = __write_tag_len_data(TRS_ARG(ts)->file, TRACE_BLOCK, NULL);
 
     if(ret < 0)
     {
@@ -622,85 +590,12 @@ int write_default_headers(struct trace_set *ts)
     return 0;
 }
 
-int write_inherited_headers(struct trace_set *ts)
-{
-    int ret, i;
-    struct trace_set *curr;
-    struct th_data *header;
-
-    if(!ts)
-    {
-        err("Invalid trace set\n");
-        return -EINVAL;
-    }
-
-    if(!ts->ts_file)
-    {
-        err("Invalid trace set file\n");
-        return -EINVAL;
-    }
-
-    if(!ts->prev)
-    {
-        err("Invalid previous trace set\n");
-        return -EINVAL;
-    }
-
-    curr = ts->prev;
-    while(!curr->headers && curr->prev)
-        curr = curr->prev;
-
-    if(!curr->headers)
-    {
-        err("Couldn't find any headers in trace set chain\n");
-        return -EINVAL;
-    }
-
-    for(i = 0; i < curr->num_headers; i++)
-    {
-        header = &curr->headers[i];
-
-        // these would've been written already
-        if(header->tag == NUMBER_TRACES || header->tag == NUMBER_SAMPLES ||
-           header->tag == SAMPLE_CODING ||
-           header->tag == TITLE_SPACE || header->tag == LENGTH_DATA ||
-           header->tag == INPUT_LENGTH || header->tag == INPUT_OFFSET ||
-           header->tag == OUTPUT_LENGTH || header->tag == OUTPUT_OFFSET ||
-           header->tag == KEY_LENGTH || header->tag == KEY_OFFSET)
-        {
-            continue;
-        }
-
-        if(all_headers[header->tag].th_type == TH_STR ||
-           all_headers[header->tag].th_type == TH_BYTE)
-        {
-            ret = __write_tag_len_data(ts->ts_file, header->tag, header->val.string);
-            if(ret < 0)
-            {
-                err("Failed to write string/byte header to trace set file\n");
-                return ret;
-            }
-        }
-        else
-        {
-            ret = __write_tag_len_data(ts->ts_file, header->tag, &header->val);
-            if(ret < 0)
-            {
-                err("Failed to write header to trace set file\n");
-                return ret;
-            }
-        }
-    }
-
-    return 0;
-}
-
 int finalize_headers(struct trace_set *ts)
 {
     int i, ret;
     struct th_data *header;
 
-    ret = fseek(ts->ts_file, 0, SEEK_SET);
+    ret = fseek(TRS_ARG(ts)->file, 0, SEEK_SET);
     if(ret)
     {
         err("Failed to seek trace set file to beginning\n");
@@ -708,16 +603,21 @@ int finalize_headers(struct trace_set *ts)
     }
 
     // simply need to find NUMBER_TRACES tag and overwrite it with correct value
-    for(i = 0; i < ts->num_headers; i++)
+    for(i = 0; i < TRS_ARG(ts)->num_headers; i++)
     {
-        if(ts->headers[i].tag == NUMBER_TRACES)
-            ts->headers[i].val.integer = ts->num_traces;
+        if(TRS_ARG(ts)->headers[i].tag == NUMBER_TRACES)
+        {
+            if(ts->num_traces == UNKNOWN_NUM_TRACES)
+                TRS_ARG(ts)->headers[i].val.integer = TRS_ARG(ts)->num_written;
+            else
+                TRS_ARG(ts)->headers[i].val.integer = ts->num_traces;
+        }
 
-        header = &ts->headers[i];
+        header = &TRS_ARG(ts)->headers[i];
         if(all_headers[header->tag].th_type == TH_STR ||
            all_headers[header->tag].th_type == TH_BYTE)
         {
-            ret = __write_tag_len_data(ts->ts_file, header->tag, header->val.string);
+            ret = __write_tag_len_data(TRS_ARG(ts)->file, header->tag, header->val.string);
             if(ret < 0)
             {
                 err("Failed to write string/byte header to trace set file\n");
@@ -726,7 +626,7 @@ int finalize_headers(struct trace_set *ts)
         }
         else
         {
-            ret = __write_tag_len_data(ts->ts_file, header->tag, &header->val);
+            ret = __write_tag_len_data(TRS_ARG(ts)->file, header->tag, &header->val);
             if(ret < 0)
             {
                 err("Failed to write header to trace set file\n");
@@ -742,16 +642,16 @@ int free_headers(struct trace_set *ts)
 {
     int i;
 
-    if(ts->headers)
+    if(TRS_ARG(ts)->headers)
     {
-        for(i = 0; i < ts->num_headers; i++)
+        for(i = 0; i < TRS_ARG(ts)->num_headers; i++)
         {
-            if(all_headers[ts->headers[i].tag].th_type == TH_STR ||
-               all_headers[ts->headers[i].tag].th_type == TH_BYTE)
-                free(ts->headers[i].val.bytes);
+            if(all_headers[TRS_ARG(ts)->headers[i].tag].th_type == TH_STR ||
+               all_headers[TRS_ARG(ts)->headers[i].tag].th_type == TH_BYTE)
+                free(TRS_ARG(ts)->headers[i].val.bytes);
         }
 
-        free(ts->headers);
+        free(TRS_ARG(ts)->headers);
     }
 
     return 0;

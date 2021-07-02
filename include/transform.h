@@ -71,7 +71,7 @@ typedef struct
 } match_region_t;
 
 // System
-int tfm_save(struct tfm **tfm, char *path_prefix);
+int tfm_save(struct tfm **tfm, char *path);
 int tfm_synchronize(struct tfm **tfm, int max_distance);
 int tfm_wait_on(struct tfm **tfm, port_t port, size_t bufsize);
 int tfm_visualize(struct tfm **tfm, struct viz_args *args);
@@ -93,13 +93,16 @@ int tfm_narrow(struct tfm **tfm,
 int tfm_append(struct tfm **tfm, const char *path);
 
 // Align
-
 int tfm_static_align(struct tfm **tfm, match_region_t *match, int max_shift);
 int tfm_match(struct tfm **tfm, match_region_t *first, match_region_t *last,
               match_region_t *pattern, int avg_len, int max_dev);
 
 // Correlation
 int tfm_io_correlation(struct tfm **tfm, bool verify_data, int granularity, int num);
+
+// Network
+int tfm_net_source(struct tfm **tfm);
+int tfm_net_sink(struct tfm **tfm, int port);
 
 typedef enum
 {

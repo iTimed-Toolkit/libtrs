@@ -12,29 +12,25 @@ struct trace_cache;
 struct trace_set;
 struct trace;
 
+typedef enum datatype
+{
+    DT_BYTE = 0x1, DT_SHORT = 0x2,
+    DT_INT = 0x4, DT_FLOAT = 0x14,
+    DT_NONE = 0xFF
+} datatype_t;
+
 struct trace_set
 {
-    // for reading from files
-    FILE *ts_file;
-    sem_t file_lock;
-
     // size params
     size_t set_id;
     size_t num_samples, num_traces;
-    size_t trace_start, trace_length;
 
     // commonly used, buffered headers
     size_t title_size, data_size;
-    enum datatype
-    {
-        DT_BYTE = 0x1, DT_SHORT = 0x2,
-        DT_INT = 0x4, DT_FLOAT = 0x14,
-        DT_NONE = 0xFF
-    } datatype;
+    datatype_t datatype;
     float yscale;
 
-    size_t num_headers;
-    struct th_data *headers;
+    struct backend_intf *backend;
     struct trace_cache *cache;
 
     // for transformations
@@ -45,16 +41,6 @@ struct trace_set
     int (*tfm_next)(void *, int port,
                     int nargs, ...);
     void *tfm_next_arg;
-};
-
-struct trace
-{
-    struct trace_set *owner;
-    size_t start_offset;
-
-    char *title;
-    uint8_t *data;
-    float *samples;
 };
 
 typedef enum
@@ -88,33 +74,44 @@ static log_level_t libtrace_log_level = WARN;
     { int sem_ret = sem_post((sem)); if(sem_ret < 0) {                          \
     err("Failed to release sem " #sem ": %s\n", strerror(errno)); exit(-1);} }
 
-#define TRACE_IDX(t)  (((t)->start_offset - (t)->owner->trace_start)  / \
-                            (t)->owner->trace_length)
+#define TRACE_IDX(t)  (t)->index
 
 /* Trace interface */
 int trace_free_memory(struct trace *t);
 int trace_copy(struct trace **res, struct trace *prev);
-int read_trace_from_file(struct trace *t);
 
 /* Backend interface */
 struct backend_intf
 {
-    int (*open)(struct trace_set **, char *);
+    int (*open)(struct trace_set *);
+    int (*create)(struct trace_set *);
     int (*close)(struct trace_set *);
 
-    int (*read_title)(struct trace *, char **);
-    int (*read_samples)(struct trace *, float **);
-    int (*read_data)(struct trace *, uint8_t **);
-
-    int (*write_title)(struct trace *, char *);
+    int (*read)(struct trace *);
+    int (*write)(struct trace *);
+    void *arg;
 };
 
-/* Header interface */
-int read_headers(struct trace_set *ts);
-int write_default_headers(struct trace_set *ts);
-int write_inherited_headers(struct trace_set *ts);
-int finalize_headers(struct trace_set *ts);
-int free_headers(struct trace_set *ts);
+int create_backend(struct trace_set *ts, const char *name);
+int send_over_socket(void *data, size_t len, FILE *netfile);
+int recv_over_socket(void *data, size_t len, FILE *netfile);
+
+typedef enum
+{
+    NET_CMD_INIT,
+    NET_CMD_GET,
+    NET_CMD_DIE
+} bknd_net_cmd_t;
+
+struct bknd_net_init
+{
+    size_t num_traces;
+    size_t num_samples;
+    enum datatype datatype;
+    size_t title_size;
+    size_t data_size;
+    float yscale;
+};
 
 /* Cache interface */
 size_t __find_num_traces(struct trace_set *ts, size_t size_bytes, int assoc);

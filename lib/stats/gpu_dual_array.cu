@@ -163,7 +163,6 @@ int __accumulate_dual_array_gpu(struct accumulator *acc, float *val0, float *val
                                                                        vars->m, vars->s, vars->cov);
     }
 
-
     vars->host_stale = true;
     return 0;
 }

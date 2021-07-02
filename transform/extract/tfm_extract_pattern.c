@@ -13,15 +13,33 @@
 #include <errno.h>
 #include <math.h>
 #include <float.h>
+#include <unistd.h>
 
 #define NUM_MATCH(match)        ((match)->upper - (match)->lower)
-
 #define DEBUG_TITLE_SIZE        128
+
+#define USE_GPU                 0
+#define USE_NET                 1
+
+#if USE_NET
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+
+#define NETADDR                 "achilles.home"
+#define NETPORT                 9936
+
+#endif
+
+#if USE_GPU && USE_NET
+#error "Invalid configuration"
+#endif
 
 struct tfm_extract_reference
 {
     float mean, dev, count;
-    float *match_pattern;
+    float *match_pattern, s_pattern;
 };
 
 struct split_list_entry
@@ -51,6 +69,11 @@ struct tfm_extract_pattern_config
     // reference trace
     bool ref_valid;
     struct tfm_extract_reference ref;
+
+#if USE_NET
+    struct hostent *server;
+    struct sockaddr_in addr;
+#endif
 
     // debug
     bool debugging;
@@ -96,7 +119,12 @@ int tfm_extract_pattern_exit(struct trace_set *ts, void *arg)
 
     sem_acquire(&cfg->lock);
     sem_destroy(&cfg->lock);
+
+#if USE_GPU
+    gpu_pattern_free(cfg->ref.match_pattern);
+#else
     free(cfg->ref.match_pattern);
+#endif
     free(cfg);
     return 0;
 }
@@ -414,23 +442,6 @@ int __optimize_gaps(struct tfm_extract_pattern_config *cfg,
                              &indices_backwards[num - i - 1]);
         }
 
-//        fflush(stderr);
-//        fprintf(stderr, "forwards:\n\t");
-//        for(i = 0; i < num; i++)
-//            fprintf(stderr, "%i\t", indices_forwards[i]);
-//        fprintf(stderr, "\n\t");
-//        for(i = 0; i < num; i++)
-//            fprintf(stderr, "%f\t", values_forwards[i]);
-//
-//        fprintf(stderr, "\nbackwards:\n\t");
-//        for(i = 0; i < num; i++)
-//            fprintf(stderr, "%i\t", indices_backwards[i]);
-//        fprintf(stderr, "\n\t");
-//        for(i = 0; i < num; i++)
-//            fprintf(stderr, "%f\t", values_backwards[i]);
-//        fprintf(stderr, "\n");
-//        fflush(stderr);
-
         // if all entries agree, accept those
         mismatch = false;
         for(i = 0; i < num; i++)
@@ -617,13 +628,121 @@ int __search_tail(struct tfm_extract_pattern_config *cfg,
     return 0;
 }
 
-int __find_pearson(struct trace *t, match_region_t *match,
-                   float *pattern, float **res)
+int __find_pearson(struct trace *t, struct tfm_extract_pattern_config *cfg, float **res)
 {
+#if USE_GPU
+    int i, ret;
+    ret = gpu_pattern_match(t->samples, t->owner->num_samples,
+                            cfg->ref.match_pattern,
+                            NUM_MATCH(&cfg->pattern),
+                            cfg->ref.s_pattern, res);
+
+#elif USE_NET
+    int i, ret, sockfd;
+    bool success;
+
+    int data_len = (int) t->owner->num_samples;
+    int pattern_len = (int) NUM_MATCH(&cfg->pattern);
+    int res_len = (data_len - pattern_len);
+    size_t written;
+
+    float *result = calloc(res_len, sizeof(float));
+    if(!result)
+    {
+        err("Failed to allocate result array\n");
+    }
+
+    if(!cfg->ref_valid)
+    {
+        cfg->server = gethostbyname(NETADDR);
+        if(!cfg->server)
+        {
+            err("Failed to look up server name\n");
+            return -h_errno;
+        }
+
+        cfg->addr.sin_family = AF_INET;
+        cfg->addr.sin_port = htons(NETPORT);
+        memcpy(&cfg->addr.sin_addr.s_addr,
+               cfg->server->h_addr, cfg->server->h_length);
+    }
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if(sockfd < 0)
+    {
+        err("Failed to create socket: %s\n", strerror(errno));
+        return -errno;
+    }
+
+    ret = connect(sockfd, (struct sockaddr *) &cfg->addr, sizeof(cfg->addr));
+    if(ret < 0)
+    {
+        err("Failed to connect socket: %s\n", strerror(errno));
+        ret = -errno;
+        goto __close_socket;
+    }
+
+    FILE *netfile = fdopen(sockfd, "rw+");
+    if(!netfile)
+    {
+        err("Failed to open a FILE* from sockfd: %s\n", strerror(errno));
+        ret = -errno;
+        goto __close_socket;
+    }
+
+    success = (1 == fwrite(&data_len, sizeof(int), 1, netfile));
+    if(success)
+        success = (data_len == fwrite(t->samples, sizeof(float), data_len, netfile));
+
+    printf("sent data: ");
+    for(i = 0; i < 5; i++)
+        printf("%f,", t->samples[i]);
+    printf("...\n");
+
+    if(success)
+    {
+        if(cfg->ref_valid)
+        {
+            pattern_len = 0;
+            success = (1 == fwrite(&pattern_len, sizeof(int), 1, netfile));
+        }
+        else
+        {
+            success = (1 == fwrite(&pattern_len, sizeof(int), 1, netfile));
+            if(success)
+                success = (pattern_len == fwrite(cfg->ref.match_pattern,
+                                                 sizeof(float),
+                                                 NUM_MATCH(&cfg->pattern), netfile));
+
+            printf("sent pattern: ");
+            for(i = 0; i < 5; i++)
+                printf("%f,", cfg->ref.match_pattern[i]);
+            printf("...\n");
+        }
+    }
+
+    fflush(netfile);
+    if(success)
+        success = (res_len == fread(result, sizeof(float), res_len, netfile));
+    if(!success)
+    {
+        err("Protocol error\n");
+        goto __close_socket;
+    }
+
+    printf("received result: ");
+    for(i = 0; i < 5; i++)
+        printf("%f,", result[i]);
+    printf("...\n");
+
+    *res = result;
+__close_socket:
+    close(sockfd);
+#else
     int i, ret, num;
     struct accumulator *acc;
 
-    num = (int) t->owner->num_samples - NUM_MATCH(match);
+    num = (int) t->owner->num_samples - NUM_MATCH(&cfg->pattern);
     ret = stat_create_dual_array(&acc, num, 1);
     if(ret < 0)
     {
@@ -631,10 +750,11 @@ int __find_pearson(struct trace *t, match_region_t *match,
         return ret;
     }
 
-    for(i = 0; i < NUM_MATCH(match); i++)
+    for(i = 0; i < NUM_MATCH(&cfg->pattern); i++)
     {
+        critical("Accumulating pattern %i\n", i);
         ret = stat_accumulate_dual_array(acc, &t->samples[i],
-                                         &pattern[i], num, 1);
+                                         &cfg->ref.match_pattern[i], num, 1);
         if(ret < 0)
         {
             err("Failed to accumulate\n");
@@ -652,6 +772,14 @@ int __find_pearson(struct trace *t, match_region_t *match,
     ret = 0;
 __free_accumulator:
     stat_free_accumulator(acc);
+#endif
+
+//    fwrite((*res), sizeof(float), t->owner->num_samples - NUM_MATCH(&cfg->pattern), stdout);
+//
+//    for(i = 0; i < t->owner->num_samples - NUM_MATCH(&cfg->pattern); i++)
+//        printf("%f\n", (*res)[i]);
+//    exit(0);
+
     return ret;
 }
 
@@ -682,6 +810,18 @@ int __process_ref_trace(struct trace *t, struct tfm_extract_pattern_config *cfg)
 
     if(ref_trace->samples && ref_trace->data)
     {
+#if USE_GPU
+        ret = gpu_pattern_preprocess(&ref_trace->samples[cfg->pattern.lower],
+                                     NUM_MATCH(&cfg->pattern),
+                                     &cfg->ref.match_pattern,
+                                     &cfg->ref.s_pattern);
+        if(ret < 0)
+        {
+            err("Failed to preprocess pattern for GPU\n");
+            goto __fail_free_trace;
+        }
+
+#else
         cfg->ref.match_pattern = calloc(NUM_MATCH(&cfg->pattern), sizeof(float));
         if(!cfg->ref.match_pattern)
         {
@@ -693,6 +833,7 @@ int __process_ref_trace(struct trace *t, struct tfm_extract_pattern_config *cfg)
         memcpy(cfg->ref.match_pattern,
                &ref_trace->samples[cfg->pattern.lower],
                NUM_MATCH(&cfg->pattern) * sizeof(float));
+#endif
     }
     else
     {
@@ -708,8 +849,7 @@ int __process_ref_trace(struct trace *t, struct tfm_extract_pattern_config *cfg)
         goto __fail_free_patterns;
     }
 
-    ret = __find_pearson(ref_trace, &cfg->pattern,
-                         cfg->ref.match_pattern, &blk.pearson);
+    ret = __find_pearson(ref_trace, cfg, &blk.pearson);
     if(ret < 0)
     {
         err("Failed to find pearson for reference trace\n");
@@ -782,7 +922,13 @@ __fail_free_gap_acc:
 
 __fail_free_patterns:
     if(cfg->ref.match_pattern)
+    {
+#if USE_GPU
+        gpu_pattern_free(cfg->ref.match_pattern);
+#else
         free(cfg->ref.match_pattern);
+#endif
+    }
 
 __fail_free_trace:
     if(ref_trace)
@@ -844,37 +990,6 @@ bool tfm_extract_pattern_matches(struct trace *t, void *block, void *arg)
 {
     // each trace in its own block -- also enforced by DONE_SINGULAR
     return false;
-}
-
-int __find_best_match(struct trace *t, match_region_t *match,
-                      float *pattern, float *max, int *index)
-{
-    int i, ret, num, max_i;
-    float *pearson, max_val;
-
-    num = (int) t->owner->num_samples - NUM_MATCH(match);
-    ret = __find_pearson(t, match, pattern, &pearson);
-    if(ret < 0)
-    {
-        err("Failed to find pearson correlation\n");
-        return ret;
-    }
-
-    max_val = -FLT_MAX;
-    for(i = 0; i < num; i++)
-    {
-        if(pearson[i] > max_val)
-        {
-            max_val = pearson[i];
-            max_i = i;
-        }
-    }
-
-    *max = max_val;
-    *index = max_i;
-
-    free(pearson);
-    return 0;
 }
 
 int __allocate_debug_arrays(struct tfm_extract_pattern_block *blk)
@@ -995,8 +1110,7 @@ int tfm_extract_pattern_accumulate(struct trace *t, void *block, void *arg)
     sem_release(&cfg->lock);
 
     // find pearson correlation
-    ret = __find_pearson(t, &cfg->pattern,
-                         cfg->ref.match_pattern, &blk->pearson);
+    ret = __find_pearson(t, cfg, &blk->pearson);
     if(ret < 0)
     {
         err("Failed to find Pearson correlation\n");

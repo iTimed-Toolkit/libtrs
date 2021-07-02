@@ -355,10 +355,11 @@ PARSE_FUNC(tfm_aes_intermediate,
 
 PARSE_FUNC(tfm_aes_knownkey,)
 
-struct async_render_entry
+struct async_entry
 {
     struct list_head list;
     struct render *render;
+    struct export *export;
 };
 
 struct trace_set_entry
@@ -369,11 +370,12 @@ struct trace_set_entry
 
 struct parse_args
 {
-    struct list_head async_renders;
+    struct list_head async;
     struct list_head trace_sets;
 
-    struct trace_set *main_render;
+    struct trace_set *main;
     size_t main_nthreads;
+    int main_port;
 };
 
 int parse_cache(char **config, struct trace_set *ts)
@@ -397,7 +399,7 @@ int parse_render(char **config, struct trace_set *ts, struct parse_args *parsed)
     int ret;
     parse_arg(nthreads, size_t, config);
 
-    parsed->main_render = ts;
+    parsed->main = ts;
     parsed->main_nthreads = nthreads;
     return 0;
 }
@@ -405,11 +407,11 @@ int parse_render(char **config, struct trace_set *ts, struct parse_args *parsed)
 int parse_render_async(char **config, struct trace_set *ts, struct parse_args *parsed)
 {
     int ret;
-    struct async_render_entry *entry;
+    struct async_entry *entry;
 
     parse_arg(nthreads, size_t, config);
 
-    entry = calloc(1, sizeof(struct async_render_entry));
+    entry = calloc(1, sizeof(struct async_entry));
     if(!entry)
     {
         err("Failed to allocate async render entry\n");
@@ -423,7 +425,42 @@ int parse_render_async(char **config, struct trace_set *ts, struct parse_args *p
         return ret;
     }
 
-    list_add(&entry->list, &parsed->async_renders);
+    list_add(&entry->list, &parsed->async);
+    return 0;
+}
+
+int parse_export(char **config, struct trace_set *ts, struct parse_args *parsed)
+{
+    int ret;
+    parse_arg(port, int, config);
+
+    parsed->main = ts;
+    parsed->main_port = port;
+    return 0;
+}
+
+int parse_export_async(char **config, struct trace_set *ts, struct parse_args *parsed)
+{
+    int ret;
+    struct async_entry *entry;
+
+    parse_arg(port, int, config);
+
+    entry = calloc(1, sizeof(struct async_entry));
+    if(!entry)
+    {
+        err("Failed to allocate async export entry\n");
+        return -ENOMEM;
+    }
+
+    ret = ts_export_async(ts, port, &entry->export);
+    if(ret < 0)
+    {
+        err("Failed to create async export\n");
+        return ret;
+    }
+
+    list_add(&entry->list, &parsed->async);
     return 0;
 }
 
@@ -449,9 +486,9 @@ int parse_extras(char **config, struct trace_set *ts, struct parse_args *parsed)
         }
         else if(strcmp(type, "render") == 0)
         {
-            if(parsed->main_render)
+            if(parsed->main)
             {
-                err("Duplicate main renders not supported\n");
+                err("Duplicate main frontends not supported\n");
                 return -EINVAL;
             }
             else
@@ -470,6 +507,32 @@ int parse_extras(char **config, struct trace_set *ts, struct parse_args *parsed)
             if(ret < 0)
             {
                 err("Failed to parse async render\n");
+                return ret;
+            }
+        }
+        else if(strcmp(type, "export") == 0)
+        {
+            if(parsed->main)
+            {
+                err("Duplicate main frontends not supported\n");
+                return -EINVAL;
+            }
+            else
+            {
+                ret = parse_export(config, ts, parsed);
+                if(ret < 0)
+                {
+                    err("Failed to parse main export\n");
+                    return ret;
+                }
+            }
+        }
+        else if(strcmp(type, "export_async") == 0)
+        {
+            ret = parse_export_async(config, ts, parsed);
+            if(ret < 0)
+            {
+                err("Failed to parse async export\n");
                 return ret;
             }
         }
@@ -670,11 +733,11 @@ int main(int argc, char *argv[])
 {
     int ret;
 
-    struct async_render_entry *curr_render, *n_render;
+    struct async_entry *curr_render, *n_render;
     struct trace_set_entry *curr_ts, *n_ts;
 
     struct parse_args parsed;
-    LIST_HEAD_INIT_INLINE(parsed.async_renders);
+    LIST_HEAD_INIT_INLINE(parsed.async);
     LIST_HEAD_INIT_INLINE(parsed.trace_sets);
 
     if(argc != 2)
@@ -683,7 +746,10 @@ int main(int argc, char *argv[])
         return -EINVAL;
     }
 
-    parsed.main_render = NULL;
+    parsed.main = NULL;
+    parsed.main_nthreads = -1;
+    parsed.main_port = -1;
+
     ret = parse_config(argv[1], &parsed);
     if(ret < 0)
     {
@@ -691,20 +757,58 @@ int main(int argc, char *argv[])
         return ret;
     }
 
-    ret = ts_render(parsed.main_render, parsed.main_nthreads);
-    if(ret < 0)
+    if(parsed.main_nthreads != -1)
     {
-        err("Failed to render main trace set\n");
-        return ret;
-    }
+        if(parsed.main_port == -1)
+        {
+            ret = ts_render(parsed.main, parsed.main_nthreads);
+            if(ret < 0)
+            {
+                err("Failed to render main trace set\n");
+                return ret;
+            }
+        }
+        else
+        {
+            err("Found both main renders and exports\n");
+            return -EINVAL;
+        }
 
-    list_for_each_entry_safe(curr_render, n_render, &parsed.async_renders, list)
+    }
+    else if(parsed.main_port != -1)
     {
-        ret = ts_render_join(curr_render->render);
+        ret = ts_export(parsed.main, parsed.main_port);
         if(ret < 0)
         {
-            err("Failed to join to async render\n");
+            err("Failed to export main trace set\n");
             return ret;
+        }
+    }
+    else
+    {
+        err("Found neither main render or export\n");
+        return -EINVAL;
+    }
+
+    list_for_each_entry_safe(curr_render, n_render, &parsed.async, list)
+    {
+        if(curr_render->render)
+        {
+            ret = ts_render_join(curr_render->render);
+            if(ret < 0)
+            {
+                err("Failed to join to async render\n");
+                return ret;
+            }
+        }
+        else if(curr_render->export)
+        {
+            ret = ts_export_join(curr_render->export);
+            if(ret < 0)
+            {
+                err("Failed to join to async export\n");
+                return ret;
+            }
         }
 
         list_del(&curr_render->list);
