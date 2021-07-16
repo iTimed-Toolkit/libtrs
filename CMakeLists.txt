@@ -9,10 +9,11 @@ include_directories(include)
 
 # core trace library
 add_library(trace STATIC lib/trace/trace_set.c lib/trace/cache.c  lib/trace/trace.c
-        lib/trace/network/secure_socket.c
         lib/trace/frontend/render.c lib/trace/frontend/export.c
         lib/trace/backend/backend.c lib/trace/backend/riscure_trs.c
-        lib/trace/backend/backend_trs.c lib/trace/backend/backend_ztrs.c lib/trace/backend/backend_net.c)
+        lib/trace/backend/backend_trs.c lib/trace/backend/backend_ztrs.c lib/trace/backend/backend_net.c
+        lib/platform/secure_socket.c lib/platform/platform_socket.c
+        lib/platform/platform_sem.c lib/platform/platform_thread.c)
 #target_compile_options(trace PRIVATE "-O3")
 target_link_libraries(trace pthread crypto z)
 
@@ -46,7 +47,7 @@ add_library(transform STATIC transform/tfm.c transform/tfm_align.c transform/tfm
         transform/power_analysis/tfm_aes_knownkey.c
         transform/system/tfm_synchronize.c transform/trace/tfm_append.c transform/tfm_verify.c
         transform/tfm_block.c transform/block/tfm_reduce_along.c transform/block/tfm_select_along.c
-        transform/extract/tfm_extract_pattern.c)
+        transform/extract/tfm_extract_pattern.c transform/extract/tfm_extract_timing.c transform/extract/extract_internal.c)
 #target_compile_options(transform PRIVATE "-O3")
 target_link_libraries(transform pthread crypto_utils m stats)
 

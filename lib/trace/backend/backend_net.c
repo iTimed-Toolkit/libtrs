@@ -1,12 +1,10 @@
 #include "trace.h"
 #include "__trace_internal.h"
 
-#include <stdlib.h>
-#include <unistd.h>
+#include "platform.h"
+#include "net_types.h"
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
+#include <stdlib.h>
 
 #include <openssl/aes.h>
 #include <openssl/evp.h>
@@ -17,106 +15,48 @@ struct backend_net_arg
 {
     char *serv_ip;
     int serv_port;
-    struct sockaddr_in serv_addr;
 };
 
-int __net_cmd(FILE *netfile, bknd_net_cmd_t cmd,
-              void *resp, size_t resp_len)
-{
-    size_t written, read;
-    written = fwrite(&cmd, sizeof(bknd_net_cmd_t), 1, netfile);
-    if(written != 1)
-    {
-        err("Failed to send command to server\n");
-        return -errno;
-    }
-
-    read = fread(resp, resp_len, 1, netfile);
-    if(read != 1)
-    {
-        err("Failed to read response from server\n");
-        return -errno;
-    }
-
-    return 0;
-}
-
-int __open_connection(struct backend_net_arg *arg, FILE **res)
-{
-    int sockfd, ret;
-    FILE *netfile;
-
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if(sockfd < 0)
-    {
-        err("Failed to create socket: %s\n", strerror(errno));
-        return -errno;
-    }
-
-    ret = connect(sockfd, (struct sockaddr *) &arg->serv_addr, sizeof(arg->serv_addr));
-    if(ret < 0)
-    {
-        err("Failed to connect socket: %s\n", strerror(errno));
-        ret = -errno;
-        goto __close_socket;
-    }
-
-    netfile = fdopen(sockfd, "rw+");
-    if(!netfile)
-    {
-        err("Failed to open a FILE* from sockfd: %s\n", strerror(errno));
-        ret = -errno;
-        goto __close_socket;
-    }
-
-    *res = netfile;
-    return 0;
-
-__close_socket:
-    close(sockfd);
-    return ret;
-}
-
-void __close_connection(FILE *netfile)
+void __close_connection(LT_SOCK_TYPE socket)
 {
     bknd_net_cmd_t cmd = NET_CMD_DIE;
-    int ret = send_over_socket(&cmd, sizeof(bknd_net_cmd_t), netfile);
+    int ret = p_safesocket_write(socket, &cmd, sizeof(bknd_net_cmd_t));
     if(ret < 0)
         err("Failed to send die command to server\n");
 
-    fclose(netfile);
+    p_socket_close(socket);
 }
 
 int backend_net_open(struct trace_set *ts)
 {
     int ret;
+    LT_SOCK_TYPE socket;
     bknd_net_cmd_t cmd = NET_CMD_INIT;
     struct bknd_net_init init;
-    FILE *netfile;
 
-    ret = __open_connection(NET_ARG(ts), &netfile);
-    if(!netfile)
+    ret = p_socket_connect(NET_ARG(ts)->serv_ip, NET_ARG(ts)->serv_port, &socket);
+    if(ret < 0)
     {
-        err("Failed to open new connection\n");
+        err("Failed to connect to socket\n");
         return ret;
     }
 
     // then, initialize the trace set
-    ret = send_over_socket(&cmd, sizeof(bknd_net_cmd_t), netfile);
+    ret = p_safesocket_write(socket, &cmd, sizeof(bknd_net_cmd_t));
     if(ret < 0)
     {
         err("Failed to send command to server\n");
         goto __close_connection;
     }
 
-    ret = recv_over_socket(&init, sizeof(struct bknd_net_init), netfile);
+    ret = p_safesocket_read(socket, &init, sizeof(struct bknd_net_init));
     if(ret < 0)
     {
         err("Failed to receive init struct from server\n");
         goto __close_connection;
     }
 
-    __close_connection(netfile);
+    __close_connection(socket);
     ts->num_traces = init.num_traces;
     ts->num_samples = init.num_samples;
     ts->datatype = init.datatype;
@@ -126,7 +66,7 @@ int backend_net_open(struct trace_set *ts)
     return 0;
 
 __close_connection:
-    __close_connection(netfile);
+    __close_connection(socket);
     return ret;
 }
 
@@ -145,9 +85,9 @@ int backend_net_close(struct trace_set *ts)
 int backend_net_read(struct trace *t)
 {
     int ret;
-    FILE *netfile;
     bknd_net_cmd_t cmd = NET_CMD_GET;
 
+    LT_SOCK_TYPE socket;
     size_t len;
     uint8_t *buf;
 
@@ -160,20 +100,21 @@ int backend_net_read(struct trace *t)
         return -ENOMEM;
     }
 
-    ret = __open_connection(NET_ARG(t->owner), &netfile);
+    ret = p_socket_connect(NET_ARG(t->owner)->serv_ip,
+                           NET_ARG(t->owner)->serv_port, &socket);
     if(ret < 0)
     {
-        err("Failed to open new connection\n");
-        goto __free_buf;
+        err("Failed to connect to socket\n");
+        return ret;
     }
 
-    ret = send_over_socket(&cmd, sizeof(bknd_net_cmd_t), netfile);
+    ret = p_safesocket_write(socket, &cmd, sizeof(bknd_net_cmd_t));
     if(ret >= 0)
-        ret = send_over_socket(&TRACE_IDX(t), sizeof(size_t), netfile);
+        ret = p_safesocket_write(socket, &TRACE_IDX(t), sizeof(size_t));
     if(ret >= 0)
-        ret = recv_over_socket(buf, len, netfile);
+        ret = p_safesocket_read(socket, buf, len);
 
-    __close_connection(netfile);
+    __close_connection(socket);
     if(ret < 0)
     {
         err("Protocol error\n");
@@ -226,8 +167,6 @@ int create_backend_net(struct trace_set *ts, const char *name)
     char *tok, **curr = (char **) &name;
 
     struct backend_net_arg *arg;
-    struct hostent *server;
-
     struct backend_intf *res = calloc(1, sizeof(struct backend_intf));
     if(!res)
     {
@@ -260,24 +199,10 @@ int create_backend_net(struct trace_set *ts, const char *name)
 
     strcpy(arg->serv_ip, tok);
     arg->serv_port = (int) strtol(*curr, NULL, 10);
-    server = gethostbyname(arg->serv_ip);
-    if(!server)
-    {
-        err("Failed to look up server name\n");
-        ret = -h_errno;
-        goto __free_str;
-    }
-
-    arg->serv_addr.sin_family = AF_INET;
-    arg->serv_addr.sin_port = htons(arg->serv_port);
-    memcpy(&arg->serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
 
     res->arg = arg;
     ts->backend = res;
     return 0;
-
-__free_str:
-    free(arg->serv_ip);
 
 __free_arg:
     free(arg);

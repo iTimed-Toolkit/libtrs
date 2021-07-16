@@ -1,19 +1,18 @@
 #include "trace.h"
 #include "__trace_internal.h"
 
+#include "platform.h"
+#include "net_types.h"
+
 #include <unistd.h>
 #include <stdlib.h>
-#include <pthread.h>
-
-#include <sys/socket.h>
-#include <netinet/in.h>
 
 #include "list.h"
 
 struct export_thread_arg
 {
     struct list_head list;
-    pthread_t handle;
+    LT_THREAD_TYPE handle;
     struct trace_set *ts;
 
     bool running;
@@ -21,7 +20,7 @@ struct export_thread_arg
     int cli_sockfd;
 };
 
-void *__ts_export_thread(void *thread_arg)
+LT_THREAD_FUNC(__ts_export_thread, thread_arg)
 {
     int ret;
     size_t index, trace_len;
@@ -33,19 +32,11 @@ void *__ts_export_thread(void *thread_arg)
     struct trace *t;
     uint8_t *trace_buf = NULL;
 
-    FILE *netfile = fdopen(arg->cli_sockfd, "rw+");
-    if(!netfile)
-    {
-        err("Failed to create netfile\n");
-        ret = -errno;
-        goto __done;
-    }
-
     trace_len = arg->ts->title_size + arg->ts->data_size +
                 arg->ts->num_samples * sizeof(float);
     while(1)
     {
-        ret = recv_over_socket(&cmd, sizeof(bknd_net_cmd_t), netfile);
+        ret = p_safesocket_read(arg->cli_sockfd, &cmd, sizeof(bknd_net_cmd_t));
         if(ret < 0)
         {
             err("Failed to read command from client\n");
@@ -62,7 +53,7 @@ void *__ts_export_thread(void *thread_arg)
                 init.data_size = arg->ts->data_size;
                 init.yscale = arg->ts->yscale;
 
-                ret = send_over_socket(&init, sizeof(struct bknd_net_init), netfile);
+                ret = p_safesocket_write(arg->cli_sockfd, &init, sizeof(struct bknd_net_init));
                 if(ret < 0)
                 {
                     err("Failed to send init struct to client\n");
@@ -71,7 +62,7 @@ void *__ts_export_thread(void *thread_arg)
                 break;
 
             case NET_CMD_GET:
-                ret = recv_over_socket(&index, sizeof(size_t), netfile);
+                ret = p_safesocket_read(arg->cli_sockfd, &index, sizeof(size_t));
                 if(ret < 0)
                 {
                     err("Failed to get index of requested trace\n");
@@ -101,7 +92,7 @@ void *__ts_export_thread(void *thread_arg)
                        t->samples, t->owner->num_samples * sizeof(float));
 
                 trace_free(t);
-                ret = send_over_socket(trace_buf, trace_len, netfile);
+                ret = p_safesocket_write(arg->cli_sockfd, trace_buf, trace_len);
                 if(ret < 0)
                 {
                     err("Failed to send trace data over socket\n");
@@ -133,48 +124,32 @@ __done:
 
 struct export
 {
-    pthread_t handle;
+    LT_THREAD_TYPE handle;
     int ret, port;
 
     struct trace_set *ts;
     struct list_head threads;
 };
 
-void *__ts_export_controller(void *controller_arg)
+LT_THREAD_FUNC(__ts_export_controller, controller_arg)
 {
-    int ret, serv_sockfd, cli_sockfd;
-    uint32_t cli_len;
-    struct sockaddr_in serv_addr, cli_addr;
-
+    int ret;
     struct export *arg = controller_arg;
     struct export_thread_arg *entry, *n;
 
-    serv_sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if(serv_sockfd < 0)
+    LT_SOCK_TYPE serv_sockfd, cli_sockfd;
+    ret = p_socket_server(arg->port, &serv_sockfd);
+    if(ret < 0)
     {
-        err("Failed to create server socket\n");
-        arg->ret = -errno;
+        err("Failed to create a server socket\n");
+        arg->ret = ret;
         return NULL;
     }
 
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons(arg->port);
-
-    ret = bind(serv_sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
-    if(ret < 0)
-    {
-        err("Failed to bind socket to port\n");
-        goto __close_socket;
-    }
-
-    cli_len = sizeof(cli_addr);
-    listen(serv_sockfd, 8);
-
     while(1)
     {
-        cli_sockfd = accept(serv_sockfd, (struct sockaddr *) &cli_addr, &cli_len);
-        if(cli_sockfd < 0)
+        ret = p_socket_accept(serv_sockfd, &cli_sockfd);
+        if(ret < 0)
         {
             err("Failed to accept a new client\n");
             goto __close_socket;
@@ -194,7 +169,7 @@ void *__ts_export_controller(void *controller_arg)
         entry->retval = 0;
         entry->cli_sockfd = cli_sockfd;
 
-        ret = pthread_create(&entry->handle, NULL, __ts_export_thread, entry);
+        ret = p_thread_create(&entry->handle, __ts_export_thread, entry);
         if(ret < 0)
         {
             err("Failed to create new thread\n");
@@ -208,7 +183,7 @@ void *__ts_export_controller(void *controller_arg)
         {
             if(!entry->running)
             {
-                pthread_join(entry->handle, NULL);
+                p_thread_join(entry->handle);
                 list_del(&entry->list);
 
                 if(entry->retval < 0)
@@ -223,7 +198,7 @@ void *__ts_export_controller(void *controller_arg)
     }
 
 __close_socket:
-    close(serv_sockfd);
+    p_socket_close(serv_sockfd);
     arg->ret = ret;
     return NULL;
 }
@@ -269,7 +244,7 @@ int ts_export_async(struct trace_set *ts, int port, struct export **export)
     res->ts = ts;
     res->port = port;
 
-    ret = pthread_create(&res->handle, NULL, __ts_export_controller, res);
+    ret = p_thread_create(&res->handle, __ts_export_controller, res);
     if(ret < 0)
     {
         err("Failed to create controller pthread\n");
@@ -290,7 +265,7 @@ int ts_export_join(struct export *export)
         return -EINVAL;
     }
 
-    pthread_join(export->handle, NULL);
+    p_thread_join(export->handle);
     ret = export->ret;
 
     free(export);

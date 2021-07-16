@@ -27,6 +27,7 @@ struct tfm
     int (*get)(struct trace *t);
     void (*free)(struct trace *t);
 
+    bool tfm_managed_cache;
     void *data;
 };
 
@@ -70,6 +71,9 @@ struct block_args
 
     void *arg;
 };
+
+#define BLK_DEBUG         0
+#define BLK_DEBUG_FIRST   7855
 
 int tfm_block(struct tfm **tfm, struct block_args *arg);
 

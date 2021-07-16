@@ -3,6 +3,7 @@
 
 #include "__tfm_internal.h"
 #include "__trace_internal.h"
+#include "platform.h"
 #include "list.h"
 
 #include <errno.h>
@@ -14,12 +15,12 @@ struct __tfm_synchronize_entry
     struct list_head list;
     size_t index;
     int count;
-    sem_t signal;
+    LT_SEM_TYPE signal;
 };
 
 struct tfm_synchronize
 {
-    sem_t list_lock;
+    LT_SEM_TYPE list_lock;
     int max_distance;
 
     struct list_head requests;
@@ -85,7 +86,7 @@ int __stall(struct tfm_synchronize *tfm, size_t index)
         new->index = index;
         new->count = 0;
 
-        ret = sem_init(&new->signal, 0, 0);
+        ret = p_sem_create(&new->signal, 0);
         if(ret < 0)
         {
             err("Failed to initialize new sync semaphore\n");
@@ -109,7 +110,7 @@ int __stall(struct tfm_synchronize *tfm, size_t index)
     if(curr->count == 0)
     {
         list_del(&curr->list);
-        sem_destroy(&curr->signal);
+        p_sem_destroy(&curr->signal);
         free(curr);
     }
 
@@ -190,14 +191,7 @@ int __sync_finalize(struct tfm_synchronize *tfm, size_t index)
     list_for_each_entry(curr, &tfm->waiting, list)
     {
         if(index + tfm->max_distance >= curr->index)
-        {
-            ret = sem_post(&curr->signal);
-            if(ret < 0)
-            {
-                err("Failed to wake up waiting request\n");
-                return -errno;
-            }
-        }
+            sem_release(&curr->signal);
     }
 
     // find ourselves in the list
@@ -284,7 +278,7 @@ int tfm_synchronize(struct tfm **tfm, int max_distance)
     }
 
     // todo this structure really needs to live in ts->tfm_state
-    ret = sem_init(&TFM_DATA(res)->list_lock, 0, 1);
+    ret = p_sem_create(&TFM_DATA(res)->list_lock, 1);
     if(ret < 0)
     {
         err("Failed to initialize list lock\n");

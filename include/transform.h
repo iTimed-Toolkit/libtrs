@@ -22,7 +22,8 @@ typedef enum
     PORT_CPA_SPLIT_PM,
     PORT_CPA_SPLIT_PM_PROGRESS,
 
-    PORT_EXTRACT_PATTERN_DEBUG
+    PORT_EXTRACT_PATTERN_DEBUG,
+    PORT_EXTRACT_TIMING_DEBUG
 } port_t;
 
 typedef enum
@@ -84,6 +85,8 @@ int tfm_reduce_along(struct tfm **tfm, summary_t stat, filter_t along, filter_pa
 int tfm_select_along(struct tfm **tfm, summary_t stat, filter_t along, filter_param_t param);
 int tfm_extract_pattern(struct tfm **tfm, int pattern_size, int expecting, int avg_len, int max_dev,
                         match_region_t *pattern, crypto_t data);
+int tfm_extract_timing(struct tfm **tfm, int pattern_size, int expecting, int avg_len, int max_dev,
+                       match_region_t *pattern, crypto_t data);
 
 // Traces
 int tfm_split_tvla(struct tfm **tfm, bool which);

@@ -78,8 +78,12 @@ int __accumulate_dual(struct accumulator *acc, float val0, float val1)
         acc->s.a[0] += ((val0 - acc->m.a[0]) * (val0 - m_new_0));
         acc->s.a[1] += ((val1 - acc->m.a[1]) * (val1 - m_new_1));
         acc->cov.f += ((val0 - acc->m.a[0]) * (val1 - m_new_1));
+
+        printf("%i\t%f\t%f\t%f\t%f\t%f\t%f\n", (int) acc->count - 1, val0, (val1 - m_new_1), acc->m.a[0], acc->s.a[0], m_new_0, acc->cov.f);
+
         acc->m.a[0] = m_new_0;
         acc->m.a[1] = m_new_1;
+
     }
 
     return 0;

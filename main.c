@@ -20,7 +20,8 @@ static const char *port_t_strings[] = {
         STR_AT_IDX(PORT_CPA_PROGRESS),
         STR_AT_IDX(PORT_CPA_SPLIT_PM),
         STR_AT_IDX(PORT_CPA_SPLIT_PM_PROGRESS),
-        STR_AT_IDX(PORT_EXTRACT_PATTERN_DEBUG)
+        STR_AT_IDX(PORT_EXTRACT_PATTERN_DEBUG),
+        STR_AT_IDX(PORT_EXTRACT_TIMING_DEBUG)
 };
 
 static const char *fill_order_t_strings[] = {
@@ -315,6 +316,17 @@ PARSE_FUNC(tfm_extract_pattern,
                    pattern_size, expecting, avg_len, max_dev,
                    &pattern, data);
 
+
+PARSE_FUNC(tfm_extract_timing,
+           parse_arg(pattern_size, int, config);
+                   parse_arg(expecting, int, config);
+                   parse_arg(avg_len, int, config);
+                   parse_arg(max_dev, int, config);
+                   parse_match_region_t(pattern, config);
+                   parse_enum(data, crypto_t, config),
+           pattern_size, expecting, avg_len, max_dev,
+           &pattern, data);
+
 PARSE_FUNC(tfm_split_tvla,
            parse_arg(which, bool, config),
            which)
@@ -580,6 +592,8 @@ int parse_transform(char *line, struct trace_set **ts,
         ret = __parse_tfm_select_along(&curr, &tfm);
     else if(strcmp(type, "extract_pattern") == 0)
         ret = __parse_tfm_extract_pattern(&curr, &tfm);
+    else if(strcmp(type, "extract_timing") == 0)
+        ret = __parse_tfm_extract_timing(&curr, &tfm);
 
         // traces
     else if(strcmp(type, "split_tvla") == 0)

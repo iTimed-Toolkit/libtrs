@@ -117,6 +117,11 @@ int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *
     ts_result->backend = NULL;
     ts_result->cache = NULL;
 
+    // set defaults
+    ts_result->xoffs = prev->xoffs;
+    ts_result->xscale = prev->xscale;
+    ts_result->yscale = prev->yscale;
+
     // link previous set
     ts_result->prev = prev;
     ts_result->tfm = transform;

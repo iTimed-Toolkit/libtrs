@@ -18,7 +18,7 @@ __global__ void __do_gpu_pattern_match(const float *data, int data_len,
             m_new_data, s_data;
 
     // for accumulated covariance
-    float cov, len, p;
+    float cov, pearson, len, p;
 
     block_x = blockDim.x * blockIdx.x;
     my_x = block_x + threadIdx.x;
@@ -46,7 +46,8 @@ __global__ void __do_gpu_pattern_match(const float *data, int data_len,
         }
 
         len = (float) (pattern_len - 1);
-        res[my_x] = cov / (len * sqrtf(s_data / len) * sqrtf(s_pattern / len));
+        pearson = cov / (len * sqrtf(s_data / len) * sqrtf(s_pattern / len));
+        res[my_x] = pearson;
     }
 }
 
@@ -111,9 +112,10 @@ int gpu_pattern_free(float *pattern)
 
 int gpu_pattern_match(float *data, int data_len, float *pattern, int pattern_len, float s_pattern, float **pearson)
 {
-    float *data_gpu = NULL, *res_gpu = NULL, *res = NULL;
-    cudaError_t cuda_ret;
     int ret;
+    float *data_gpu = NULL, *res_gpu = NULL, *res = NULL;
+
+    cudaError_t cuda_ret;
     dim3 grid, block;
 
     cudaStream_t stream;
@@ -160,7 +162,7 @@ int gpu_pattern_match(float *data, int data_len, float *pattern, int pattern_len
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&time, start, stop);
 
-    warn("gpu elapsed %f ms\n", time);
+    debug("gpu elapsed %f ms\n", time);
     cuda_ret = cudaMemcpyAsync(res, res_gpu, (data_len - pattern_len) * sizeof(float), cudaMemcpyDeviceToHost, stream);
     if(cuda_ret != cudaSuccess)
     {

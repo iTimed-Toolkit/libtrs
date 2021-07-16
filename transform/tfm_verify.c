@@ -63,7 +63,7 @@ int __verify_generic(struct trace *t, crypto_t which, bool *result)
     else
     {
         // not an error condition necessarily
-        err("No data to verify\n");
+        debug("No data to verify\n");
         *result = false;
         return 0;
     }
@@ -91,7 +91,7 @@ int __tfm_verify_get(struct trace *t)
         return passthrough(t);
     else
     {
-        err("Trace %li failed verification\n", TRACE_IDX(t));
+        debug("Trace %li failed verification\n", TRACE_IDX(t));
         t->title = NULL;
         t->data = NULL;
         t->samples = NULL;

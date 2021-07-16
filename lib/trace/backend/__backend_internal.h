@@ -1,12 +1,14 @@
 #ifndef LIBTRS___BACKEND_INTERNAL_H
 #define LIBTRS___BACKEND_INTERNAL_H
 
+#include "platform.h"
+
 /* Riscure trsfile utils */
 struct backend_trs_arg
 {
     char *name;
-    FILE *file;
-    sem_t file_lock;
+    LT_FILE_TYPE *file;
+    LT_SEM_TYPE file_lock;
 
     size_t num_headers;
     struct th_data *headers;

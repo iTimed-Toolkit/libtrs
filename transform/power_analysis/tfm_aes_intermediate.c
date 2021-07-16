@@ -7,7 +7,7 @@
 #include <errno.h>
 #include <string.h>
 
-#define PMS_PER_THREAD  256
+#define PMS_PER_THREAD  64
 
 static inline uint8_t hamming_weight(uint8_t n)
 {
@@ -61,6 +61,7 @@ int aes128_round0_hw_sbox_out(uint8_t *data, int index, float *res)
 int aes128_round0_hw_addkey_out(uint8_t *data, int index, float *res)
 {
     int key_index = (index / 256);
+//    int key_index = 5;
     uint8_t key_guess = (index % 256), state;
 
     state = data[key_index] ^ key_guess;

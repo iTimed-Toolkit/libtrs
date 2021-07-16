@@ -2,6 +2,7 @@
 #include "__backend_internal.h"
 
 #include "trace.h"
+#include "platform.h"
 
 #include <errno.h>
 #include <stdlib.h>
@@ -13,7 +14,7 @@ int backend_trs_open(struct trace_set *ts)
     int ret;
     TRS_ARG(ts)->mode = MODE_READ;
 
-    TRS_ARG(ts)->file = fopen(TRS_ARG(ts)->name, "rb");
+    TRS_ARG(ts)->file = p_fopen(TRS_ARG(ts)->name, "rb");
     if(!TRS_ARG(ts)->file)
     {
         err("Unable to open trace set %s: %s\n", TRS_ARG(ts)->name, strerror(errno));
@@ -27,7 +28,7 @@ int backend_trs_open(struct trace_set *ts)
         goto __close_ts_file;
     }
 
-    ret = sem_init(&TRS_ARG(ts)->file_lock, 0, 1);
+    ret = p_sem_create(&TRS_ARG(ts)->file_lock, 1);
     if(ret < 0)
     {
         err("Failed to initialize file lock semaphore: %s\n", strerror(errno));
@@ -40,7 +41,7 @@ __free_headers:
     free_headers(ts);
 
 __close_ts_file:
-    fclose(TRS_ARG(ts)->file);
+    p_fclose(TRS_ARG(ts)->file);
     return ret;
 }
 
@@ -50,7 +51,7 @@ int backend_trs_create(struct trace_set *ts)
     TRS_ARG(ts)->mode = MODE_WRITE;
     TRS_ARG(ts)->num_written = 0;
 
-    TRS_ARG(ts)->file = fopen(TRS_ARG(ts)->name, "wb+");
+    TRS_ARG(ts)->file = p_fopen(TRS_ARG(ts)->name, "wb+");
     if(!TRS_ARG(ts)->file)
     {
         err("Failed to open trace set file %s\n", TRS_ARG(ts)->name);
@@ -64,7 +65,7 @@ int backend_trs_create(struct trace_set *ts)
         goto __close_ts_file;
     }
 
-    ret = fseek(TRS_ARG(ts)->file, 0, SEEK_SET);
+    ret = p_fseek(TRS_ARG(ts)->file, 0, SEEK_SET);
     if(ret < 0)
     {
         err("Failed to seek trace set file to beginning\n");
@@ -78,7 +79,7 @@ int backend_trs_create(struct trace_set *ts)
         goto __close_ts_file;
     }
 
-    ret = sem_init(&TRS_ARG(ts)->file_lock, 0, 1);
+    ret = p_sem_create(&TRS_ARG(ts)->file_lock, 1);
     if(ret < 0)
     {
         err("Failed to initialize file lock semaphore: %s\n", strerror(errno));
@@ -91,7 +92,7 @@ __free_headers:
     free_headers(ts);
 
 __close_ts_file:
-    fclose(TRS_ARG(ts)->file);
+    p_fclose(TRS_ARG(ts)->file);
     return ret;
 }
 
@@ -111,8 +112,8 @@ int backend_trs_close(struct trace_set *ts)
             }
         }
 
-        sem_destroy(&TRS_ARG(ts)->file_lock);
-        fclose(TRS_ARG(ts)->file);
+        p_sem_destroy(&TRS_ARG(ts)->file_lock);
+        p_fclose(TRS_ARG(ts)->file);
     }
 
     if(TRS_ARG(ts)->headers)
@@ -175,10 +176,10 @@ int backend_trs_read(struct trace *t)
     }
 
     sem_acquire(&TRS_ARG(t->owner)->file_lock);
-    ret = fseek(TRS_ARG(t->owner)->file,
-                TRS_ARG(t->owner)->trace_start +
-                t->index * TRS_ARG(t->owner)->trace_length,
-                SEEK_SET);
+    ret = p_fseek(TRS_ARG(t->owner)->file,
+                  TRS_ARG(t->owner)->trace_start +
+                  t->index * TRS_ARG(t->owner)->trace_length,
+                  SEEK_SET);
     if(ret)
     {
         err("Failed to seek file to trace position\n");
@@ -186,7 +187,7 @@ int backend_trs_read(struct trace *t)
         goto __fail_unlock;
     }
 
-    read = fread(result_title, 1, t->owner->title_size, TRS_ARG(t->owner)->file);
+    read = p_fread(result_title, 1, t->owner->title_size, TRS_ARG(t->owner)->file);
     if(read != t->owner->title_size)
     {
         err("Failed to read title from file (read %li expecting %li)\n",
@@ -195,7 +196,7 @@ int backend_trs_read(struct trace *t)
         goto __fail_unlock;
     }
 
-    read = fread(result_data, 1, t->owner->data_size, TRS_ARG(t->owner)->file);
+    read = p_fread(result_data, 1, t->owner->data_size, TRS_ARG(t->owner)->file);
     if(read != t->owner->data_size)
     {
         err("Failed to read data from file (read %li expecting %li)\n",
@@ -204,7 +205,7 @@ int backend_trs_read(struct trace *t)
         goto __fail_unlock;
     }
 
-    read = fread(temp, t->owner->datatype & 0xF, t->owner->num_samples, TRS_ARG(t->owner)->file);
+    read = p_fread(temp, t->owner->datatype & 0xF, t->owner->num_samples, TRS_ARG(t->owner)->file);
     if(read != t->owner->num_samples)
     {
         err("Failed to read samples from file (read %li expecting %li)\n",
@@ -239,7 +240,7 @@ int backend_trs_read(struct trace *t)
             break;
 
         case DT_NONE:
-            err("Invalid trace data type: %i\n", t->owner->datatype);
+        err("Invalid trace data type: %i\n", t->owner->datatype);
             goto __fail;
     }
 
@@ -333,7 +334,7 @@ int backend_trs_write(struct trace *t)
 
         case DT_NONE:
         default:
-            err("Bad trace set datatype %i\n", t->owner->datatype);
+        err("Bad trace set datatype %i\n", t->owner->datatype);
             return -EINVAL;
     }
 
@@ -344,10 +345,10 @@ int backend_trs_write(struct trace *t)
     }
 
     sem_acquire(&TRS_ARG(t->owner)->file_lock);
-    ret = fseek(TRS_ARG(t->owner)->file,
-                TRS_ARG(t->owner)->trace_start +
-                t->index * TRS_ARG(t->owner)->trace_length,
-                SEEK_SET);
+    ret = p_fseek(TRS_ARG(t->owner)->file,
+                  TRS_ARG(t->owner)->trace_start +
+                  t->index * TRS_ARG(t->owner)->trace_length,
+                  SEEK_SET);
     if(ret)
     {
         err("Failed to seek to trace set file position\n");
@@ -358,7 +359,7 @@ int backend_trs_write(struct trace *t)
     if(t->title)
     {
         debug("Trace %li writing %li bytes of title\n", TRACE_IDX(t), t->owner->title_size);
-        written = fwrite(t->title, 1, t->owner->title_size, TRS_ARG(t->owner)->file);
+        written = p_fwrite(t->title, 1, t->owner->title_size, TRS_ARG(t->owner)->file);
         if(written != t->owner->title_size)
         {
             err("Failed to write all bytes of title to file\n");
@@ -370,7 +371,7 @@ int backend_trs_write(struct trace *t)
     if(t->data)
     {
         debug("Trace %li writing %li bytes of data\n", TRACE_IDX(t), t->owner->data_size);
-        written = fwrite(t->data, 1, t->owner->data_size, TRS_ARG(t->owner)->file);
+        written = p_fwrite(t->data, 1, t->owner->data_size, TRS_ARG(t->owner)->file);
         if(written != t->owner->data_size)
         {
             err("Failed to write all bytes of data to file\n");
@@ -380,7 +381,7 @@ int backend_trs_write(struct trace *t)
     }
 
     debug("Trace %li writing %li bytes of samples\n", TRACE_IDX(t), temp_len);
-    written = fwrite(temp, 1, temp_len, TRS_ARG(t->owner)->file);
+    written = p_fwrite(temp, 1, temp_len, TRS_ARG(t->owner)->file);
     if(written != temp_len)
     {
         err("Failed to write all bytes of samples to file\n");

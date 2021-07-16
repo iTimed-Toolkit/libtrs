@@ -333,6 +333,41 @@ int __write_tag_len_data(FILE *ts_file, uint8_t tag, void *data)
     return 0;
 }
 
+void ts_dump_headers(struct trace_set *ts)
+{
+    int i;
+
+    if(!ts)
+    {
+        err("Invalid trace set\n");
+        return;
+    }
+
+    for(i = 0; i < TRS_ARG(ts)->num_headers; i++)
+    {
+        printf("%s: ", all_headers[TRS_ARG(ts)->headers[i].tag].desc);
+        switch(all_headers[TRS_ARG(ts)->headers[i].tag].th_type)
+        {
+            case TH_INT:
+                printf("%i\n", TRS_ARG(ts)->headers[i].val.integer);
+                break;
+
+            case TH_FLT:
+                printf("%f\n", TRS_ARG(ts)->headers[i].val.floating);
+                break;
+
+            case TH_BOOL:
+                printf("%i\n", TRS_ARG(ts)->headers[i].val.boolean);
+                break;
+
+            case TH_BYTE:
+            case TH_STR:
+                printf("%s\n", TRS_ARG(ts)->headers[i].val.string);
+                break;
+        }
+    }
+}
+
 int __parse_headers(struct trace_set *ts)
 {
     int i, j, stat;
@@ -353,6 +388,8 @@ int __parse_headers(struct trace_set *ts)
     ts->data_size = 0;
     ts->datatype = DT_NONE;
 
+    ts->xoffs = 0.0f;
+    ts->xscale = 0.0f;
     ts->yscale = 0.0f;
 
     debug("Parsing headers for trace set %li\n", ts->set_id);
@@ -431,6 +468,16 @@ int __parse_headers(struct trace_set *ts)
 
             if(ts->datatype == DT_FLOAT)
                 ts->yscale = 1.0f;
+        }
+        else if(tag == OFFSET_X)
+        {
+            ts->xoffs = TRS_ARG(ts)->headers[i].val.integer;
+            debug("Found x offset = %i\n", ts->xoffs);
+        }
+        else if(tag == SCALE_X)
+        {
+            ts->xscale = TRS_ARG(ts)->headers[i].val.floating;
+            debug("Found x scale = %f\n", ts->xscale);
         }
         else if(tag == SCALE_Y)
         {
@@ -578,15 +625,17 @@ int write_default_headers(struct trace_set *ts)
     if(ret == 0) ret = __write_tag_len_data(TRS_ARG(ts)->file, SAMPLE_CODING, &ts->datatype);
     if(ret == 0) ret = __write_tag_len_data(TRS_ARG(ts)->file, TITLE_SPACE, &ts->title_size);
     if(ret == 0) ret = __write_tag_len_data(TRS_ARG(ts)->file, LENGTH_DATA, &ts->data_size);
+    if(ret == 0) ret = __write_tag_len_data(TRS_ARG(ts)->file, OFFSET_X, &ts->xoffs);
+    if(ret == 0) ret = __write_tag_len_data(TRS_ARG(ts)->file, SCALE_X, &ts->xscale);
     if(ret == 0) ret = __write_tag_len_data(TRS_ARG(ts)->file, SCALE_Y, &ts->yscale);
     if(ret == 0) ret = __write_tag_len_data(TRS_ARG(ts)->file, TRACE_BLOCK, NULL);
-
     if(ret < 0)
     {
         err("Failed to write some tag\n");
         return ret;
     }
 
+    fflush(TRS_ARG(ts)->file);
     return 0;
 }
 

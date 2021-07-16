@@ -4,10 +4,10 @@
 
 #include "__tfm_internal.h"
 #include "__trace_internal.h"
+#include "platform.h"
 
 #include <errno.h>
 #include <string.h>
-#include <pthread.h>
 
 #define SENTINEL        SIZE_MAX
 
@@ -27,14 +27,14 @@ struct __commit_queue_entry
 
 struct __commit_queue
 {
-    pthread_t handle;
-    sem_t event;
-    sem_t sentinel;
+    LT_THREAD_TYPE handle;
+    LT_SEM_TYPE event;
+    LT_SEM_TYPE sentinel;
 
     struct trace_set *ts;
     int thread_ret;
 
-    sem_t list_lock;
+    LT_SEM_TYPE list_lock;
     struct list_head head;
 
     size_t written;
@@ -180,7 +180,7 @@ int __commit_traces(struct __commit_queue *queue, struct list_head *write_head)
     return 0;
 }
 
-void *__commit_thread(void *arg)
+LT_THREAD_FUNC(__commit_thread, arg)
 {
     int ret;
     size_t count;
@@ -197,7 +197,7 @@ void *__commit_thread(void *arg)
         {
             debug("Commit thread exiting cleanly\n");
             queue->thread_ret = 0;
-            pthread_exit(NULL);
+            return NULL;
         }
 
         // examine the commit list
@@ -223,7 +223,7 @@ void *__commit_thread(void *arg)
             {
                 err("Failed to commit traces\n");
                 queue->thread_ret = ret;
-                pthread_exit(NULL);
+                return NULL;
             }
 
             // update global written counter
@@ -284,29 +284,28 @@ int __tfm_save_init(struct trace_set *ts)
     queue->written = 0;
     queue->sentinel_seen = false;
 
-    ret = sem_init(&queue->event, 0, 0);
+    ret = p_sem_create(&queue->event, 0);
     if(ret < 0)
     {
         err("Failed to initialize queue event semaphore\n");
         goto __free_commit_queue;
     }
 
-    ret = sem_init(&queue->sentinel, 0, 0);
+    ret = p_sem_create(&queue->sentinel, 0);
     if(ret < 0)
     {
         err("Failed to initialize sentinel semaphore\n");
         goto __destroy_queue_event;
     }
 
-    ret = sem_init(&queue->list_lock, 0, 1);
+    ret = p_sem_create(&queue->list_lock, 1);
     if(ret < 0)
     {
         err("Failed to initialize queue list lock\n");
         goto __destroy_sentinel_event;
     }
 
-    ret = pthread_create(&queue->handle, NULL,
-                         __commit_thread, queue);
+    ret = p_thread_create(&queue->handle, __commit_thread, queue);
     if(ret < 0)
     {
         err("Failed to create commit thread\n");
@@ -318,13 +317,13 @@ int __tfm_save_init(struct trace_set *ts)
     return 0;
 
 __destroy_queue_list:
-    sem_destroy(&queue->list_lock);
+    p_sem_destroy(&queue->list_lock);
 
 __destroy_sentinel_event:
-    sem_destroy(&queue->sentinel);
+    p_sem_destroy(&queue->sentinel);
 
 __destroy_queue_event:
-    sem_destroy(&queue->event);
+    p_sem_destroy(&queue->event);
 
 __free_commit_queue:
     free(queue);
@@ -370,10 +369,10 @@ void __tfm_save_exit(struct trace_set *ts)
     // kill the commit threads
     queue->ts = NULL;
     sem_release(&queue->event);
-    pthread_join(queue->handle, NULL);
+    p_thread_join(queue->handle);
 
-    sem_destroy(&queue->list_lock);
-    sem_destroy(&queue->event);
+    p_sem_destroy(&queue->list_lock);
+    p_sem_destroy(&queue->event);
     free(queue);
 
     // finalize headers

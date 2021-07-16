@@ -4,6 +4,7 @@
 #include "__tfm_internal.h"
 #include "__trace_internal.h"
 #include "list.h"
+#include "platform.h"
 
 #include <string.h>
 #include <errno.h>
@@ -11,8 +12,6 @@
 #define TITLE_SIZE      128
 #define LIST_LENGTH     16
 
-#define BLOCK_DEBUG         0
-#define DEBUG_FIRST_INDEX   1400
 
 struct __tfm_block_block
 {
@@ -30,7 +29,7 @@ struct tfm_block_state
     size_t done_index;
     size_t nblocks;
 
-    sem_t lock;
+    LT_SEM_TYPE lock;
     struct list_head blocks;
 };
 
@@ -61,8 +60,8 @@ int __tfm_block_init(struct trace_set *ts)
         return -ENOMEM;
     }
 
-#if BLOCK_DEBUG
-    state->next_index = DEBUG_FIRST_INDEX;
+#if BLK_DEBUG
+    state->next_index = BLK_DEBUG_FIRST;
 #else
     state->next_index = 0;
 #endif
@@ -70,7 +69,7 @@ int __tfm_block_init(struct trace_set *ts)
     state->nblocks = 0;
     LIST_HEAD_INIT_INLINE(state->blocks);
 
-    ret = sem_init(&state->lock, 0, 1);
+    ret = p_sem_create(&state->lock, 1);
     if(ret < 0)
     {
         err("Failed to initialize state semaphore\n");
@@ -89,7 +88,7 @@ int __tfm_block_init(struct trace_set *ts)
     return 0;
 
 __destroy_sem:
-    sem_destroy(&state->lock);
+    p_sem_destroy(&state->lock);
 
 __free_state:
     free(state);
@@ -112,7 +111,9 @@ int __tfm_block_init_waiter(struct trace_set *ts, port_t port)
 
 size_t __tfm_block_trace_size(struct trace_set *ts)
 {
-    return ts_trace_size(ts->prev);
+    return ts->num_samples * sizeof(float) +
+           ts->data_size + ts->title_size +
+           sizeof(struct trace);
 }
 
 void __tfm_block_exit(struct trace_set *ts)
@@ -180,7 +181,8 @@ int __block_accumulate(struct tfm_block_state *state,
         }
 
         // need to lock only to append to list
-        if(tfm->criteria == DONE_SINGULAR) sem_acquire(&state->lock);
+        if(tfm->criteria == DONE_SINGULAR)
+        sem_acquire(&state->lock);
 
         list_add_tail(&new->list, &state->blocks);
         state->nblocks++;
@@ -200,12 +202,14 @@ int __block_accumulate(struct tfm_block_state *state,
             }
         }
 
-        if(tfm->criteria == DONE_SINGULAR) sem_release(&state->lock);
+        if(tfm->criteria == DONE_SINGULAR)
+        sem_release(&state->lock);
     }
 
     ret = 0;
 __unlock:
-    if(tfm->criteria != DONE_SINGULAR) sem_release(&state->lock);
+    if(tfm->criteria != DONE_SINGULAR)
+    sem_release(&state->lock);
     return ret;
 }
 
@@ -255,7 +259,7 @@ int __block_finalize(struct tfm_block_state *state,
     }
     else
     {
-        err("Failed to find correct result block in list for index %li\n",
+        err("Failed to find correct result block in list for index %li and in cache\n",
             TRACE_IDX(res));
         ret = -EINVAL;
         goto __unlock;

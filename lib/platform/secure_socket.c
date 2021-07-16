@@ -1,5 +1,6 @@
 #include "__trace_internal.h"
 
+#include "platform.h"
 #include <stdlib.h>
 
 #include <zlib.h>
@@ -95,13 +96,13 @@ int __encrypt(void *data, int len, void **encrypted, int *encrypted_len)
     return 0;
 }
 
-int send_over_socket(void *data, size_t len, FILE *netfile)
+int p_safesocket_write(LT_SOCK_TYPE s, void *buf, int len)
 {
     int ret, compressed_len, encrypted_len;
     void *compressed, *encrypted;
     size_t written;
 
-    ret = __compress(data, len, &compressed, &compressed_len);
+    ret = __compress(buf, len, &compressed, &compressed_len);
     if(ret < 0)
     {
         err("Failed to compress data\n");
@@ -116,7 +117,7 @@ int send_over_socket(void *data, size_t len, FILE *netfile)
         return ret;
     }
 
-    written = fwrite(&encrypted_len, sizeof(int), 1, netfile);
+    written = p_socket_write(s, &encrypted_len, sizeof(int));
     if(written != 1)
     {
         err("Failed to send encrypted length over socket\n");
@@ -124,7 +125,7 @@ int send_over_socket(void *data, size_t len, FILE *netfile)
         return -errno;
     }
 
-    written = fwrite(encrypted, 1, encrypted_len, netfile);
+    written = p_socket_write(s, encrypted, encrypted_len);
     free(encrypted);
     if(written != encrypted_len)
     {
@@ -184,12 +185,12 @@ int __decrypt(void *data, int len, void **decrypted, int *decrypted_len)
     return 0;
 }
 
-int recv_over_socket(void *data, size_t len, FILE *netfile)
+int p_safesocket_read(LT_SOCK_TYPE s, void *buf, int len)
 {
     int ret, encrypted_len, compressed_len;
     void *encrypted, *compressed;
 
-    size_t read = fread(&encrypted_len, sizeof(int), 1, netfile);
+    int read = p_socket_read(s, &encrypted_len, sizeof(int));
     if(read != 1)
     {
         err("Failed to receive encrypted length over socket\n");
@@ -203,7 +204,7 @@ int recv_over_socket(void *data, size_t len, FILE *netfile)
         return -ENOMEM;
     }
 
-    read = fread(encrypted, 1, encrypted_len, netfile);
+    read = p_socket_read(s, encrypted, encrypted_len);
     if(read != encrypted_len)
     {
         err("Failed to receive all encrypted bytes over socket\n");
@@ -219,7 +220,7 @@ int recv_over_socket(void *data, size_t len, FILE *netfile)
         return ret;
     }
 
-    ret = __decompress(compressed, compressed_len, data, len);
+    ret = __decompress(compressed, compressed_len, buf, len);
     free(compressed);
     if(ret < 0)
     {

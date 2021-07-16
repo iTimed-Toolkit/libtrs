@@ -6,7 +6,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <semaphore.h>
 
 struct trace_cache;
 struct trace_set;
@@ -28,7 +27,8 @@ struct trace_set
     // commonly used, buffered headers
     size_t title_size, data_size;
     datatype_t datatype;
-    float yscale;
+    int xoffs;
+    float xscale, yscale;
 
     struct backend_intf *backend;
     struct trace_cache *cache;
@@ -55,24 +55,16 @@ static log_level_t libtrace_log_level = WARN;
 
 #define __first_arg(a, ...)     a
 #define __other_arg(a, ...)     , ## __VA_ARGS__
-#define __msg(level, ...)       if(level >= libtrace_log_level) {               \
+#define __msg(level, ...)       { if(level >= libtrace_log_level) {               \
                                      fprintf(stderr, "libtrace >>> %s @ %i: "   \
                                         __first_arg(__VA_ARGS__), __FUNCTION__, \
                                         __LINE__ __other_arg(__VA_ARGS__));     \
-                                        fflush(stderr); }
+                                        fflush(stderr); }}
 
 #define debug(...)              __msg(DEBUG, __VA_ARGS__)
 #define warn(...)               __msg(WARN, __VA_ARGS__)
 #define err(...)                __msg(ERR, __VA_ARGS__)
 #define critical(...)           __msg(CRITICAL, __VA_ARGS__)
-
-#define sem_acquire(sem)                                                        \
-    { int sem_ret = sem_wait((sem)); if(sem_ret < 0) {                          \
-    err("Failed to acquire sem " #sem ": %s\n", strerror(errno)); exit(-1);} }
-
-#define sem_release(sem)                                                        \
-    { int sem_ret = sem_post((sem)); if(sem_ret < 0) {                          \
-    err("Failed to release sem " #sem ": %s\n", strerror(errno)); exit(-1);} }
 
 #define TRACE_IDX(t)  (t)->index
 
@@ -93,25 +85,6 @@ struct backend_intf
 };
 
 int create_backend(struct trace_set *ts, const char *name);
-int send_over_socket(void *data, size_t len, FILE *netfile);
-int recv_over_socket(void *data, size_t len, FILE *netfile);
-
-typedef enum
-{
-    NET_CMD_INIT,
-    NET_CMD_GET,
-    NET_CMD_DIE
-} bknd_net_cmd_t;
-
-struct bknd_net_init
-{
-    size_t num_traces;
-    size_t num_samples;
-    enum datatype datatype;
-    size_t title_size;
-    size_t data_size;
-    float yscale;
-};
 
 /* Cache interface */
 size_t __find_num_traces(struct trace_set *ts, size_t size_bytes, int assoc);

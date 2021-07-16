@@ -5,6 +5,7 @@
 
 #include "__tfm_internal.h"
 #include "__trace_internal.h"
+#include "platform.h"
 
 #include <errno.h>
 #include <stdarg.h>
@@ -22,13 +23,13 @@ struct __request_entry
 {
     struct list_head list;
     int index;
-    sem_t *signal;
+    LT_SEM_TYPE *signal;
 };
 
 struct __waiter_entry
 {
     struct list_head list;
-    sem_t lock;
+    LT_SEM_TYPE lock;
 
     port_t port;
     struct trace_set *set;
@@ -249,7 +250,7 @@ int __tfm_wait_on_init(struct trace_set *ts)
         goto __free_entry;
     }
 
-    ret = sem_init(&entry->lock, 0, 1);
+    ret = p_sem_create(&entry->lock, 1);
     if(ret < 0)
     {
         err("Failed to initialize entry lock\n");
@@ -319,10 +320,10 @@ int __wait_for_entry(int index, struct __waiter_entry *curr_waiter)
 {
     int ret;
     struct __request_entry *request, *curr_request;
-    sem_t signal;
+    LT_SEM_TYPE signal;
 
     debug("Setting up wait request for index %i\n", index);
-    ret = sem_init(&signal, 0, 0);
+    ret = p_sem_create(&signal, 0);
     if(ret < 0)
     {
         err("Failed to create consumer signal\n");
@@ -351,7 +352,7 @@ int __wait_for_entry(int index, struct __waiter_entry *curr_waiter)
     debug("Waiting for trace %i\n", index);
     sem_acquire(&signal);
     debug("Came out of wait for trace %i\n", index);
-    sem_destroy(&signal);
+    p_sem_destroy(&signal);
 
     // already unlinked by push
     free(request);
@@ -380,7 +381,7 @@ int __search_for_entry(struct list_head *queue,
     if(curr_waiter->port == port &&
        curr_waiter->set == ts)
     {
-        sem_wait(&curr_waiter->lock);
+        sem_acquire(&curr_waiter->lock);
         ret = tc_lookup(curr_waiter->available, index, res, false);
         if(ret < 0)
         {

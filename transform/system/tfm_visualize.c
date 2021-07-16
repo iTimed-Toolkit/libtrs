@@ -3,11 +3,11 @@
 
 #include "__tfm_internal.h"
 #include "__trace_internal.h"
+#include "platform.h"
 #include "list.h"
 
 #include <errno.h>
 #include <string.h>
-#include <pthread.h>
 
 #define TFM_DATA(tfm)   ((struct viz_args *) (tfm)->data)
 #define GNUPLOT_CMD     "gnuplot"
@@ -28,8 +28,8 @@ struct tfm_visualize_data
     int status;
     struct viz_args *viz_args;
 
-    sem_t lock, signal;
-    pthread_t handle;
+    LT_SEM_TYPE lock, signal;
+    LT_THREAD_TYPE handle;
 
     size_t currently_displayed;
     struct list_head list;
@@ -62,7 +62,7 @@ int __plot_indices(struct viz_args *tfm, int r, int c, int p)
     return -1;
 }
 
-void *__draw_gnuplot_thread(void *arg)
+LT_THREAD_FUNC(__draw_gnuplot_thread, arg)
 {
     bool found;
     int ret, r, c, p, s;
@@ -253,7 +253,7 @@ int __tfm_visualize_init(struct trace_set *ts)
     }
 
     tfm_data->currently_displayed = -1;
-    ret = sem_init(&tfm_data->lock, 0, 1);
+    ret = p_sem_create(&tfm_data->lock, 1);
     if(ret < 0)
     {
         err("Failed to initialize lock\n");
@@ -261,7 +261,7 @@ int __tfm_visualize_init(struct trace_set *ts)
         goto __free_tfm_data;
     }
 
-    ret = sem_init(&tfm_data->signal, 0, 0);
+    ret = p_sem_create(&tfm_data->signal, 0);
     if(ret < 0)
     {
         err("Failed to initialize signal\n");
@@ -273,7 +273,7 @@ int __tfm_visualize_init(struct trace_set *ts)
     ts->tfm_state = tfm_data;
     tfm_data->viz_args = TFM_DATA(ts->tfm);
 
-    ret = pthread_create(&tfm_data->handle, NULL, __draw_gnuplot_thread, ts);
+    ret = p_thread_create(&tfm_data->handle, __draw_gnuplot_thread, ts);
     if(ret < 0)
     {
         err("Failed to create draw thread\n");
@@ -284,10 +284,10 @@ int __tfm_visualize_init(struct trace_set *ts)
 
     return 0;
 __destroy_signal:
-    sem_destroy(&tfm_data->signal);
+    p_sem_destroy(&tfm_data->signal);
 
 __destroy_lock:
-    sem_destroy(&tfm_data->lock);
+    p_sem_destroy(&tfm_data->lock);
 
 __free_tfm_data:
     free(tfm_data);
@@ -310,7 +310,7 @@ void __tfm_visualize_exit(struct trace_set *ts)
     struct tfm_visualize_data *tfm = ts->tfm_state;
 
 //    sem_post(&tfm->signal);
-    pthread_join(tfm->handle, NULL);
+    p_thread_join(tfm->handle);
 }
 
 int __tfm_visualize_fetch(struct trace *t)

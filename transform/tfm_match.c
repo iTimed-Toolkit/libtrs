@@ -4,6 +4,7 @@
 #include "__tfm_internal.h"
 #include "__trace_internal.h"
 
+#include "platform.h"
 #include "statistics.h"
 
 #include <errno.h>
@@ -47,7 +48,7 @@ size_t __tfm_match_trace_size(struct trace_set *ts)
 void __tfm_match_exit(struct trace_set *ts)
 {}
 
-sem_t print_lock;
+LT_SEM_TYPE print_lock;
 
 #define ZSCORE_95       1.960f
 #define ZSCORE_99       2.576f
@@ -222,7 +223,7 @@ int tfm_match(struct tfm **tfm, match_region_t *first, match_region_t *last,
         return -ENOMEM;
     }
 
-    sem_init(&print_lock, 0, 1);
+    p_sem_create(&print_lock, 1);
 
     ASSIGN_TFM_FUNCS(res, __tfm_match);
 

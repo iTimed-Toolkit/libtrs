@@ -1,19 +1,21 @@
 #include "trace.h"
 #include "__trace_internal.h"
 
+#include "platform.h"
+
 #include <stdlib.h>
 #include <string.h>
 
 struct trace_cache
 {
     size_t cache_id;
-    sem_t cache_lock;
+    LT_SEM_TYPE cache_lock;
     size_t nsets, nways;
 
     struct tc_set
     {
         bool initialized;
-        sem_t set_lock;
+        LT_SEM_TYPE set_lock;
 
         bool *valid;
         uint8_t *lru;
@@ -85,7 +87,7 @@ int __initialize_set(struct trace_cache *cache, size_t set)
     debug("Initializing set %li\n", set);
     curr_set = &cache->sets[set];
 
-    ret = sem_init(&curr_set->set_lock, 0, 1);
+    ret = p_sem_create(&curr_set->set_lock, 1);
     if(ret < 0)
     {
         err("Failed to initialize set lock semaphore: %s\n", strerror(errno));
@@ -131,7 +133,7 @@ int __initialize_set(struct trace_cache *cache, size_t set)
     return 0;
 
 __free_tc_set:
-    sem_wait(&curr_set->set_lock);
+    sem_acquire(&curr_set->set_lock);
 
     if(curr_set->valid)
         free(curr_set->valid);
@@ -163,7 +165,7 @@ int tc_cache_manual(struct trace_cache **cache, size_t id, size_t nsets, size_t 
         return -ENOMEM;
     }
 
-    ret = sem_init(&res->cache_lock, 0, 1);
+    ret = p_sem_create(&res->cache_lock, 1);
     if(ret < 0)
     {
         err("Failed to initialize semaphore: %s\n", strerror(errno));
@@ -229,14 +231,14 @@ int tc_free(struct trace_cache *cache)
     }
 
     sem_acquire(&cache->cache_lock);
-    sem_destroy(&cache->cache_lock);
+    p_sem_destroy(&cache->cache_lock);
 
     for(i = 0; i < cache->nsets; i++)
     {
         if(cache->sets[i].initialized)
         {
             sem_acquire(&cache->sets[i].set_lock);
-            sem_destroy(&cache->sets[i].set_lock);
+            p_sem_destroy(&cache->sets[i].set_lock);
 
             for(j = 0; j < cache->nways; j++)
             {
@@ -292,7 +294,7 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
         *trace = NULL;
 
         debug("Set %li was not initialized, cache miss (%li misses total)\n",
-              set, cache->misses);
+                 set, cache->misses);
 
         if(keep_lock)
         sem_acquire(&curr_set->set_lock);
@@ -327,19 +329,20 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
                 __sync_fetch_and_add(&cache->hits, 1);
                 *trace = curr_set->traces[i];
 
-                debug("Cache hit in set %li for way %i, refed %i times (%li hits total)\n",
-                      set, i, curr_set->refcount[i], cache->hits);
+                debug("Cache hit for %li in set %li for way %i, refed %i times (%li hits total)\n",
+                         index, set, i, curr_set->refcount[i], cache->hits);
                 break;
             }
         }
     }
 
-    if(*trace) sem_release(&curr_set->set_lock)
+    if(*trace)
+    sem_release(&curr_set->set_lock)
     else
     {
         __sync_fetch_and_add(&cache->misses, 1);
         debug("Cache miss (%li misses total)\n",
-              cache->misses);
+                 cache->misses);
 
         if(!keep_lock)
         sem_release(&curr_set->set_lock);
@@ -428,7 +431,7 @@ int tc_store(struct trace_cache *cache, size_t index, struct trace *trace, bool 
     if(curr_set->valid[way])
     {
         debug("Evicting trace %li, way %i from cache set %li\n",
-              TRACE_IDX(curr_set->traces[way]), way, set);
+                 TRACE_IDX(curr_set->traces[way]), way, set);
 
         cache->evictions++;
         trace_free_memory(curr_set->traces[way]);
