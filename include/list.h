@@ -11,9 +11,8 @@ struct list_head
     struct list_head *next, *prev;
 };
 
-#define container_of(ptr, type, ctype, member) ({                      \
-         const ctype *__mptr = (ptr);    \
-         (type *)( (char *)__mptr - offsetof(type,member) );})
+#define container_of(ptr, type, ctype, member) \
+    ((type *)((char *)((const ctype *) (ptr)) - offsetof(type,member)))
 
 /*
  * Circular doubly linked list implementation.
