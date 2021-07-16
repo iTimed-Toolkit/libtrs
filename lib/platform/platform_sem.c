@@ -1,5 +1,4 @@
 #include "platform.h"
-#include "__trace_internal.h"
 
 #include <stdbool.h>
 

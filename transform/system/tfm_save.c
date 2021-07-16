@@ -191,7 +191,7 @@ LT_THREAD_FUNC(__commit_thread, arg)
 
     while(1)
     {
-        Sleep(1000);
+        p_sleep(1000);
         sem_acquire(&queue->list_lock);
 
         if (queue->available == 0)

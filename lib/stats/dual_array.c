@@ -74,11 +74,11 @@ int __accumulate_dual_array(struct accumulator *acc, float *val0, float *val1, i
 
     IF_HAVE_512(__m512 curr0_512, curr1_512, count_512,
                 m0_512, m0_new_512, s0_512, s0_new_512,
-                m1_512, m1_new_512, s1_512, s1_new_512,
+                m1_512, m1_new_512, m1_shuffled_256 s1_512, s1_new_512,
                 cov_512, cov_new_512, cov_curr_512, cov_m_512);
     IF_HAVE_256(__m256 curr0_256, curr1_256, count_256,
                 m0_256, m0_new_256, s0_256, s0_new_256,
-                m1_256, m1_new_256, s1_256, s1_new_256,
+                m1_256, m1_new_256, m1_shuffled_256, s1_256, s1_new_256,
                 cov_256, cov_new_256, cov_curr_256, cov_m_256);
     IF_HAVE_128(__m128 curr0_, curr1_, count_,
                 m0_, m0_new_, s0_, s0_new_,
@@ -171,7 +171,37 @@ int __accumulate_dual_array(struct accumulator *acc, float *val0, float *val1, i
 
                                   for(j = 0; j < 16; j++)
                                   {
-                                      m1_new_scalar = m1_512[j];
+                                      if(j < 4)
+                                          m1_shuffled_512 = _mm512_permute4f128_ps(m1_512, 0xf, m1_512, 0);
+                                      else if(j < 8)
+                                          m1_shuffled_512 = _mm512_permute4f128_ps(m1_512, 0xf, m1_512, 1);
+                                      else if(j < 12)
+                                          m1_shuffled_512 = _mm512_permute4f128_ps(m1_512, 0xf, m1_512, 2);
+                                      else
+                                          m1_shuffled_512 = _mm512_permute4f128_ps(m1_512, 0xf, m1_512, 3);
+
+                                      switch(j % 4)
+                                      {
+                                          case 0:
+                                              m1_new_scalar = _mm512_cvtss_f32(
+                                                      _mm512_shuffle_ps(m1_shuffled_512, m1_shuffled_512, 0));
+                                              break;
+
+                                          case 1:
+                                              m1_new_scalar = _mm512_cvtss_f32(
+                                                      _mm512_shuffle_ps(m1_shuffled_512, m1_shuffled_512, 1));
+                                              break;
+
+                                          case 2:
+                                              m1_new_scalar = _mm512_cvtss_f32(
+                                                      _mm512_shuffle_ps(m1_shuffled_512, m1_shuffled_512, 2));
+                                              break;
+
+                                          case 3:
+                                              m1_new_scalar = _mm512_cvtss_f32(
+                                                      _mm512_shuffle_ps(m1_shuffled_512, m1_shuffled_512, 3));
+                                              break;
+                                      }
 
                                       IF_HAVE_128(cov_m_ = _mm_broadcast_ss(&m1_new_scalar));
                                       IF_HAVE_256(cov_m_256 = _mm256_broadcast_ss(&m1_new_scalar));
@@ -214,8 +244,33 @@ int __accumulate_dual_array(struct accumulator *acc, float *val0, float *val1, i
 
                                   for(j = 0; j < 8; j++)
                                   {
-                                      // todo fix
-                                      //m1_new_scalar = m1_256[j];
+                                      if(j < 4)
+                                          m1_shuffled_256 = _mm256_permute2f128_ps(m1_256, m1_256, 0);
+                                      else
+                                          m1_shuffled_256 = _mm256_permute2f128_ps(m1_256, m1_256, 1);
+
+                                      switch(j % 4)
+                                      {
+                                          case 0:
+                                              m1_new_scalar = _mm256_cvtss_f32(
+                                                      _mm256_shuffle_ps(m1_shuffled_256, m1_shuffled_256, 0));
+                                              break;
+
+                                          case 1:
+                                              m1_new_scalar = _mm256_cvtss_f32(
+                                                      _mm256_shuffle_ps(m1_shuffled_256, m1_shuffled_256, 1));
+                                              break;
+
+                                          case 2:
+                                              m1_new_scalar = _mm256_cvtss_f32(
+                                                      _mm256_shuffle_ps(m1_shuffled_256, m1_shuffled_256, 2));
+                                              break;
+
+                                          case 3:
+                                              m1_new_scalar = _mm256_cvtss_f32(
+                                                      _mm256_shuffle_ps(m1_shuffled_256, m1_shuffled_256, 3));
+                                              break;
+                                      }
 
                                       IF_HAVE_128(cov_m_ = _mm_broadcast_ss(&m1_new_scalar));
                                       IF_HAVE_256(cov_m_256 = _mm256_broadcast_ss(&m1_new_scalar));
@@ -258,8 +313,24 @@ int __accumulate_dual_array(struct accumulator *acc, float *val0, float *val1, i
 
                                   for(j = 0; j < 4; j++)
                                   {
-                                      // todo fix
-                                      //m1_new_scalar = m1_[j];
+                                      switch(j % 4)
+                                      {
+                                          case 0:
+                                              m1_new_scalar = _mm_cvtss_f32(_mm_shuffle_ps(m1_, m1_, 0));
+                                              break;
+
+                                          case 1:
+                                              m1_new_scalar = _mm_cvtss_f32(_mm_shuffle_ps(m1_, m1_, 1));
+                                              break;
+
+                                          case 2:
+                                              m1_new_scalar = _mm_cvtss_f32(_mm_shuffle_ps(m1_, m1_, 2));
+                                              break;
+
+                                          case 3:
+                                              m1_new_scalar = _mm_cvtss_f32(_mm_shuffle_ps(m1_, m1_, 3));
+                                              break;
+                                      }
 
                                       IF_HAVE_128(cov_m_ = _mm_broadcast_ss(&m1_new_scalar));
                                       IF_HAVE_256(cov_m_256 = _mm256_broadcast_ss(&m1_new_scalar));
