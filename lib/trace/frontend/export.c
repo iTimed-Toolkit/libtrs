@@ -179,7 +179,7 @@ LT_THREAD_FUNC(__ts_export_controller, controller_arg)
         }
 
         list_add_tail(&entry->list, &arg->threads);
-        list_for_each_entry_safe(entry, n, &arg->threads, list)
+        list_for_each_entry_safe(entry, n, &arg->threads, struct export_thread_arg, list)
         {
             if(!entry->running)
             {

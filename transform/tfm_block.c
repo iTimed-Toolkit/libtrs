@@ -132,7 +132,7 @@ int __block_accumulate(struct tfm_block_state *state,
     if(tfm->criteria != DONE_SINGULAR)
     {
         sem_acquire(&state->lock);
-        list_for_each_entry(curr, &state->blocks, list)
+        list_for_each_entry(curr, &state->blocks, struct __tfm_block_block, list)
         {
             if(tfm->trace_matches(curr_trace, curr->block, tfm->arg))
             {
@@ -229,7 +229,7 @@ int __block_finalize(struct tfm_block_state *state,
 
     sem_acquire(&state->lock);
     debug("Finalize for trace %li\n", TRACE_IDX(res));
-    list_for_each_entry(curr, &state->blocks, list)
+    list_for_each_entry(curr, &state->blocks, struct __tfm_block_block, list)
     {
         debug("Found a block with index %li\n", curr->res_index);
         if(curr->res_index == TRACE_IDX(res) && curr->done)

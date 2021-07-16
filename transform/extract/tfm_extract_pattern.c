@@ -150,7 +150,7 @@ int __process_ref_trace(struct trace *t, struct tfm_extract_config *cfg)
 
     last_index = -1;
     cfg->ref.count = 0;
-    list_for_each_entry_safe(pos, n, &blk.split_list, list)
+    list_for_each_entry_safe(pos, n, &blk.split_list, struct split_list_entry, list)
     {
         if(pos->type == SPLIT_CONFIDENT)
         {
@@ -468,7 +468,7 @@ int tfm_extract_pattern_accumulate(struct trace *t, void *block, void *arg)
        blk->count_unpredictable + blk->count_tail != cfg->expecting)
     {
         debug("Rejecting trace\n");
-        list_for_each_entry_safe(curr, n, &blk->split_list, list)
+        list_for_each_entry_safe(curr, n, &blk->split_list, struct split_list_entry, list)
         {
             list_del(&curr->list);
             free(curr);

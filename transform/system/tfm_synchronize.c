@@ -61,7 +61,7 @@ int __stall(struct tfm_synchronize *tfm, size_t index)
     struct __tfm_synchronize_entry *curr, *new;
     bool existing = false;
 
-    list_for_each_entry(curr, &tfm->waiting, list)
+    list_for_each_entry(curr, &tfm->waiting, struct __tfm_synchronize_entry, list)
     {
         if(curr->index < index)
             continue;
@@ -125,7 +125,7 @@ int __synchronize(struct tfm_synchronize *tfm, size_t index)
 
     // first, check if we should stall
     sem_acquire(&tfm->list_lock);
-    list_for_each_entry(curr, &tfm->requests, list)
+    list_for_each_entry(curr, &tfm->requests, struct __tfm_synchronize_entry, list)
     {
         if(curr->index + tfm->max_distance < index)
         {
@@ -146,7 +146,7 @@ int __synchronize(struct tfm_synchronize *tfm, size_t index)
     }
 
     // look for an entry, or create our own if need be
-    list_for_each_entry(curr, &tfm->requests, list)
+    list_for_each_entry(curr, &tfm->requests, struct __tfm_synchronize_entry, list)
     {
         if(curr->index < index)
             continue;
@@ -188,14 +188,14 @@ int __sync_finalize(struct tfm_synchronize *tfm, size_t index)
 
     // wake up any applicable stalled requests
     sem_acquire(&tfm->list_lock);
-    list_for_each_entry(curr, &tfm->waiting, list)
+    list_for_each_entry(curr, &tfm->waiting, struct __tfm_synchronize_entry, list)
     {
         if(index + tfm->max_distance >= curr->index)
             sem_release(&curr->signal);
     }
 
     // find ourselves in the list
-    list_for_each_entry(curr, &tfm->requests, list)
+    list_for_each_entry(curr, &tfm->requests, struct __tfm_synchronize_entry, list)
     {
         if(curr->index == index)
         {

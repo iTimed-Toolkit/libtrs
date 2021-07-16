@@ -69,7 +69,7 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
     va_end(arg_list);
 
     debug("got push for port %i, index %i\n", port, index);
-    list_for_each_entry(curr_waiter, queue, list)
+    list_for_each_entry(curr_waiter, queue, struct __waiter_entry, list)
     {
         if(curr_waiter->port == port)
         {
@@ -145,7 +145,7 @@ int __tfm_wait_on_push(void *arg, port_t port, int nargs, ...)
             }
 
             // wake up any consumers
-            list_for_each_entry_safe(curr_req, n_req, &curr_waiter->traces_wanted, list)
+            list_for_each_entry_safe(curr_req, n_req, &curr_waiter->traces_wanted, struct __request_entry, list)
             {
                 if(curr_req->index < index)
                 {
@@ -262,7 +262,7 @@ int __tfm_wait_on_init(struct trace_set *ts)
     entry->set = ts;
     LIST_HEAD_INIT_INLINE(entry->traces_wanted);
 
-    list_for_each_entry(curr, queue, list)
+    list_for_each_entry(curr, queue, struct __waiter_entry, list)
     {
         if(curr->port > tfm->port)
             break;
@@ -301,7 +301,7 @@ void __tfm_wait_on_exit(struct trace_set *ts)
     struct tfm_wait_on *tfm = TFM_DATA(ts->tfm);
     struct list_head *queue = ts->tfm_state;
 
-    list_for_each_entry(curr, queue, list)
+    list_for_each_entry(curr, queue, struct __waiter_entry, list)
     {
         if(curr->port == tfm->port && curr->set == ts)
             break;
@@ -341,7 +341,7 @@ int __wait_for_entry(int index, struct __waiter_entry *curr_waiter)
     request->index = index;
     request->signal = &signal;
 
-    list_for_each_entry(curr_request, &curr_waiter->traces_wanted, list)
+    list_for_each_entry(curr_request, &curr_waiter->traces_wanted, struct __request_entry, list)
     {
         if(curr_request->index > index)
             break;
@@ -372,7 +372,7 @@ int __search_for_entry(struct list_head *queue,
         return -EINVAL;
     }
 
-    list_for_each_entry(curr_waiter, queue, list)
+    list_for_each_entry(curr_waiter, queue, struct __waiter_entry, list)
     {
         if(curr_waiter->port == port && curr_waiter->set == ts)
             break;

@@ -84,7 +84,7 @@ int __list_create_entry(struct __commit_queue *queue,
     entry->prev_index = prev_index;
 
     sem_acquire(&queue->list_lock);
-    list_for_each_entry(curr, &queue->head, list)
+    list_for_each_entry(curr, &queue->head, struct __commit_queue_entry, list)
     {
         if(curr->prev_index > prev_index)
             break;
@@ -205,7 +205,7 @@ LT_THREAD_FUNC(__commit_thread, arg)
         sem_acquire(&queue->list_lock);
 
         count = 0;
-        list_for_each_entry(curr, &queue->head, list)
+        list_for_each_entry(curr, &queue->head, struct __commit_queue_entry, list)
         {
             if(curr->trace || curr->prev_index == SENTINEL)
                 count++;

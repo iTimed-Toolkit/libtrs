@@ -804,7 +804,7 @@ int main(int argc, char *argv[])
         return -EINVAL;
     }
 
-    list_for_each_entry_safe(curr_render, n_render, &parsed.async, list)
+    list_for_each_entry_safe(curr_render, n_render, &parsed.async, struct async_entry, list)
     {
         if(curr_render->render)
         {
@@ -829,7 +829,7 @@ int main(int argc, char *argv[])
         free(curr_render);
     }
 
-    list_for_each_entry_safe(curr_ts, n_ts, &parsed.trace_sets, list)
+    list_for_each_entry_safe(curr_ts, n_ts, &parsed.trace_sets, struct trace_set_entry, list)
     {
         ts_close(curr_ts->set);
         list_del(&curr_ts->list);

@@ -273,7 +273,7 @@ int __search_gaps(struct tfm_extract_config *cfg,
     blk->count_predictable = 0;
     blk->count_unpredictable = 0;
 
-    list_for_each_entry(pos, &blk->split_list, list)
+    list_for_each_entry(pos, &blk->split_list, struct split_list_entry, list)
     {
         if(pos->type == SPLIT_CONFIDENT)
         {
@@ -386,7 +386,7 @@ int __optimize_gaps(struct tfm_extract_config *cfg,
     values_forwards = values_backwards = NULL;
 
     blk->count_unpredictable = 0;
-    list_for_each_entry(curr, &blk->split_unpredictable, unpredictable)
+    list_for_each_entry(curr, &blk->split_unpredictable, struct split_list_entry, unpredictable)
     {
         if(curr->type != SPLIT_GAP_UNPREDICTABLE)
         {
@@ -395,8 +395,8 @@ int __optimize_gaps(struct tfm_extract_config *cfg,
             goto __free_temp_arrays;
         }
 
-        back = list_next_entry(curr, list)->index;
-        front = list_prev_entry(curr, list)->index;
+        back = list_next_entry(curr, struct split_list_entry, list)->index;
+        front = list_prev_entry(curr, struct split_list_entry, list)->index;
         num = (int) roundf((float) (back - front) / cfg->ref.mean) - 1;
 
         // reallocate temp buffers if needed

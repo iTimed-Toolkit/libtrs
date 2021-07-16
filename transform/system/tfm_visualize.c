@@ -136,7 +136,7 @@ LT_THREAD_FUNC(__draw_gnuplot_thread, arg)
         sem_acquire(&tfm_arg->lock);
 
         found = false;
-        list_for_each_entry(curr, &tfm_arg->list, list)
+        list_for_each_entry(curr, &tfm_arg->list, struct __tfm_viz_entry, list)
         {
             if(curr->count == NUMBER_TRACES(viz_args))
             {
@@ -333,7 +333,7 @@ int __tfm_visualize_fetch(struct trace *t)
 
     sem_acquire(&tfm_data->lock);
     curr = NULL, found = false;
-    list_for_each_entry(curr, &tfm_data->list, list)
+    list_for_each_entry(curr, &tfm_data->list, struct __tfm_viz_entry, list)
     {
         if(TRACE_IDX(t) >= curr->base &&
            TRACE_IDX(t) < curr->base + NUMBER_TRACES(tfm))
@@ -381,7 +381,7 @@ int __tfm_visualize_fetch(struct trace *t)
         }
 
         LIST_HEAD_INIT_INLINE(new->list);
-        list_for_each_entry(curr, &tfm_data->list, list)
+        list_for_each_entry(curr, &tfm_data->list, struct __tfm_viz_entry, list)
         {
             if(curr->base > new->base)
                 break;

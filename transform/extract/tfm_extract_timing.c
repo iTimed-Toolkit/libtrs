@@ -247,7 +247,7 @@ int tfm_extract_timing_accumulate(struct trace *t, void *block, void *arg)
 
             found++;
             timing_index++;
-            curr = list_next_entry(curr, list);
+            curr = list_next_entry(curr, struct split_list_entry, list);
             continue;
         }
         else
