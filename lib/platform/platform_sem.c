@@ -43,7 +43,7 @@ int __p_sem_post(LT_SEM_TYPE *sem)
     return sem_post(sem);
 #elif defined(LIBTRACE_PLATFORM_WINDOWS)
     bool res = ReleaseSemaphore(sem, 1, NULL);
-    if(res != 0) return -1;
-    else return 0;
+    if(res == 0) return 0;
+    else return -1;
 #endif
 }

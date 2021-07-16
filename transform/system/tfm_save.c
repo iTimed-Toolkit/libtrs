@@ -390,7 +390,7 @@ void __tfm_save_exit(struct trace_set *ts)
 int __render_to_index(struct trace_set *ts, size_t index)
 {
     int ret;
-    size_t written, prev_index;
+    size_t prev_index;
 
     struct tfm_save_state *tfm_data = ts->tfm_state;
     struct __commit_queue *queue = tfm_data->commit_data;
@@ -402,7 +402,7 @@ int __render_to_index(struct trace_set *ts, size_t index)
         sem_acquire(&queue->list_lock);
         if(index < tfm_data->num_traces_written)
         {
-            debug("Index %li < written %li, exiting\n", index, written);
+            debug("Index %li < written %li, exiting\n", index, tfm_data->num_traces_written);
             sem_release(&queue->list_lock); break;
         }
 

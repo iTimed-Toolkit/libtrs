@@ -155,13 +155,13 @@ int p_socket_close(LT_SOCK_TYPE s)
 int p_socket_read(LT_SOCK_TYPE s, void *buf, int len)
 {
     int received = 0, last;
-    while(recv < len)
+    while(received < len)
     {
         last = psock_recv(s, &((uint8_t*) buf)[received], len - received);
         if(!psock_valid(last))
         {
             err("Socket error while receiving\n");
-            return recv;
+            return received;
         }
 
         received += last;
