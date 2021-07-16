@@ -42,6 +42,7 @@ int tfm_extract_timing_init(struct trace_set *ts, void *arg)
 int tfm_extract_timing_exit(struct trace_set *ts, void *arg)
 {
     err("unimplemented\n");
+    return -EINVAL;
 }
 
 int tfm_extract_timing_init_waiter(struct trace_set *ts, port_t port, void *arg)
@@ -212,7 +213,7 @@ int tfm_extract_timing_accumulate(struct trace *t, void *block, void *arg)
         goto __done;
     }
 
-    int timing_index = 0, last_gap = -1, num_gap, found = 0;
+    int timing_index = 0, last_gap = -1, num_gap = 0, found = 0;
     struct split_list_entry *curr = list_first_entry(&blk->split_list, struct split_list_entry, list),
             *first_match = curr, *last_match = list_last_entry(&blk->split_list, struct split_list_entry, list),
             *new;

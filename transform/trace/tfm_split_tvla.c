@@ -71,7 +71,7 @@ int __get_trace_type(struct trace *t, bool *type)
 int __tfm_split_tvla_get(struct trace *t)
 {
     int ret;
-    bool type;
+    bool type = TVLA_FIXED;
 
     struct trace *prev_trace;
     struct tfm_split_tvla *tfm = TFM_DATA(t->owner->tfm);

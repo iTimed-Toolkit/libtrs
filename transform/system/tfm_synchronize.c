@@ -182,7 +182,6 @@ int __synchronize(struct tfm_synchronize *tfm, size_t index)
 
 int __sync_finalize(struct tfm_synchronize *tfm, size_t index)
 {
-    int ret;
     struct __tfm_synchronize_entry *curr;
     bool found = false;
 

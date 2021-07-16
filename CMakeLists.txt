@@ -4,31 +4,33 @@ set(CMAKE_C_STANDARD 11)
 
 cmake_policy(SET CMP0104 OLD)
 
-if(LINUX)
-set(CMAKE_C_FLAGS "-Wall -mavx2 -O3")
+if(UNIX)
+    message("Configuring for Linux")
+    set(CMAKE_C_FLAGS "-Wall -mavx2 -O3")
 
-set(LT_ZLIB "z")
-set(LT_MATH "m")
-set(LT_SSL "crypto")
-set(LT_THREADS "pthread")
-set(LT_NET "")
+    set(LT_ZLIB "z")
+    set(LT_MATH "m")
+    set(LT_SSL "crypto")
+    set(LT_THREADS "pthread")
+    set(LT_NET "")
 
 elseif(WIN32)
-set(CMAKE_C_FLAGS "/O2 /arch:AVX2")
+    message("Configuring for Windows")
+    set(CMAKE_C_FLAGS "/O2 /arch:AVX2")
 
-add_subdirectory(contrib/zlib)
+    add_subdirectory(contrib/zlib)
 
-include_directories(contrib/zlib)
-include_directories(${CMAKE_CURRENT_BINARY_DIR}/contrib/zlib)
+    include_directories(contrib/zlib)
+    include_directories(${CMAKE_CURRENT_BINARY_DIR}/contrib/zlib)
 
-include_directories("C:\\Program Files\\OpenSSL-Win64\\include")
-link_directories("C:\\Program Files\\OpenSSL-Win64\\lib")
+    include_directories("C:\\Program Files\\OpenSSL-Win64\\include")
+    link_directories("C:\\Program Files\\OpenSSL-Win64\\lib")
 
-set(LT_ZLIB "zlib")
-set(LT_MATH "")
-set(LT_SSL "libcrypto")
-set(LT_THREADS "")
-set(LT_NET "ws2_32")
+    set(LT_ZLIB "zlib")
+    set(LT_MATH "")
+    set(LT_SSL "libcrypto")
+    set(LT_THREADS "")
+    set(LT_NET "ws2_32")
 
 endif()
 

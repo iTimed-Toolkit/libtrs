@@ -11,7 +11,7 @@
 int __find_pearson(struct trace *t, struct tfm_extract_config *cfg, float **res)
 {
 #if USE_GPU
-    int i, ret;
+    int ret;
     ret = gpu_pattern_match(t->samples, t->owner->num_samples,
                             cfg->ref.match_pattern,
                             NUM_MATCH(&cfg->pattern),
@@ -511,26 +511,28 @@ int __search_tail(struct tfm_extract_config *cfg,
     int ret, i, base;
     int first = -1, last = -1;
 
-    int num_means, max_index;
+    int num_means, max_index = 0;
     float *means, max_mean;
 
-    float* max_values;
-    int* max_indices;
+    float *max_values = NULL;
+    int *max_indices = NULL;
 
     max_values = calloc(2 * blk->missing, sizeof(float));
-    if (max_values)
+    if(max_values)
         max_indices = calloc(2 * blk->missing, sizeof(int));
-    if (!max_indices)
+
+    if(!max_indices)
     {
         err("Failed to allocate some temp arrays\n");
-        ret = -ENOMEM; goto __free_temp;
+        ret = -ENOMEM;
+        goto __free_temp;
     }
 
     struct accumulator *acc;
     struct split_list_entry *new, *front;
 
-    memset(max_values, 0, sizeof(max_values));
-    memset(max_indices, 0xFF, sizeof(max_indices));
+    memset(max_values, 0, 2 * blk->missing * sizeof(float));
+    memset(max_indices, 0xFF, 2 * blk->missing * sizeof(int));
 
     for(i = -1 * blk->missing; i < blk->missing; i++)
     {
@@ -639,10 +641,10 @@ int __search_tail(struct tfm_extract_config *cfg,
 
     ret = 0;
 __free_temp:
-    if (max_values)
+    if(max_values)
         free(max_values);
 
-    if (max_indices)
+    if(max_indices)
         free(max_indices);
 
     return ret;
