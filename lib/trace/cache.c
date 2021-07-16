@@ -358,7 +358,7 @@ int tc_store(struct trace_cache *cache, size_t index, struct trace *trace, bool 
     int i, ret, highest_lru, way;
     size_t set;
     struct tc_set *curr_set;
-    bool new_set;
+    bool new_set = false;
 
     if(!cache || !trace)
     {
@@ -391,7 +391,7 @@ int tc_store(struct trace_cache *cache, size_t index, struct trace *trace, bool 
 
     sem_release(&cache->cache_lock);
     if(!keep_lock && !new_set)
-    sem_acquire(&curr_set->set_lock);
+        sem_acquire(&curr_set->set_lock);
 
     // first pass - look for empty slots, pick the one with highest lru value
     way = -1;

@@ -28,7 +28,6 @@ struct __commit_queue_entry
 struct __commit_queue
 {
     LT_THREAD_TYPE handle;
-    LT_SEM_TYPE event;
     LT_SEM_TYPE sentinel;
 
     struct trace_set *ts;
@@ -37,7 +36,7 @@ struct __commit_queue
     LT_SEM_TYPE list_lock;
     struct list_head head;
 
-    size_t written;
+    size_t written, available;
     bool sentinel_seen;
 };
 
@@ -192,7 +191,17 @@ LT_THREAD_FUNC(__commit_thread, arg)
 
     while(1)
     {
-        sem_acquire(&queue->event);
+        Sleep(1000);
+        sem_acquire(&queue->list_lock);
+
+        if (queue->available == 0)
+        {
+            debug("No work, going back to sleep\n");
+            sem_release(&queue->list_lock); continue;
+        }
+
+        warn("%zu traces available to write\n", queue->available);
+
         if(queue->ts == NULL)
         {
             debug("Commit thread exiting cleanly\n");
@@ -202,7 +211,6 @@ LT_THREAD_FUNC(__commit_thread, arg)
 
         // examine the commit list
         tfm_data = queue->ts->tfm_state;
-        sem_acquire(&queue->list_lock);
 
         count = 0;
         list_for_each_entry(curr, &queue->head, struct __commit_queue_entry, list)
@@ -213,6 +221,7 @@ LT_THREAD_FUNC(__commit_thread, arg)
         }
 
         list_cut_before(&write_head, &queue->head, &curr->list);
+        queue->available -= count;
         sem_release(&queue->list_lock);
 
         // write the collected batch
@@ -227,9 +236,7 @@ LT_THREAD_FUNC(__commit_thread, arg)
             }
 
             // update global written counter
-            sem_acquire(&queue->list_lock);
-            tfm_data->num_traces_written += count;
-            sem_release(&queue->list_lock);
+            sem_with(&queue->list_lock, tfm_data->num_traces_written += count);
         }
     }
 }
@@ -286,18 +293,11 @@ int __tfm_save_init(struct trace_set *ts)
     queue->written = 0;
     queue->sentinel_seen = false;
 
-    ret = p_sem_create(&queue->event, 0);
-    if(ret < 0)
-    {
-        err("Failed to initialize queue event semaphore\n");
-        goto __free_commit_queue;
-    }
-
     ret = p_sem_create(&queue->sentinel, 0);
     if(ret < 0)
     {
         err("Failed to initialize sentinel semaphore\n");
-        goto __destroy_queue_event;
+        goto __free_commit_queue;
     }
 
     ret = p_sem_create(&queue->list_lock, 1);
@@ -323,9 +323,6 @@ __destroy_queue_list:
 
 __destroy_sentinel_event:
     p_sem_destroy(&queue->sentinel);
-
-__destroy_queue_event:
-    p_sem_destroy(&queue->event);
 
 __free_commit_queue:
     free(queue);
@@ -370,11 +367,10 @@ void __tfm_save_exit(struct trace_set *ts)
 
     // kill the commit threads
     queue->ts = NULL;
-    sem_release(&queue->event);
+    queue->available = -1;
     p_thread_join(queue->handle);
 
     p_sem_destroy(&queue->list_lock);
-    p_sem_destroy(&queue->event);
     free(queue);
 
     // finalize headers
@@ -422,7 +418,7 @@ int __render_to_index(struct trace_set *ts, size_t index)
                 return ret;
             }
 
-            sem_release(&queue->event);
+            sem_with(&queue->list_lock, queue->available++);
             return 1;
         }
 
@@ -470,7 +466,7 @@ int __render_to_index(struct trace_set *ts, size_t index)
             return queue->thread_ret;
         }
 
-        sem_release(&queue->event);
+        sem_with(&queue->list_lock, queue->available++);
     }
 
     return 0;

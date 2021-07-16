@@ -22,11 +22,12 @@ elseif(WIN32)
 
     include_directories(contrib/zlib)
     include_directories(${CMAKE_CURRENT_BINARY_DIR}/contrib/zlib)
+    link_directories(${CMAKE_CURRENT_BINARY_DIR}/contrib/zlib)
 
     include_directories("C:\\Program Files\\OpenSSL-Win64\\include")
     link_directories("C:\\Program Files\\OpenSSL-Win64\\lib")
 
-    set(LT_ZLIB "zlib")
+    set(LT_ZLIB "zlibstatic")
     set(LT_MATH "")
     set(LT_SSL "libcrypto")
     set(LT_THREADS "")

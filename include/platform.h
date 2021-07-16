@@ -97,4 +97,7 @@ int p_thread_join(LT_THREAD_TYPE handle);
     { int sem_ret = __p_sem_post((sem)); if(sem_ret < 0) {                        \
     err("Failed to release sem " #sem ": %s\n", strerror(errno)); exit(-1);} }
 
+#define sem_with(sem, ...)                   \
+    { sem_acquire(sem); __VA_ARGS__ ; sem_release(sem); }
+
 #endif //LIBTRS_PLATFORM_H

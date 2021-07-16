@@ -677,7 +677,7 @@ int parse_config(char *fname, struct parse_args *parsed)
     LT_FILE_TYPE *config = p_fopen(fname, "r");
     if(!config)
     {
-        err("Failed to open config file\n");
+        err("Failed to open config file %s\n", fname);
         return -EINVAL;
     }
 
