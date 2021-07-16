@@ -405,7 +405,7 @@ int tfm_extract_pattern_accumulate(struct trace *t, void *block, void *arg)
         if(ret < 0)
         {
             err("Failed to allocate debug arrays\n");
-            goto __out;
+            goto __done;
         }
     }
 
@@ -485,7 +485,7 @@ __free_debug:
         free(blk->tail);
     }
 
-__out:
+__done:
     if(ret < 0 || !cfg->debugging)
         free(blk->pearson);
 

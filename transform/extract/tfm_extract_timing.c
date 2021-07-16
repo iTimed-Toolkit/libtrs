@@ -186,7 +186,7 @@ int tfm_extract_timing_accumulate(struct trace *t, void *block, void *arg)
         {
             err("Failed to allocate debug match array\n");
             ret = -ENOMEM;
-            goto __out;
+            goto __done;
         }
 
         blk->timing = calloc(blk->num, sizeof(float));
@@ -195,7 +195,7 @@ int tfm_extract_timing_accumulate(struct trace *t, void *block, void *arg)
             err("Failed to allocate debug timing array\n");
             free(blk->matches);
             ret = -ENOMEM;
-            goto __out;
+            goto __done;
         }
 
         for(i = 0; i < cfg->expecting; i++)
@@ -209,7 +209,7 @@ int tfm_extract_timing_accumulate(struct trace *t, void *block, void *arg)
     if(ret < 0)
     {
         err("Failed to search for matches\n");
-        goto __out;
+        goto __done;
     }
 
     int timing_index = 0, last_gap = -1, num_gap, found = 0;
@@ -233,7 +233,7 @@ int tfm_extract_timing_accumulate(struct trace *t, void *block, void *arg)
                 {
                     err("Failed to allocate new split list entry\n");
                     ret = -ENOMEM;
-                    goto __out;
+                    goto __done;
                 }
 
                 LIST_HEAD_INIT_INLINE(new->list);
@@ -259,7 +259,7 @@ int tfm_extract_timing_accumulate(struct trace *t, void *block, void *arg)
                 {
                     err("Failed to allocate new split list entry\n");
                     ret = -ENOMEM;
-                    goto __out;
+                    goto __done;
                 }
 
                 LIST_HEAD_INIT_INLINE(new->list);
@@ -276,7 +276,7 @@ int tfm_extract_timing_accumulate(struct trace *t, void *block, void *arg)
                 {
                     err("Failed to allocate new split list entry\n");
                     ret = -ENOMEM;
-                    goto __out;
+                    goto __done;
                 }
 
                 LIST_HEAD_INIT_INLINE(new->list);
@@ -303,7 +303,7 @@ int tfm_extract_timing_accumulate(struct trace *t, void *block, void *arg)
 
     warn("Successfully extracted %i timing patterns for trace %li\n",
          found, TRACE_IDX(t));
-__out:
+__done:
     if(ret < 0 || !cfg->debugging)
         free(blk->pearson);
 

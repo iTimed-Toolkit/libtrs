@@ -7,11 +7,30 @@ cmake_policy(SET CMP0104 OLD)
 if(LINUX)
 set(CMAKE_C_FLAGS "-Wall -mavx2 -O3")
 
+set(LT_ZLIB "z")
+set(LT_MATH "m")
+set(LT_SSL "crypto")
+set(LT_THREADS "pthread")
+set(LT_NET "")
+
 elseif(WIN32)
 set(CMAKE_C_FLAGS "/O2 /arch:AVX2")
 
-endif()
+add_subdirectory(contrib/zlib)
 
+include_directories(contrib/zlib)
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/contrib/zlib)
+
+include_directories("C:\\Program Files\\OpenSSL-Win64\\include")
+link_directories("C:\\Program Files\\OpenSSL-Win64\\lib")
+
+set(LT_ZLIB "zlib")
+set(LT_MATH "")
+set(LT_SSL "libcrypto")
+set(LT_THREADS "")
+set(LT_NET "ws2_32")
+
+endif()
 
 include_directories(include)
 
@@ -23,7 +42,7 @@ add_library(trace STATIC lib/trace/trace_set.c lib/trace/cache.c  lib/trace/trac
         lib/platform/secure_socket.c lib/platform/platform_socket.c
         lib/platform/platform_sem.c lib/platform/platform_thread.c)
 #target_compile_options(trace PRIVATE "-O3")
-target_link_libraries(trace pthread crypto z)
+target_link_libraries(trace ${LT_THREADS} ${LT_NET} ${LT_ZLIB} ${LT_SSL})
 
 # statistics
 set(STATS_USE_GPU 0)
@@ -39,12 +58,12 @@ set_property(TARGET stats PROPERTY CUDA_ARCHITECTURES OFF)
 #endif ()
 
 target_compile_options(stats PRIVATE "-DUSE_GPU=${STATS_USE_GPU}")
-target_link_libraries(stats m)
+target_link_libraries(stats ${LT_MATH})
 
 # crypto
 add_library(crypto_utils STATIC lib/crypto/aes.c)
 #target_compile_options(crypto_utils PRIVATE "-O3")
-target_link_libraries(crypto_utils crypto)
+target_link_libraries(crypto_utils ${LT_SSL})
 
 # transformations
 add_library(transform STATIC transform/tfm.c transform/tfm_align.c transform/tfm_match.c
@@ -57,7 +76,7 @@ add_library(transform STATIC transform/tfm.c transform/tfm_align.c transform/tfm
         transform/tfm_block.c transform/block/tfm_reduce_along.c transform/block/tfm_select_along.c
         transform/extract/tfm_extract_pattern.c transform/extract/tfm_extract_timing.c transform/extract/extract_internal.c)
 #target_compile_options(transform PRIVATE "-O3")
-target_link_libraries(transform pthread crypto_utils m stats)
+target_link_libraries(transform ${LT_THREADS} ${LT_MATH} crypto_utils stats)
 
 # frontend
 add_executable(libtrace_evaluate main.c)

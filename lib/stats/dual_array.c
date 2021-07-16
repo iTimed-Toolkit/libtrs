@@ -214,7 +214,8 @@ int __accumulate_dual_array(struct accumulator *acc, float *val0, float *val1, i
 
                                   for(j = 0; j < 8; j++)
                                   {
-                                      m1_new_scalar = m1_256[j];
+                                      // todo fix
+                                      //m1_new_scalar = m1_256[j];
 
                                       IF_HAVE_128(cov_m_ = _mm_broadcast_ss(&m1_new_scalar));
                                       IF_HAVE_256(cov_m_256 = _mm256_broadcast_ss(&m1_new_scalar));
@@ -257,7 +258,8 @@ int __accumulate_dual_array(struct accumulator *acc, float *val0, float *val1, i
 
                                   for(j = 0; j < 4; j++)
                                   {
-                                      m1_new_scalar = m1_[j];
+                                      // todo fix
+                                      //m1_new_scalar = m1_[j];
 
                                       IF_HAVE_128(cov_m_ = _mm_broadcast_ss(&m1_new_scalar));
                                       IF_HAVE_256(cov_m_256 = _mm256_broadcast_ss(&m1_new_scalar));

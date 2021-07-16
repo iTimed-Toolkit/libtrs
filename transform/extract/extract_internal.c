@@ -139,16 +139,6 @@ __free_accumulator:
     stat_free_accumulator(acc);
 #endif
 
-    for(i = 0; i < t->owner->num_samples - NUM_MATCH(&cfg->pattern); i++)
-    {
-        if(isnanf((*res)[i]))
-        {
-            err("Detect NaN at index %i in pearson for trace %li\n",
-                i, TRACE_IDX(t));
-            return -EINVAL;
-        }
-    }
-
     return ret;
 }
 
@@ -524,8 +514,17 @@ int __search_tail(struct tfm_extract_config *cfg,
     int num_means, max_index;
     float *means, max_mean;
 
-    float max_values[2 * blk->missing];
-    int max_indices[2 * blk->missing];
+    float* max_values;
+    int* max_indices;
+
+    max_values = calloc(2 * blk->missing, sizeof(float));
+    if (max_values)
+        max_indices = calloc(2 * blk->missing, sizeof(int));
+    if (!max_indices)
+    {
+        err("Failed to allocate some temp arrays\n");
+        ret = -ENOMEM; goto __free_temp;
+    }
 
     struct accumulator *acc;
     struct split_list_entry *new, *front;
@@ -637,5 +636,14 @@ int __search_tail(struct tfm_extract_config *cfg,
     }
 
     blk->count_tail = (last - first + 1);
-    return 0;
+
+    ret = 0;
+__free_temp:
+    if (max_values)
+        free(max_values);
+
+    if (max_indices)
+        free(max_indices);
+
+    return ret;
 }

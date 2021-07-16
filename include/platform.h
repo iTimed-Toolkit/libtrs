@@ -48,6 +48,7 @@ typedef FILE                        LT_FILE_TYPE;
 
     #define p_fread(b, s, c, f)             fread(b, s, c, f)
     #define p_fwrite(b, s, c, f)            fwrite(b, s, c, f)
+    #define p_fgets(line, len, from)        fgets(line, len, from)
 #endif
 
 /* Socket functions */

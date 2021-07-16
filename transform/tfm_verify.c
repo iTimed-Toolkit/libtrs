@@ -57,7 +57,7 @@ int __verify_generic(struct trace *t, crypto_t which, bool *result)
             default:
                 err("Unrecognized verification model\n");
                 ret = -EINVAL;
-                goto __out;
+                goto __done;
         }
     }
     else
@@ -68,7 +68,7 @@ int __verify_generic(struct trace *t, crypto_t which, bool *result)
         return 0;
     }
 
-__out:
+__done:
     trace_free(prev_trace);
     return ret;
 }

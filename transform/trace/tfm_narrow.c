@@ -72,7 +72,7 @@ int __tfm_narrow_get(struct trace *t)
             {
                 err("Failed to allocate memory for trace samples\n");
                 ret = -ENOMEM;
-                goto __out;
+                goto __done;
             }
 
             memcpy(res, &prev_trace->samples[tfm->first_sample],
@@ -84,7 +84,7 @@ int __tfm_narrow_get(struct trace *t)
     }
     else err("Failed to copy something\n");
 
-__out:
+__done:
     trace_free(prev_trace);
     return ret;
 }

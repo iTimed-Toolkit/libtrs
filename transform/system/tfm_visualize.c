@@ -76,6 +76,7 @@ LT_THREAD_FUNC(__draw_gnuplot_thread, arg)
 
     struct __tfm_viz_entry *curr;
 
+#if defined(LIBTRACE_PLATFORM_LINUX)
     // setup
     gnuplot = popen(GNUPLOT_CMD, "w");
     if(!gnuplot)
@@ -230,6 +231,11 @@ __done:
     // todo close gnuplot
     tfm_arg->status = ret;
     return NULL;
+#else
+    err("Visualization not supported on non-Linux platforms\n");
+    tfm_arg->status = -EINVAL;
+    return NULL;
+#endif
 }
 
 int __tfm_visualize_init(struct trace_set *ts)

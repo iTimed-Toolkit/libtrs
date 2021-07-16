@@ -1,13 +1,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <argp.h>
 
+#include "platform.h"
 #include "trace.h"
 #include "__trace_internal.h"
 
 #include "transform.h"
 #include "list.h"
+
+#if defined(LIBTRACE_PLATFORM_WINDOWS)
+
+char* strsep(char** stringp, const char* delim)
+{
+    char* start = *stringp, * p;
+
+    p = (start != NULL) ? strpbrk(start, delim) : NULL;
+    if (!p)
+        *stringp = NULL;
+    else
+    {
+        *p = '\0';
+        *stringp = p + 1;
+    }
+
+    return start;
+}
+
+#endif
 
 #define MAX_LINELENGTH      512
 #define MAX_TFM_DEPTH       64
@@ -56,8 +76,8 @@ static const char *aes_leakage_t_strings[] = {
 
 
 #define NUM_TABLE_ENTRIES(table)        (sizeof(table) / (sizeof((table)[0])))
-#define IF_NEXT(c, dothis)              if(*(c)) { dothis; }
-#define IF_NOT_NEXT(c, dothis)          if(!(*(c))) { dothis; }
+#define IF_NEXT(c, dothis)              if(*(c) != 0) { dothis; }
+#define IF_NOT_NEXT(c, dothis)          if(*(c) == 0) { dothis; }
 #define CHECK_NEXT(c, fail)             IF_NOT_NEXT(c, err("CHECK_NEXT FAILED\n"); fail)
 
 #define PARSE_ENUM_FUNC(type, table)                \
@@ -674,7 +694,7 @@ int parse_config(char *fname, struct parse_args *parsed)
     int last_depth = 0, depth, nspace, pos;
     struct trace_set *nodes[MAX_TFM_DEPTH];
 
-    FILE *config = fopen(fname, "r");
+    LT_FILE_TYPE *config = p_fopen(fname, "r");
     if(!config)
     {
         err("Failed to open config file\n");
@@ -683,7 +703,7 @@ int parse_config(char *fname, struct parse_args *parsed)
 
     while(1)
     {
-        if(fgets(line, MAX_LINELENGTH, config))
+        if(p_fgets(line, MAX_LINELENGTH, config))
         {
             count++;
             depth = nspace = pos = 0;
@@ -739,7 +759,7 @@ int parse_config(char *fname, struct parse_args *parsed)
 
     ret = 0;
 out:
-    fclose(config);
+    p_fclose(config);
     return ret;
 }
 

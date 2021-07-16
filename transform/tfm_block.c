@@ -314,7 +314,10 @@ int __tfm_block_get(struct trace *t)
         if(TRACE_IDX(t) < state->done_index)
             break;
 
-        index = __atomic_fetch_add(&state->next_index, 1, __ATOMIC_RELAXED);
+        sem_acquire(&state->lock);
+        index = state->next_index++;
+        sem_release(&state->lock);
+
         if(index >= ts_num_traces(t->owner->prev))
         {
             // todo halting condition

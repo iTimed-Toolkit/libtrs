@@ -272,7 +272,6 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
         return -EINVAL;
     }
 
-    __sync_fetch_and_add(&cache->accesses, 1);
     debug("Trace cache %li, cache access %li for index %li\n",
           cache->cache_id, cache->accesses, index);
 
@@ -280,6 +279,8 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
     curr_set = &cache->sets[set];
 
     sem_acquire(&cache->cache_lock);
+    cache->accesses++;
+
     if(!curr_set->initialized)
     {
         ret = __initialize_set(cache, set);
@@ -290,7 +291,7 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
         }
 
         curr_set->initialized = true;
-        __sync_fetch_and_add(&cache->misses, 1);
+        cache->misses++;
         *trace = NULL;
 
         debug("Set %li was not initialized, cache miss (%li misses total)\n",
@@ -326,7 +327,8 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
                 __update_lru(cache, set, i, true);
                 curr_set->refcount[i]++;
 
-                __sync_fetch_and_add(&cache->hits, 1);
+                // this isnt guarded 100% correctly but I think thats fine
+                cache->hits++;
                 *trace = curr_set->traces[i];
 
                 debug("Cache hit for %li in set %li for way %i, refed %i times (%li hits total)\n",
@@ -340,7 +342,7 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
     sem_release(&curr_set->set_lock)
     else
     {
-        __sync_fetch_and_add(&cache->misses, 1);
+        cache->misses++;
         debug("Cache miss (%li misses total)\n",
                  cache->misses);
 

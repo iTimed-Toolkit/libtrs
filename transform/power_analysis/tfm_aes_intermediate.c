@@ -11,11 +11,10 @@
 
 static inline uint8_t hamming_weight(uint8_t n)
 {
-    return __builtin_popcount(n);
-//    n = ((n & 0xAAu) >> 1u) + (n & 0x55u);
-//    n = ((n & 0xCCu) >> 2u) + (n & 0x33u);
-//    n = ((n & 0xF0u) >> 4u) + (n & 0x0Fu);
-//    return n;
+    n = ((n & 0xAAu) >> 1u) + (n & 0x55u);
+    n = ((n & 0xCCu) >> 2u) + (n & 0x33u);
+    n = ((n & 0xF0u) >> 4u) + (n & 0x0Fu);
+    return n;
 }
 
 static inline uint8_t hamming_distance(uint8_t n0, uint8_t n1)

@@ -88,7 +88,7 @@ int __encrypt(void *data, int len, void **encrypted, int *encrypted_len)
     EVP_EncryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, socket_key, socket_iv);
 
     EVP_EncryptUpdate(ctx, res, &c_len, data, len);
-    EVP_EncryptFinal_ex(ctx, res + c_len, &f_len);
+    EVP_EncryptFinal_ex(ctx, ((uint8_t *) res) + c_len, &f_len);
     EVP_CIPHER_CTX_free(ctx);
 
     *encrypted = res;
@@ -177,7 +177,7 @@ int __decrypt(void *data, int len, void **decrypted, int *decrypted_len)
     EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, socket_key, socket_iv);
 
     EVP_DecryptUpdate(ctx, res, &p_len, data, len);
-    EVP_DecryptFinal_ex(ctx, res + p_len, &f_len);
+    EVP_DecryptFinal_ex(ctx, ((uint8_t *) res) + p_len, &f_len);
     EVP_CIPHER_CTX_free(ctx);
 
     *decrypted = res;
