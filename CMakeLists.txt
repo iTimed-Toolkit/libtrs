@@ -1,9 +1,17 @@
 cmake_minimum_required(VERSION 3.14)
 project(libtrs C CUDA)
+set(CMAKE_C_STANDARD 11)
 
 cmake_policy(SET CMP0104 OLD)
-set(CMAKE_C_STANDARD 11)
+
+if(LINUX)
 set(CMAKE_C_FLAGS "-Wall -mavx2 -O3")
+
+elseif(WIN32)
+set(CMAKE_C_FLAGS "/O2 /arch:AVX2")
+
+endif()
+
 
 include_directories(include)
 

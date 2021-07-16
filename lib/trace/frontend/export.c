@@ -3,11 +3,9 @@
 
 #include "platform.h"
 #include "net_types.h"
-
-#include <unistd.h>
-#include <stdlib.h>
-
 #include "list.h"
+
+#include <stdlib.h>
 
 struct export_thread_arg
 {

@@ -26,7 +26,7 @@ int ts_open(struct trace_set **ts, const char *path)
         return -ENOMEM;
     }
 
-    ts_result->set_id = __atomic_fetch_add(&gbl_set_index, 1, __ATOMIC_RELAXED);
+    ts_result->set_id = gbl_set_index++;
     debug("Creating new trace set with ID %li\n", ts_result->set_id);
 
     ret = create_backend(ts_result, path);
@@ -113,7 +113,7 @@ int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *
         return -ENOMEM;
     }
 
-    ts_result->set_id = __atomic_fetch_add(&gbl_set_index, 1, __ATOMIC_RELAXED);
+    ts_result->set_id = gbl_set_index++;
     ts_result->backend = NULL;
     ts_result->cache = NULL;
 

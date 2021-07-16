@@ -87,7 +87,7 @@ int __tfm_split_tvla_get(struct trace *t)
     if(ret < 0)
     {
         err("Failed to get trace type from title\n");
-        goto __out;
+        goto __done;
     }
 
     if(type == tfm->which)
@@ -100,7 +100,7 @@ int __tfm_split_tvla_get(struct trace *t)
         ret = 0;
     }
 
-__out:
+__done:
     trace_free(prev_trace);
     return ret;
 }

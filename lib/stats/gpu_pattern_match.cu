@@ -137,7 +137,7 @@ int gpu_pattern_match(float *data, int data_len, float *pattern, int pattern_len
         err("Failed to create cuda stream: %s\n", cudaGetErrorName(cuda_ret));
         free(res);
         ret = -EINVAL;
-        goto __out;
+        goto __done;
     }
 
     cuda_ret = cudaMallocAsync(&data_gpu, data_len * sizeof(float), stream);
@@ -182,6 +182,6 @@ __free_gpu:
 
     cudaStreamSynchronize(stream);
     cudaStreamDestroy(stream);
-__out:
+__done:
     return ret;
 }

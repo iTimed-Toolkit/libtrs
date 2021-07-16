@@ -9,10 +9,6 @@
 #endif
 
 #if defined(LIBTRACE_PLATFORM_WINDOWS)
-    #include <windows.h>
-    #include <WinSock2.h>
-    #pragma comment(lib, "ws2_32.lib")
-
     static bool wsa_initialized = false;
 #endif
 
@@ -32,6 +28,8 @@ int p_socket_server(int port, LT_SOCK_TYPE *res)
             err("Failed to set up Windows socket library\n");
             return -1;
         }
+
+        wsa_initialized = true;
     }
 #endif
 
@@ -86,6 +84,21 @@ int p_socket_connect(char *ip, int port, LT_SOCK_TYPE *sock)
     struct hostent *server;
     struct sockaddr_in serv_addr;
 
+#if defined(LIBTRACE_PLATFORM_WINDOWS)
+    WSADATA wsa;
+    if (!wsa_initialized)
+    {
+        ret = WSAStartup(MAKEWORD(2, 2), &wsa);
+        if (ret != 0)
+        {
+            err("Failed to set up Windows socket library\n");
+            return -1;
+        }
+
+        wsa_initialized = true;
+    }
+#endif
+
     server = gethostbyname(ip);
     if(!server)
     {
@@ -131,7 +144,6 @@ int p_socket_close(LT_SOCK_TYPE s)
 #define psock_send(s, b, l)     write(s, b, l)
 #define psock_valid(i)          ((i) > 0)
 
-
 #elif defined(LIBTRACE_PLATFORM_WINDOWS)
 
 #define psock_recv(s, b, l)     recv(s, b, l, 0)
@@ -142,20 +154,20 @@ int p_socket_close(LT_SOCK_TYPE s)
 
 int p_socket_read(LT_SOCK_TYPE s, void *buf, int len)
 {
-    int recv = 0, last;
+    int received = 0, last;
     while(recv < len)
     {
-        last = psock_recv(s, &((uint8_t *) buf)[recv], len - recv);
+        last = psock_recv(s, &((uint8_t*) buf)[received], len - received);
         if(!psock_valid(last))
         {
             err("Socket error while receiving\n");
             return recv;
         }
 
-        recv += last;
+        received += last;
     }
 
-    return recv;
+    return received;
 }
 
 int p_socket_write(LT_SOCK_TYPE s, void *buf, int len)

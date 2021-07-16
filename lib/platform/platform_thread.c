@@ -6,7 +6,7 @@ int p_thread_create(LT_THREAD_TYPE *handle, void *func, void *arg)
     return pthread_create(handle, NULL, func, arg);
 #elif defined(LIBTRACE_PLATFORM_WINDOWS)
     LT_THREAD_TYPE *res;
-    res = CreateThread(NULL, 0, func, arg. 0, NULL);
+    res = CreateThread(NULL, 0, func, arg, 0, NULL);
     if(res)
     {
         *handle = res;

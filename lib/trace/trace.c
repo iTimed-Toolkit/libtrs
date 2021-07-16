@@ -63,7 +63,7 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index)
             return ret;
         }
 
-        if(t_result) goto __out;
+        if(t_result) goto __done;
         else cache_missed = true;
 
         debug("Trace %li not found in cache\n", index);
@@ -113,7 +113,7 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index)
         }
     }
 
-__out:
+__done:
     *t = t_result;
     return 0;
 

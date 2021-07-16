@@ -179,7 +179,7 @@ int __tfm_static_align_get(struct trace *t)
     if(ret < 0)
     {
         err("Failed to align trace\n");
-        goto __out;
+        goto __done;
     }
 
     if(TRACE_IDX(t) % 1000 == 0)
@@ -192,7 +192,7 @@ int __tfm_static_align_get(struct trace *t)
         {
             err("Failed to allocate sample buffer for aligned trace\n");
             ret = -ENOMEM;
-            goto __out;
+            goto __done;
         }
 
         // these should never fail, since they succeeded in __do_align above
@@ -226,7 +226,7 @@ int __tfm_static_align_get(struct trace *t)
         }
         else memcpy(result, prev_trace->samples, ts_num_samples(t->owner) * sizeof(float));
     }
-    else goto __out;
+    else goto __done;
 
     ret = copy_title(t, prev_trace);
     if(ret >= 0)
@@ -243,7 +243,7 @@ __free_result:
         result = NULL;
     }
 
-__out:
+__done:
     t->samples = result;
     return ret;
 }

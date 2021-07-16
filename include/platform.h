@@ -9,23 +9,29 @@
 
 #define LIBTRACE_PLATFORM_LINUX
 
+#include <stdio.h>
+
 typedef sem_t                       LT_SEM_TYPE;
 typedef pthread_t                   LT_THREAD_TYPE;
 typedef int                         LT_SOCK_TYPE;
-#define LT_THREAD_FUNC(name, arg)   void * name (void * arg)
+typedef FILE                        LT_FILE_TYPE;
 
+#define LT_THREAD_FUNC(name, arg)   void * name (void * arg)
 #define SOCK_VALID(s)               ((s) >= 0)
 
 #elif defined(_WIN32)
+
+#include <stdio.h>
+#include <Windows.h>
 
 #define LIBTRACE_PLATFORM_WINDOWS
 
 typedef HANDLE                      LT_SEM_TYPE;
 typedef HANDLE                      LT_THREAD_TYPE;
 typedef SOCKET                      LT_SOCK_TYPE;
-ty
-#define LT_THREAD_FUNC(name, arg)   DWORD WINAPI name (LPVOID arg)
+typedef FILE                        LT_FILE_TYPE;
 
+#define LT_THREAD_FUNC(name, arg)   DWORD WINAPI name (LPVOID arg)
 #define SOCK_VALID(s)               ((s) != INVALID_SOCKET)
 
 #else
@@ -33,12 +39,7 @@ ty
 #endif
 
 // Common definitions for Linux and Windows
-#if defined(LIBTRACE_PLATFORM_LINUX) || \
-    defined(LIBTRACE_PLATFORM_WINDOWS)
-
-    #include <stdio.h>
-    typedef FILE                            LT_FILE_TYPE ;
-
+#if (defined(LIBTRACE_PLATFORM_LINUX) || defined(LIBTRACE_PLATFORM_WINDOWS))
     #define p_fopen(path, mode)             fopen(path, mode)
     #define p_fclose(file)                  fclose(file)
     #define p_fseek(file, offs, whence)     fseek(file, offs, whence)

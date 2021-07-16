@@ -139,9 +139,9 @@ int __commit_traces(struct __commit_queue *queue, struct list_head *write_head)
                   queue->written);
 
             queue->sentinel_seen = true;
-            __atomic_store(&queue->ts->num_traces,
-                           &queue->written, __ATOMIC_RELAXED);
-
+            sem_acquire(&queue->list_lock);
+            queue->ts->num_traces = queue->written;
+            sem_release(&queue->list_lock);
             sem_release(&queue->sentinel);
         }
         else
@@ -227,7 +227,9 @@ LT_THREAD_FUNC(__commit_thread, arg)
             }
 
             // update global written counter
-            __atomic_fetch_add(&tfm_data->num_traces_written, count, __ATOMIC_RELAXED);
+            sem_acquire(&queue->list_lock);
+            tfm_data->num_traces_written += count;
+            sem_release(&queue->list_lock);
         }
     }
 }
@@ -397,15 +399,15 @@ int __render_to_index(struct trace_set *ts, size_t index)
 
     while(1)
     {
-        written = __atomic_load_n(&tfm_data->num_traces_written, __ATOMIC_RELAXED);
-        if(index < written)
+        sem_acquire(&queue->list_lock);
+        if(index < tfm_data->num_traces_written)
         {
             debug("Index %li < written %li, exiting\n", index, written);
-            break;
+            sem_release(&queue->list_lock); break;
         }
 
-        prev_index = __atomic_fetch_add(&tfm_data->prev_next_trace,
-                                        1, __ATOMIC_RELAXED);
+        prev_index = tfm_data->prev_next_trace++;
+        sem_release(&queue->list_lock);
 
         debug("Checking prev_index %li (want %li)\n", prev_index, index);
         if(prev_index >= ts_num_traces(ts->prev))
@@ -478,11 +480,10 @@ int __tfm_save_get(struct trace *t)
 {
     int ret;
     struct tfm_save_state *tfm_data = t->owner->tfm_state;
-    size_t written = __atomic_load_n(&tfm_data->num_traces_written, __ATOMIC_RELAXED);
     struct __commit_queue *queue = tfm_data->commit_data;
 
-    debug("Getting trace %li, written = %li\n", TRACE_IDX(t), written);
-    if(TRACE_IDX(t) >= written)
+    debug("Getting trace %li\n", TRACE_IDX(t));
+    if(TRACE_IDX(t) >= tfm_data->num_traces_written)
     {
         ret = __render_to_index(t->owner, TRACE_IDX(t));
         if(ret < 0)
