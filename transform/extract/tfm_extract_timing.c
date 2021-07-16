@@ -302,7 +302,7 @@ int tfm_extract_timing_accumulate(struct trace *t, void *block, void *arg)
         }
     }
 
-    warn("Successfully extracted %i timing patterns for trace %li\n",
+    warn("Successfully extracted %i timing patterns for trace %zu\n",
          found, TRACE_IDX(t));
 __done:
     if(ret < 0 || !cfg->debugging)

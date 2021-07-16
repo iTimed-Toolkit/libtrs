@@ -417,11 +417,11 @@ int tfm_extract_pattern_accumulate(struct trace *t, void *block, void *arg)
         goto __free_debug;
     }
 
-    debug("Trace %li: found %i true matches\n", TRACE_IDX(t), blk->count_true);
+    debug("Trace %zu: found %i true matches\n", TRACE_IDX(t), blk->count_true);
 
     if(blk->count_true == 0)
     {
-        warn("No true matches in trace %li, discarding\n", TRACE_IDX(t));
+        warn("No true matches in trace %zu, discarding\n", TRACE_IDX(t));
         ret = 0;
         goto __free_debug;
     }
@@ -434,7 +434,7 @@ int tfm_extract_pattern_accumulate(struct trace *t, void *block, void *arg)
         goto __free_debug;
     }
 
-    debug("Trace %li: found %i predictable gaps, %i unpredictable gaps\n",
+    debug("Trace %zu: found %i predictable gaps, %i unpredictable gaps\n",
           TRACE_IDX(t), blk->count_predictable, blk->count_unpredictable);
 
     if(blk->count_unpredictable > 0)
@@ -460,7 +460,7 @@ int tfm_extract_pattern_accumulate(struct trace *t, void *block, void *arg)
         }
     }
 
-    warn("Trace %li: C = %i, P = %i, U = %i, T = %i, total %i\n",
+    warn("Trace %zu: C = %i, P = %i, U = %i, T = %i, total %i\n",
          TRACE_IDX(t), blk->count_true, blk->count_predictable, blk->count_unpredictable, blk->count_tail,
          blk->count_true + blk->count_predictable + blk->count_unpredictable + blk->count_tail);
 

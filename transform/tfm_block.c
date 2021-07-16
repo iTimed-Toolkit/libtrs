@@ -228,10 +228,10 @@ int __block_finalize(struct tfm_block_state *state,
     }
 
     sem_acquire(&state->lock);
-    debug("Finalize for trace %li\n", TRACE_IDX(res));
+    debug("Finalize for trace %zu\n", TRACE_IDX(res));
     list_for_each_entry(curr, &state->blocks, struct __tfm_block_block, list)
     {
-        debug("Found a block with index %li\n", curr->res_index);
+        debug("Found a block with index %zu\n", curr->res_index);
         if(curr->res_index == TRACE_IDX(res) && curr->done)
         {
             debug("This is the correct block!\n");
@@ -259,7 +259,7 @@ int __block_finalize(struct tfm_block_state *state,
     }
     else
     {
-        err("Failed to find correct result block in list for index %li and in cache\n",
+        err("Failed to find correct result block in list for index %zu and in cache\n",
             TRACE_IDX(res));
         ret = -EINVAL;
         goto __unlock;
@@ -283,7 +283,7 @@ int __block_finalize(struct tfm_block_state *state,
             ret = -ENOMEM;
             goto __unlock;
         }
-        snprintf(res->title, TITLE_SIZE, "Block %li.%i\n",
+        snprintf(res->title, TITLE_SIZE, "Block %zu.%i\n",
                  curr->src_index, curr->num_out - 1);
     }
 
@@ -308,7 +308,7 @@ int __tfm_block_get(struct trace *t)
     struct block_args *tfm = TFM_DATA(t->owner->tfm);
     struct tfm_block_state *state = t->owner->tfm_state;
 
-    debug("Getting index %li\n", TRACE_IDX(t));
+    debug("Getting index %zu\n", TRACE_IDX(t));
     while(1)
     {
         if(TRACE_IDX(t) < state->done_index)
@@ -343,7 +343,7 @@ int __tfm_block_get(struct trace *t)
         trace_free(curr_trace);
     }
 
-    debug("About to finalize for trace %li\n", TRACE_IDX(t));
+    debug("About to finalize for trace %zu\n", TRACE_IDX(t));
     return __block_finalize(state, tfm, t);
 }
 

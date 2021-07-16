@@ -8,9 +8,7 @@
 
 // Reuse these, as they don't change
 extern int backend_trs_open(struct trace_set *ts);
-
 extern int backend_trs_create(struct trace_set *ts);
-
 extern int backend_trs_close(struct trace_set *ts);
 
 int __seek_to_trace(struct trace *t, uint32_t *size)
@@ -19,18 +17,18 @@ int __seek_to_trace(struct trace *t, uint32_t *size)
     uint32_t last_size, this_size;
     size_t read;
 
-    debug("Reading trace %li, with %li traces written\n",
+    debug("Reading trace %zu, with %zu traces written\n",
           TRACE_IDX(t), TRS_ARG(t->owner)->num_written);
 
     while(1)
     {
-        debug("Seek for trace %li at position %li, pos %li\n", TRACE_IDX(t),
-              TRS_ARG(t->owner)->position, ftell(TRS_ARG(t->owner)->file));
+        debug("Seek for trace %zu at position %zu, pos %li\n", TRACE_IDX(t),
+              TRS_ARG(t->owner)->position, p_ftell(TRS_ARG(t->owner)->file));
 
         read = p_fread(&last_size, sizeof(uint32_t), 1, TRS_ARG(t->owner)->file);
         if(read != 1)
         {
-            err("Trace %li: Failed to read last size from file at position %li\n",
+            err("Trace %zu: Failed to read last size from file at position %zu\n",
                 TRACE_IDX(t), TRS_ARG(t->owner)->position);
             return -EIO;
         }
@@ -46,7 +44,7 @@ int __seek_to_trace(struct trace *t, uint32_t *size)
                 return -EIO;
             }
 
-            debug("Decreasing position pointer from %li\n", TRS_ARG(t->owner)->position);
+            debug("Decreasing position pointer from %zu\n", TRS_ARG(t->owner)->position);
             TRS_ARG(t->owner)->position--;
             continue;
         }
@@ -54,7 +52,7 @@ int __seek_to_trace(struct trace *t, uint32_t *size)
         read = p_fread(&this_size, sizeof(uint32_t), 1, TRS_ARG(t->owner)->file);
         if(read != 1)
         {
-            err("Trace %li: Failed to read last size from file at position %li\n",
+            err("Trace %zu: Failed to read last size from file at position %zu\n",
                 TRACE_IDX(t), TRS_ARG(t->owner)->position);
             return -EIO;
         }
@@ -70,7 +68,7 @@ int __seek_to_trace(struct trace *t, uint32_t *size)
                 return -EIO;
             }
 
-            debug("Advancing position pointer from %li\n", TRS_ARG(t->owner)->position);
+            debug("Advancing position pointer from %zu\n", TRS_ARG(t->owner)->position);
             TRS_ARG(t->owner)->position++;
         }
         else
@@ -80,7 +78,7 @@ int __seek_to_trace(struct trace *t, uint32_t *size)
             return 0;
         }
 
-        debug("Seek for trace %li changed to @ %li\n", TRACE_IDX(t), p_ftell(TRS_ARG(t->owner)->file));
+        debug("Seek for trace %zu changed to @ %li\n", TRACE_IDX(t), p_ftell(TRS_ARG(t->owner)->file));
     }
 }
 
@@ -160,7 +158,7 @@ int backend_ztrs_read(struct trace *t)
     read = p_fread(result_title, 1, t->owner->title_size, TRS_ARG(t->owner)->file);
     if(read != t->owner->title_size)
     {
-        err("Failed to read title from file (read %li expecting %li)\n",
+        err("Failed to read title from file (read %zu expecting %zu)\n",
             read, t->owner->title_size);
         ret = -EIO;
         goto __fail_unlock;
@@ -169,7 +167,7 @@ int backend_ztrs_read(struct trace *t)
     read = p_fread(result_data, 1, t->owner->data_size, TRS_ARG(t->owner)->file);
     if(read != t->owner->data_size)
     {
-        err("Failed to read data from file (read %li expecting %li)\n",
+        err("Failed to read data from file (read %zu expecting %zu)\n",
             read, t->owner->data_size);
         ret = -EIO;
         goto __fail_unlock;
@@ -178,7 +176,7 @@ int backend_ztrs_read(struct trace *t)
     read = p_fread(compressed, 1, compressed_size, TRS_ARG(t->owner)->file);
     if(read != compressed_size)
     {
-        err("Failed to read compressed samples from file (read %li expecting %i\n",
+        err("Failed to read compressed samples from file (read %zu expecting %i)\n",
             read, compressed_size);
         ret = -EIO;
         goto __fail_unlock;
@@ -187,7 +185,7 @@ int backend_ztrs_read(struct trace *t)
     // leaving the file pointer in place for the next position
     TRS_ARG(t->owner)->position++;
 
-    debug("Read for trace %li leaving file @ %li\n", TRACE_IDX(t), ftell(TRS_ARG(t->owner)->file));
+    debug("Read for trace %zu leaving file @ %li\n", TRACE_IDX(t), p_ftell(TRS_ARG(t->owner)->file));
     sem_release(&TRS_ARG(t->owner)->file_lock);
 
     // decompress the samples
@@ -378,7 +376,7 @@ int backend_ztrs_write(struct trace *t)
         goto __free_temp;
     }
 
-    debug("Compressed trace %li by %f\n", TRACE_IDX(t),
+    debug("Compressed trace %zu by %f\n", TRACE_IDX(t),
           (float) def_stream.total_out / (float) def_stream.total_in);
 
     compressed_size = def_stream.total_out;
@@ -391,7 +389,7 @@ int backend_ztrs_write(struct trace *t)
         goto __unlock;
     }
 
-    debug("Write for trace %li starting @ %li\n", TRACE_IDX(t), p_ftell(TRS_ARG(t->owner)->file));
+    debug("Write for trace %zu starting @ %li\n", TRACE_IDX(t), p_ftell(TRS_ARG(t->owner)->file));
 
     if(TRS_ARG(t->owner)->num_written == 0)
     {
@@ -416,7 +414,7 @@ int backend_ztrs_write(struct trace *t)
 
     if(t->title)
     {
-        debug("Trace %li writing %li bytes of title\n", TRACE_IDX(t), t->owner->title_size);
+        debug("Trace %zu writing %zu bytes of title\n", TRACE_IDX(t), t->owner->title_size);
         written = p_fwrite(t->title, 1, t->owner->title_size, TRS_ARG(t->owner)->file);
         if(written != t->owner->title_size)
         {
@@ -428,7 +426,7 @@ int backend_ztrs_write(struct trace *t)
 
     if(t->data)
     {
-        debug("Trace %li writing %li bytes of data\n", TRACE_IDX(t), t->owner->data_size);
+        debug("Trace %zu writing %zu bytes of data\n", TRACE_IDX(t), t->owner->data_size);
         written = p_fwrite(t->data, 1, t->owner->data_size, TRS_ARG(t->owner)->file);
         if(written != t->owner->data_size)
         {
@@ -438,7 +436,7 @@ int backend_ztrs_write(struct trace *t)
         }
     }
 
-    debug("Trace %li writing %i bytes of samples\n", TRACE_IDX(t), compressed_size);
+    debug("Trace %zu writing %i bytes of samples\n", TRACE_IDX(t), compressed_size);
     written = p_fwrite(compressed, 1, compressed_size, TRS_ARG(t->owner)->file);
     if(written != compressed_size)
     {
@@ -456,7 +454,7 @@ int backend_ztrs_write(struct trace *t)
         goto __unlock;
     }
 
-    debug("Write for trace %li ending @ %li\n", TRACE_IDX(t), p_ftell(TRS_ARG(t->owner)->file));
+    debug("Write for trace %zu ending @ %li\n", TRACE_IDX(t), p_ftell(TRS_ARG(t->owner)->file));
 
     // make number of traces agree
     TRS_ARG(t->owner)->num_written++;
@@ -471,7 +469,7 @@ int backend_ztrs_write(struct trace *t)
     p_fflush(TRS_ARG(t->owner)->file);
     ret = 0;
 __unlock:
-    debug("Write for trace %li leaving file @ %li\n", TRACE_IDX(t), p_ftell(TRS_ARG(t->owner)->file));
+    debug("Write for trace %zu leaving file @ %li\n", TRACE_IDX(t), p_ftell(TRS_ARG(t->owner)->file));
     sem_release(&TRS_ARG(t->owner)->file_lock);
 
 __free_temp:

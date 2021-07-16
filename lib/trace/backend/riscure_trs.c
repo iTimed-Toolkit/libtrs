@@ -392,7 +392,7 @@ int __parse_headers(struct trace_set *ts)
     ts->xscale = 0.0f;
     ts->yscale = 0.0f;
 
-    debug("Parsing headers for trace set %li\n", ts->set_id);
+    debug("Parsing headers for trace set %zu\n", ts->set_id);
     for(i = 0; i < TRS_ARG(ts)->num_headers; i++)
     {
         stat = __read_tag_and_len(TRS_ARG(ts)->file, &tag, &actual_len);
@@ -444,22 +444,22 @@ int __parse_headers(struct trace_set *ts)
         if(tag == NUMBER_TRACES)
         {
             ts->num_traces = TRS_ARG(ts)->headers[i].val.integer;
-            debug("Found number of traces = %li\n", ts->num_traces);
+            debug("Found number of traces = %zu\n", ts->num_traces);
         }
         else if(tag == NUMBER_SAMPLES)
         {
             ts->num_samples = TRS_ARG(ts)->headers[i].val.integer;
-            debug("Found number of samples = %li\n", ts->num_samples);
+            debug("Found number of samples = %zu\n", ts->num_samples);
         }
         else if(tag == TITLE_SPACE)
         {
             ts->title_size = TRS_ARG(ts)->headers[i].val.integer;
-            debug("Found title size = %li\n", ts->title_size);
+            debug("Found title size = %zu\n", ts->title_size);
         }
         else if(tag == LENGTH_DATA)
         {
             ts->data_size = TRS_ARG(ts)->headers[i].val.integer;
-            debug("Found data size = %li\n", ts->data_size);
+            debug("Found data size = %zu\n", ts->data_size);
         }
         else if(tag == SAMPLE_CODING)
         {

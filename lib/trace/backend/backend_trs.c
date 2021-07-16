@@ -190,7 +190,7 @@ int backend_trs_read(struct trace *t)
     read = p_fread(result_title, 1, t->owner->title_size, TRS_ARG(t->owner)->file);
     if(read != t->owner->title_size)
     {
-        err("Failed to read title from file (read %li expecting %li)\n",
+        err("Failed to read title from file (read %zu expecting %zu)\n",
             read, t->owner->title_size);
         ret = -EIO;
         goto __fail_unlock;
@@ -199,7 +199,7 @@ int backend_trs_read(struct trace *t)
     read = p_fread(result_data, 1, t->owner->data_size, TRS_ARG(t->owner)->file);
     if(read != t->owner->data_size)
     {
-        err("Failed to read data from file (read %li expecting %li)\n",
+        err("Failed to read data from file (read %zu expecting %zu)\n",
             read, t->owner->data_size);
         ret = -EIO;
         goto __fail_unlock;
@@ -208,7 +208,7 @@ int backend_trs_read(struct trace *t)
     read = p_fread(temp, t->owner->datatype & 0xF, t->owner->num_samples, TRS_ARG(t->owner)->file);
     if(read != t->owner->num_samples)
     {
-        err("Failed to read samples from file (read %li expecting %li)\n",
+        err("Failed to read samples from file (read %zu expecting %zu)\n",
             read, t->owner->num_samples);
         ret = -EIO;
         goto __fail_unlock;
@@ -358,7 +358,7 @@ int backend_trs_write(struct trace *t)
 
     if(t->title)
     {
-        debug("Trace %li writing %li bytes of title\n", TRACE_IDX(t), t->owner->title_size);
+        debug("Trace %zu writing %zu bytes of title\n", TRACE_IDX(t), t->owner->title_size);
         written = p_fwrite(t->title, 1, t->owner->title_size, TRS_ARG(t->owner)->file);
         if(written != t->owner->title_size)
         {
@@ -370,7 +370,7 @@ int backend_trs_write(struct trace *t)
 
     if(t->data)
     {
-        debug("Trace %li writing %li bytes of data\n", TRACE_IDX(t), t->owner->data_size);
+        debug("Trace %zu writing %zu bytes of data\n", TRACE_IDX(t), t->owner->data_size);
         written = p_fwrite(t->data, 1, t->owner->data_size, TRS_ARG(t->owner)->file);
         if(written != t->owner->data_size)
         {
@@ -380,7 +380,7 @@ int backend_trs_write(struct trace *t)
         }
     }
 
-    debug("Trace %li writing %li bytes of samples\n", TRACE_IDX(t), temp_len);
+    debug("Trace %zu writing %zu bytes of samples\n", TRACE_IDX(t), temp_len);
     written = p_fwrite(temp, 1, temp_len, TRS_ARG(t->owner)->file);
     if(written != temp_len)
     {

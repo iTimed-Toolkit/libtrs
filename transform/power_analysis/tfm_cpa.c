@@ -106,7 +106,7 @@ int __tfm_cpa_get(struct trace *t)
     int i, j, ret;
     int count = 0;
 
-    struct trace *curr;
+    struct trace *curr = NULL;
     float *pm, *pearson;
     char title[CPA_TITLE_SIZE];
 
@@ -130,7 +130,7 @@ int __tfm_cpa_get(struct trace *t)
     for(i = 0; i < ts_num_traces(t->owner->prev); i++)
     {
         if(i % CPA_REPORT_INTERVAL == 0)
-            warn("CPA %li working on trace %i\n", TRACE_IDX(t), i);
+            warn("CPA %zu working on trace %i\n", TRACE_IDX(t), i);
 
         ret = trace_get(t->owner->prev, &curr, i);
         if(ret < 0)
@@ -173,13 +173,13 @@ int __tfm_cpa_get(struct trace *t)
                         goto __free_trace;
                     }
 
-                    debug("CPA %li pushing intermediate %li\n", TRACE_IDX(t),
+                    debug("CPA %zu pushing intermediate %zu\n", TRACE_IDX(t),
                           TRACE_IDX(t) + ts_num_traces(t->owner) *
                                          (count / CPA_REPORT_INTERVAL - 1));
 
                     memset(title, 0, CPA_TITLE_SIZE * sizeof(char));
                     snprintf(title, CPA_TITLE_SIZE,
-                             "CPA %li (%i traces)", TRACE_IDX(t), count);
+                             "CPA %zu (%i traces)", TRACE_IDX(t), count);
 
                     ret = t->owner->tfm_next(t->owner->tfm_next_arg, PORT_CPA_PROGRESS, 4,
                                              TRACE_IDX(t) + ts_num_traces(t->owner) *

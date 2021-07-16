@@ -101,9 +101,9 @@ int __stall(struct tfm_synchronize *tfm, size_t index)
     curr->count++;
 
     sem_release(&tfm->list_lock);
-    debug("Stalling index %li\n", index);
+    debug("Stalling index %zu\n", index);
     sem_acquire(&curr->signal);
-    debug("Index %li good to go\n", index);
+    debug("Index %zu good to go\n", index);
     sem_acquire(&tfm->list_lock);
 
     curr->count--;
@@ -214,7 +214,7 @@ int __sync_finalize(struct tfm_synchronize *tfm, size_t index)
     }
     else
     {
-        err("Couldn't find index %li in the request list\n", index);
+        err("Couldn't find index %zu in the request list\n", index);
         return -EINVAL;
     }
 

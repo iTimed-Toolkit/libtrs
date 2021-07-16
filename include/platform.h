@@ -31,8 +31,24 @@ typedef HANDLE                      LT_THREAD_TYPE;
 typedef SOCKET                      LT_SOCK_TYPE;
 typedef FILE                        LT_FILE_TYPE;
 
-#define LT_THREAD_FUNC(name, arg)   DWORD WINAPI name (LPVOID arg)
+#define LT_THREAD_FUNC(name, arg)   void* WINAPI name (void* arg)
 #define SOCK_VALID(s)               ((s) != INVALID_SOCKET)
+
+static char* strsep(char** stringp, const char* delim)
+{
+    char* start = *stringp, * p;
+
+    p = (start != NULL) ? strpbrk(start, delim) : NULL;
+    if (!p)
+        *stringp = NULL;
+    else
+    {
+        *p = '\0';
+        *stringp = p + 1;
+    }
+
+    return start;
+}
 
 #else
 #error "Unimplemented platform"

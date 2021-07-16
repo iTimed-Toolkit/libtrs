@@ -9,26 +9,6 @@
 #include "transform.h"
 #include "list.h"
 
-#if defined(LIBTRACE_PLATFORM_WINDOWS)
-
-char* strsep(char** stringp, const char* delim)
-{
-    char* start = *stringp, * p;
-
-    p = (start != NULL) ? strpbrk(start, delim) : NULL;
-    if (!p)
-        *stringp = NULL;
-    else
-    {
-        *p = '\0';
-        *stringp = p + 1;
-    }
-
-    return start;
-}
-
-#endif
-
 #define MAX_LINELENGTH      512
 #define MAX_TFM_DEPTH       64
 #define SEPARATORS          " \n"
@@ -692,7 +672,7 @@ int parse_config(char *fname, struct parse_args *parsed)
     char line[MAX_LINELENGTH];
 
     int last_depth = 0, depth, nspace, pos;
-    struct trace_set *nodes[MAX_TFM_DEPTH];
+    struct trace_set* nodes[MAX_TFM_DEPTH] = { 0 };
 
     LT_FILE_TYPE *config = p_fopen(fname, "r");
     if(!config)

@@ -58,7 +58,7 @@ int index_order(void *node1, void *node2)
 void print_commit(void *data)
 {
     struct __commit_queue_entry *entry = data;
-    fprintf(stderr, " %li (%p)\n", entry->prev_index, entry->trace);
+    fprintf(stderr, " %zu (%p)\n", entry->prev_index, entry->trace);
 }
 
 int __list_create_entry(struct __commit_queue *queue,
@@ -91,7 +91,7 @@ int __list_create_entry(struct __commit_queue *queue,
         else count++;
     }
     list_add_tail(&entry->list, &curr->list);
-    debug("Appending prev_index %li at spot %i\n", prev_index, count);
+    debug("Appending prev_index %zu at spot %i\n", prev_index, count);
 
     sem_release(&queue->list_lock);
     *res = entry;
@@ -135,7 +135,7 @@ int __commit_traces(struct __commit_queue *queue, struct list_head *write_head)
 
         if(prev_index == SENTINEL)
         {
-            debug("Encountered sentinel, setting num_traces %li\n",
+            debug("Encountered sentinel, setting num_traces %zu\n",
                   queue->written);
 
             queue->sentinel_seen = true;
@@ -402,18 +402,18 @@ int __render_to_index(struct trace_set *ts, size_t index)
         sem_acquire(&queue->list_lock);
         if(index < tfm_data->num_traces_written)
         {
-            debug("Index %li < written %li, exiting\n", index, tfm_data->num_traces_written);
+            debug("Index %zu < written %zu, exiting\n", index, tfm_data->num_traces_written);
             sem_release(&queue->list_lock); break;
         }
 
         prev_index = tfm_data->prev_next_trace++;
         sem_release(&queue->list_lock);
 
-        debug("Checking prev_index %li (want %li)\n", prev_index, index);
+        debug("Checking prev_index %zu (want %zu)\n", prev_index, index);
         if(prev_index >= ts_num_traces(ts->prev))
         {
             // send a sentinel down the pipeline
-            debug("Index %li out of bounds for previous trace set\n", prev_index);
+            debug("Index %zu out of bounds for previous trace set\n", prev_index);
 
             ret = __list_create_entry(queue, &entry, SENTINEL);
             if(ret < 0)
@@ -444,13 +444,13 @@ int __render_to_index(struct trace_set *ts, size_t index)
            (ts->prev->title_size != 0 && !t_prev->title) ||
            (ts->prev->data_size != 0 && !t_prev->data))
         {
-            debug("prev_index %li not a valid index\n", prev_index);
+            debug("prev_index %zu not a valid index\n", prev_index);
             trace_free(t_prev);
             __list_remove_entry(queue, entry);
             continue;
         }
 
-        debug("prev_index %li is a valid index, appending\n", prev_index);
+        debug("prev_index %zu is a valid index, appending\n", prev_index);
         ret = trace_copy(&t_result, t_prev);
         t_result->owner = ts;
 
@@ -482,32 +482,32 @@ int __tfm_save_get(struct trace *t)
     struct tfm_save_state *tfm_data = t->owner->tfm_state;
     struct __commit_queue *queue = tfm_data->commit_data;
 
-    debug("Getting trace %li\n", TRACE_IDX(t));
+    debug("Getting trace %zu\n", TRACE_IDX(t));
     if(TRACE_IDX(t) >= tfm_data->num_traces_written)
     {
         ret = __render_to_index(t->owner, TRACE_IDX(t));
         if(ret < 0)
         {
-            err("Failed to render trace set to index %li\n", TRACE_IDX(t));
+            err("Failed to render trace set to index %zu\n", TRACE_IDX(t));
             return ret;
         }
         else if(ret == 1)
         sem_acquire(&queue->sentinel);
     }
 
-    debug("Reading trace %li from file\n", TRACE_IDX(t));
+    debug("Reading trace %zu from file\n", TRACE_IDX(t));
     if(TRACE_IDX(t) < t->owner->num_traces)
     {
         ret = t->owner->backend->read(t);
         if(ret < 0)
         {
-            err("Failed to read trace %li from file\n", TRACE_IDX(t));
+            err("Failed to read trace %zu from file\n", TRACE_IDX(t));
             return ret;
         }
     }
     else
     {
-        debug("Setting trace %li to null\n", TRACE_IDX(t));
+        debug("Setting trace %zu to null\n", TRACE_IDX(t));
         t->title = NULL;
         t->data = NULL;
         t->samples = NULL;

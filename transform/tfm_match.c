@@ -124,7 +124,7 @@ int __tfm_match_get(struct trace *t)
 
         sem_acquire(&print_lock);
 
-        err("gap report for trace %li\n", TRACE_IDX(t));
+        err("gap report for trace %zu\n", TRACE_IDX(t));
 
         // first build known traces
         for(i = 1; i < t->owner->num_samples - 1; i++)

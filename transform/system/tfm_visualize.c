@@ -349,7 +349,7 @@ int __tfm_visualize_fetch(struct trace *t)
         }
     }
 
-    debug("Index %li got curr = %p (list_empty is %i, found is %i)\n",
+    debug("Index %zu got curr = %p (list_empty is %i, found is %i)\n",
           TRACE_IDX(t), curr, list_empty(&tfm_data->list), found);
 
     // not found
@@ -359,12 +359,12 @@ int __tfm_visualize_fetch(struct trace *t)
            TRACE_IDX(t) >= tfm_data->currently_displayed &&
            TRACE_IDX(t) < tfm_data->currently_displayed + NUMBER_TRACES(tfm))
         {
-            debug("Fetch for %li should pass through instead\n", TRACE_IDX(t));
+            debug("Fetch for %zu should pass through instead\n", TRACE_IDX(t));
             sem_release(&tfm_data->lock);
             return 1;
         }
 
-        debug("Creating entry for base %li because of trace %li\n",
+        debug("Creating entry for base %zu because of trace %zu\n",
               TRACE_IDX(t) - (TRACE_IDX(t) % NUMBER_TRACES(tfm)), TRACE_IDX(t));
 
         new = calloc(1, sizeof(struct __tfm_viz_entry));
@@ -403,7 +403,7 @@ int __tfm_visualize_fetch(struct trace *t)
         sem_release(&tfm_data->lock);
 
         // could take a long time
-        debug("Getting trace %li\n", TRACE_IDX(t));
+        debug("Getting trace %zu\n", TRACE_IDX(t));
         ret = trace_get(t->owner->prev, &curr->traces[index], TRACE_IDX(t));
         if(ret < 0)
         {
@@ -414,13 +414,13 @@ int __tfm_visualize_fetch(struct trace *t)
         sem_acquire(&tfm_data->lock);
 
         curr->count++;
-        critical("Got data for index %i in base %li (%li / %i)\n",
+        critical("Got data for index %i in base %zu (%zu / %i)\n",
                  index, curr->base,
                  curr->count, NUMBER_TRACES(tfm));
 
         if(curr->count == NUMBER_TRACES(tfm))
         {
-            debug("Signaling for base %li\n", curr->base);
+            debug("Signaling for base %zu\n", curr->base);
             if(tfm_data->status < 0)
             {
                 err("Render thread has crashed\n");

@@ -131,7 +131,7 @@ void tfm_aes_intermediate_progress_title(char *dst, int len, size_t index, int c
     size_t key_index = (index / 256);
     uint8_t key_guess = (index % 256);
 
-    snprintf(dst, len, "CPA %li pm %02X (%i traces)", key_index, key_guess, count);
+    snprintf(dst, len, "CPA %zu pm %02X (%i traces)", key_index, key_guess, count);
 }
 
 int tfm_aes_intermediate(struct tfm **tfm, aes_leakage_t leakage_model)

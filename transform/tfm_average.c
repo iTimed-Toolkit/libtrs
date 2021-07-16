@@ -84,7 +84,7 @@ int __tfm_average_get(struct trace *t)
                                                    ts_num_samples(t->owner->prev));
                 if(ret < 0)
                 {
-                    err("Failed to accumulate trace %li\n", TRACE_IDX(curr));
+                    err("Failed to accumulate trace %zu\n", TRACE_IDX(curr));
                     goto __free_accumulator;
                 }
             }
@@ -131,14 +131,14 @@ int __tfm_average_get(struct trace *t)
                                                   ts_num_samples(t->owner->prev));
                 if(ret < 0)
                 {
-                    err("Failed to accumulate trace %li\n", TRACE_IDX(curr));
+                    err("Failed to accumulate trace %zu\n", TRACE_IDX(curr));
                     goto __free_accumulator;
                 }
 
                 ret = stat_get_mean(acc, 0, &result[i]);
                 if(ret < 0)
                 {
-                    err("Failed to get mean for trace %li\n", TRACE_IDX(curr));
+                    err("Failed to get mean for trace %zu\n", TRACE_IDX(curr));
                     goto __free_accumulator;
                 }
 

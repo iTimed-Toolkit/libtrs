@@ -47,14 +47,14 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index)
 
     if(index >= ts_num_traces(ts))
     {
-        err("Index %li out of bounds for trace set\n", index);
+        err("Index %zu out of bounds for trace set\n", index);
         return -EINVAL;
     }
 
-    debug("Getting trace %li from trace set %li\n", index, ts->set_id);
+    debug("Getting trace %zu from trace set %zu\n", index, ts->set_id);
     if(ts->cache)
     {
-        debug("Looking up trace %li in cache\n", index);
+        debug("Looking up trace %zu in cache\n", index);
         ret = tc_lookup(ts->cache, index, &t_result,
                         COHESIVE_CACHES ? true : false);
         if(ret < 0)
@@ -66,7 +66,7 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index)
         if(t_result) goto __done;
         else cache_missed = true;
 
-        debug("Trace %li not found in cache\n", index);
+        debug("Trace %zu not found in cache\n", index);
     }
 
     t_result = calloc(1, sizeof(struct trace));
@@ -103,7 +103,7 @@ int trace_get(struct trace_set *ts, struct trace **t, size_t index)
 
     if(cache_missed)
     {
-        debug("Storing trace %li in the cache\n", index);
+        debug("Storing trace %zu in the cache\n", index);
         ret = tc_store(ts->cache, index, t_result,
                        COHESIVE_CACHES ? true : false);
         if(ret < 0)

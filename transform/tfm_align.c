@@ -183,7 +183,7 @@ int __tfm_static_align_get(struct trace *t)
     }
 
     if(TRACE_IDX(t) % 1000 == 0)
-        warn("Trace %li, best confidence %f for shift %i\n", TRACE_IDX(t), best_conf, best_shift);
+        warn("Trace %zu, best confidence %f for shift %i\n", TRACE_IDX(t), best_conf, best_shift);
 
     if(best_conf >= tfm->match.confidence)
     {

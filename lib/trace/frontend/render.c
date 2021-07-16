@@ -35,12 +35,12 @@ LT_THREAD_FUNC(__ts_render_func, thread_arg)
             return NULL;
         }
 
-        debug("Working on trace %li\n", arg->trace_index);
+        debug("Working on trace %zu\n", arg->trace_index);
 
         ret = trace_get(arg->ts, &trace, arg->trace_index);
         if(ret < 0)
         {
-            err("Thread %i failed to get trace at index %li\n",
+            err("Thread %i failed to get trace at index %zu\n",
                 arg->thread_index, arg->trace_index);
             arg->ret = ret;
 
@@ -138,7 +138,7 @@ LT_THREAD_FUNC(__ts_render_controller, controller_arg)
         {
             if(args[i].ret == 1)
             {
-                debug("Dispatching index %li to thread %i\n", curr_index, i);
+                debug("Dispatching index %zu to thread %i\n", curr_index, i);
 
                 args[i].trace_index = curr_index++;
                 args[i].ret = 0;

@@ -130,7 +130,7 @@ int tfm_io_correlation_exit(struct trace_set *ts, void *arg)
 
 void tfm_io_correlation_progress_title(char *dst, int len, size_t index, int count)
 {
-    snprintf(dst, len, "CPA %li", index);
+    snprintf(dst, len, "CPA %zu", index);
 }
 
 int tfm_io_correlation(struct tfm **tfm, bool verify_data, int granularity, int num)

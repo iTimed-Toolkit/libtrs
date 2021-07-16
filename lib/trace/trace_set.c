@@ -27,7 +27,7 @@ int ts_open(struct trace_set **ts, const char *path)
     }
 
     ts_result->set_id = gbl_set_index++;
-    debug("Creating new trace set with ID %li\n", ts_result->set_id);
+    debug("Creating new trace set with ID %zu\n", ts_result->set_id);
 
     ret = create_backend(ts_result, path);
     if(ret < 0)
@@ -72,7 +72,7 @@ int ts_close(struct trace_set *ts)
         return -EINVAL;
     }
 
-    debug("Closing trace set %li\n", ts->set_id);
+    debug("Closing trace set %zu\n", ts->set_id);
 
     // transform specific teardown
     if(ts->prev && ts->tfm)
@@ -129,7 +129,7 @@ int ts_transform(struct trace_set **new_ts, struct trace_set *prev, struct tfm *
     ts_result->tfm_next = NULL;
     ts_result->tfm_next_arg = NULL;
 
-    debug("Creating transformed trace set with ID %li\n", ts_result->set_id);
+    debug("Creating transformed trace set with ID %zu\n", ts_result->set_id);
 
     // transform-specific initialization
     ret = transform->init(ts_result);

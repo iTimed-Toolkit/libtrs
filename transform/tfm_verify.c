@@ -91,7 +91,7 @@ int __tfm_verify_get(struct trace *t)
         return passthrough(t);
     else
     {
-        debug("Trace %li failed verification\n", TRACE_IDX(t));
+        debug("Trace %zu failed verification\n", TRACE_IDX(t));
         t->title = NULL;
         t->data = NULL;
         t->samples = NULL;

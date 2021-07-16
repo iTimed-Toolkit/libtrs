@@ -47,7 +47,7 @@ size_t __find_num_traces(struct trace_set *ts, size_t size_bytes, int assoc)
         ntraces++;
     }
 
-    critical("Cache for trace set %li can fit %li traces\n", ts->set_id, ntraces);
+    critical("Cache for trace set %zu can fit %zu traces\n", ts->set_id, ntraces);
     return ntraces;
 }
 
@@ -84,7 +84,7 @@ int __initialize_set(struct trace_cache *cache, size_t set)
         return -EINVAL;
     }
 
-    debug("Initializing set %li\n", set);
+    debug("Initializing set %zu\n", set);
     curr_set = &cache->sets[set];
 
     ret = p_sem_create(&curr_set->set_lock, 1);
@@ -129,7 +129,7 @@ int __initialize_set(struct trace_cache *cache, size_t set)
     for(i = 0; i < cache->nways; i++)
         curr_set->lru[i] = cache->nways - i - 1;
 
-    debug("done initializing set %li\n", set);
+    debug("done initializing set %zu\n", set);
     return 0;
 
 __free_tc_set:
@@ -155,7 +155,7 @@ int tc_cache_manual(struct trace_cache **cache, size_t id, size_t nsets, size_t 
     int ret;
     struct trace_cache *res;
 
-    debug("Creating cache %li with assoc %li sets %li for trace set\n",
+    debug("Creating cache %zu with assoc %zu sets %zu for trace set\n",
           id, nways, nsets);
 
     res = calloc(1, sizeof(struct trace_cache));
@@ -222,7 +222,7 @@ int ts_create_cache(struct trace_set *ts, size_t size_bytes, size_t assoc)
 int tc_free(struct trace_cache *cache)
 {
     int i, j;
-    debug("Freeing cache %li\n", cache->cache_id);
+    debug("Freeing cache %zu\n", cache->cache_id);
 
     if(!cache)
     {
@@ -272,7 +272,7 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
         return -EINVAL;
     }
 
-    debug("Trace cache %li, cache access %li for index %li\n",
+    debug("Trace cache %zu, cache access %zu for index %zu\n",
           cache->cache_id, cache->accesses, index);
 
     set = index % cache->nsets;
@@ -286,7 +286,7 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
         ret = __initialize_set(cache, set);
         if(ret < 0)
         {
-            err("Failed to initialize cache set %li\n", set);
+            err("Failed to initialize cache set %zu\n", set);
             return -errno;
         }
 
@@ -294,7 +294,7 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
         cache->misses++;
         *trace = NULL;
 
-        debug("Set %li was not initialized, cache miss (%li misses total)\n",
+        debug("Set %zu was not initialized, cache miss (%zu misses total)\n",
                  set, cache->misses);
 
         if(keep_lock)
@@ -306,7 +306,7 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
 
     if(cache->accesses % 1000000 == 0)
     {
-        warn("Cache %li: %li accesses\n\t\t%li hits (%.5f)\n\t\t%li misses (%.5f)\n\t\t%li stores, %li evictions (holding %li)\n",
+        warn("Cache %zu: %zu accesses\n\t\t%zu hits (%.5f)\n\t\t%zu misses (%.5f)\n\t\t%zu stores, %zu evictions (holding %zu)\n",
              cache->cache_id, cache->accesses,
              cache->hits, (float) cache->hits / (float) cache->accesses,
              cache->misses, (float) cache->misses / (float) cache->accesses,
@@ -331,7 +331,7 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
                 cache->hits++;
                 *trace = curr_set->traces[i];
 
-                debug("Cache hit for %li in set %li for way %i, refed %i times (%li hits total)\n",
+                debug("Cache hit for %zu in set %zu for way %i, refed %i times (%zu hits total)\n",
                          index, set, i, curr_set->refcount[i], cache->hits);
                 break;
             }
@@ -343,7 +343,7 @@ int tc_lookup(struct trace_cache *cache, size_t index, struct trace **trace, boo
     else
     {
         cache->misses++;
-        debug("Cache miss (%li misses total)\n",
+        debug("Cache miss (%zu misses total)\n",
                  cache->misses);
 
         if(!keep_lock)
@@ -366,7 +366,7 @@ int tc_store(struct trace_cache *cache, size_t index, struct trace *trace, bool 
         return -EINVAL;
     }
 
-    debug("Trace cache %li, store for index %li\n",
+    debug("Trace cache %zu, store for index %zu\n",
           cache->cache_id, index);
 
     set = index % cache->nsets;
@@ -378,7 +378,7 @@ int tc_store(struct trace_cache *cache, size_t index, struct trace *trace, bool 
         ret = __initialize_set(cache, set);
         if(ret < 0)
         {
-            err("Failed to initialize cache set %li\n", set);
+            err("Failed to initialize cache set %zu\n", set);
             return -errno;
         }
 
@@ -432,7 +432,7 @@ int tc_store(struct trace_cache *cache, size_t index, struct trace *trace, bool 
     cache->stores++;
     if(curr_set->valid[way])
     {
-        debug("Evicting trace %li, way %i from cache set %li\n",
+        debug("Evicting trace %zu, way %i from cache set %zu\n",
                  TRACE_IDX(curr_set->traces[way]), way, set);
 
         cache->evictions++;
@@ -442,7 +442,7 @@ int tc_store(struct trace_cache *cache, size_t index, struct trace *trace, bool 
         curr_set->valid[way] = false;
     }
 
-    debug("Placing index %li in set %li way %i\n", index, set, way);
+    debug("Placing index %zu in set %zu way %i\n", index, set, way);
     curr_set->valid[way] = true;
     curr_set->refcount[way] = 1;
     curr_set->traces[way] = trace;
@@ -464,7 +464,7 @@ int tc_deref(struct trace_cache *cache, size_t index, struct trace *trace)
         return -EINVAL;
     }
 
-    debug("Trace cache %li, deref for index %li\n",
+    debug("Trace cache %zu, deref for index %zu\n",
           cache->cache_id, index);
 
     set = index % cache->nsets;
@@ -487,12 +487,12 @@ int tc_deref(struct trace_cache *cache, size_t index, struct trace *trace)
             if(trace == curr_set->traces[i])
             {
                 curr_set->refcount[i]--;
-                debug("Found trace %li %p, decremented refcount to %i\n",
+                debug("Found trace %zu %p, decremented refcount to %i\n",
                       index, curr_set->traces[i], curr_set->refcount[i]);
             }
             else
             {
-                err("Correct trace %li found, but pointer (%p vs %p) does not match -- freeing\n", index,
+                err("Correct trace %zu found, but pointer (%p vs %p) does not match -- freeing\n", index,
                     trace, curr_set->traces[i]);
                 trace_free_memory(trace);
 
