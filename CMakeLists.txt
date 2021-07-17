@@ -16,7 +16,7 @@ if(UNIX)
 
 elseif(WIN32)
     message("Configuring for Windows")
-    set(CMAKE_C_FLAGS "/O2 /arch:AVX2")
+    set(CMAKE_C_FLAGS "/arch:AVX2")
 
     add_subdirectory(contrib/zlib)
 

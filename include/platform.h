@@ -18,6 +18,8 @@ typedef FILE                        LT_FILE_TYPE;
 
 #define LT_THREAD_FUNC(name, arg)   void * name (void * arg)
 #define SOCK_VALID(s)               ((s) >= 0)
+
+#define p_fseek(file, offs, whence) fseek(file, offs, whence)
 #define p_sleep(s)                  usleep(1000 * (s))
 
 #elif defined(_WIN32)
@@ -34,6 +36,8 @@ typedef FILE                        LT_FILE_TYPE;
 
 #define LT_THREAD_FUNC(name, arg)   void* WINAPI name (void* arg)
 #define SOCK_VALID(s)               ((s) != INVALID_SOCKET)
+
+#define p_fseek(file, offs, whence) _fseeki64(file, offs, whence)
 #define p_sleep(s)                  Sleep((s))
 
 static char* strsep(char** stringp, const char* delim)
@@ -60,7 +64,6 @@ static char* strsep(char** stringp, const char* delim)
 #if (defined(LIBTRACE_PLATFORM_LINUX) || defined(LIBTRACE_PLATFORM_WINDOWS))
     #define p_fopen(path, mode)             fopen(path, mode)
     #define p_fclose(file)                  fclose(file)
-    #define p_fseek(file, offs, whence)     fseek(file, offs, whence)
     #define p_ftell(file)                   ftell(file)
     #define p_fflush(file)                  fflush(file)
 
