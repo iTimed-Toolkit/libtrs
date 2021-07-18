@@ -4,6 +4,7 @@
 struct trace_set;
 struct trace;
 
+#include "statistics.h"
 #include "transform.h"
 
 #include <stdint.h>
@@ -37,6 +38,8 @@ int copy_samples(struct trace *to, struct trace *from);
 
 int passthrough(struct trace *trace);
 void passthrough_free(struct trace *t);
+
+stat_t __summary_to_cability(summary_t s);
 
 struct cpa_args
 {

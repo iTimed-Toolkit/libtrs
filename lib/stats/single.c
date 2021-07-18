@@ -17,7 +17,6 @@ int __stat_reset_single(struct accumulator *acc)
 
 int __stat_free_single(struct accumulator *acc)
 {
-    free(acc);
     return 0;
 }
 
@@ -40,22 +39,22 @@ int __stat_get_single(struct accumulator *acc, stat_t stat, int index, float *re
     switch(stat)
     {
         case STAT_AVG:
-            val = acc->m.f; break;
+            val = acc->_AVG.f; break;
 
         case STAT_DEV:
-            val = sqrtf(acc->s.f / (acc->count - 1)); break;
+            val = sqrtf(acc->_DEV.f / (acc->count - 1)); break;
 
         case STAT_MAX:
-            val = acc->max.f; break;
+            val = acc->_MAX.f; break;
 
         case STAT_MIN:
-            val = acc->min.f; break;
+            val = acc->_MIN.f; break;
 
         case STAT_MAXABS:
-            val = acc->maxabs.f; break;
+            val = acc->_MAXABS.f; break;
 
         case STAT_MINABS:
-            val = acc->minabs.f; break;
+            val = acc->_MINABS.f; break;
 
         default:
             err("Invalid requested statistic\n");
@@ -131,23 +130,26 @@ static inline int __accumulate_single(struct accumulator *acc, float val)
     acc->count++;
     if(acc->count == 1)
     {
-        IF_CAP(acc, STAT_AVG | STAT_DEV) acc->m.f = val;
-        IF_CAP(acc, STAT_DEV) acc->s.f = 0;
-        IF_CAP(acc, STAT_MAX) acc->max.f = val;
-        IF_CAP(acc, STAT_MIN) acc->min.f = val;
-        IF_CAP(acc, STAT_MAXABS) acc->maxabs.f = fabsf(val);
-        IF_CAP(acc, STAT_MINABS) acc->minabs.f = fabsf(val);
+        IF_CAP(acc, _AVG) acc->_AVG.f = val;
+        IF_CAP(acc, _DEV) acc->_DEV.f = 0;
+        IF_CAP(acc, _MAX) acc->_MAX.f = val;
+        IF_CAP(acc, _MIN) acc->_MIN.f = val;
+        IF_CAP(acc, _MAXABS) acc->_MAXABS.f = fabsf(val);
+        IF_CAP(acc, _MINABS) acc->_MINABS.f = fabsf(val);
     }
     else
     {
-        IF_CAP(acc, STAT_AVG | STAT_DEV) m_new = acc->m.f + (val - acc->m.f) / acc->count;
-        IF_CAP(acc, STAT_DEV) acc->s.f += ((val - acc->m.f) * (val - m_new));
-        IF_CAP(acc, STAT_AVG | STAT_DEV) acc->m.f = m_new;
+        IF_CAP(acc, _AVG)
+        {
+            m_new = acc->_AVG.f + (val - acc->_AVG.f) / acc->count;
+            acc->_DEV.f += ((val - acc->_AVG.f) * (val - m_new));
+            acc->_AVG.f = m_new;
+        }
 
-        IF_CAP(acc, STAT_MAX) { if(val > acc->max.f) acc->max.f = val; }
-        IF_CAP(acc, STAT_MIN) { if(val < acc->min.f) acc->min.f = val; }
-        IF_CAP(acc, STAT_MAXABS) { if(fabsf(val) > acc->maxabs.f) acc->maxabs.f = fabsf(val); }
-        IF_CAP(acc, STAT_MINABS) { if(fabsf(val) < acc->minabs.f) acc->minabs.f = fabsf(val); }
+        IF_CAP(acc, _MAX) { if(val > acc->_MAX.f) acc->_MAX.f = val; }
+        IF_CAP(acc, _MIN) { if(val < acc->_MIN.f) acc->_MIN.f = val; }
+        IF_CAP(acc, _MAXABS) { if(fabsf(val) > acc->_MAXABS.f) acc->_MAXABS.f = fabsf(val); }
+        IF_CAP(acc, _MINABS) { if(fabsf(val) < acc->_MINABS.f) acc->_MINABS.f = fabsf(val); }
     }
 
     return 0;

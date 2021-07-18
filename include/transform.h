@@ -43,7 +43,9 @@ typedef enum
     SUMMARY_AVG,
     SUMMARY_DEV,
     SUMMARY_MIN,
-    SUMMARY_MAX
+    SUMMARY_MAX,
+    SUMMARY_MINABS,
+    SUMMARY_MAXABS
 } summary_t;
 
 typedef enum

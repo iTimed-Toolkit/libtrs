@@ -253,7 +253,7 @@ int __search_gaps(struct tfm_extract_config *cfg,
         return -EINVAL;
     }
 
-    ret = stat_create_single(&acc);
+    ret = stat_create_single(&acc, STAT_AVG | STAT_DEV);
     if(ret < 0)
     {
         err("Failed to create accumulator for gap correlations\n");
@@ -342,14 +342,14 @@ int __search_gaps(struct tfm_extract_config *cfg,
         }
     }
 
-    ret = stat_get_mean(acc, 0, &blk->gap_mean);
+    ret = stat_get(acc, STAT_AVG, 0, &blk->gap_mean);
     if(ret < 0)
     {
         err("Failed to get correlation mean\n");
         goto __free_accumulator;
     }
 
-    ret = stat_get_dev(acc, 0, &blk->gap_dev);
+    ret = stat_get(acc, STAT_DEV, 0, &blk->gap_dev);
     if(ret < 0)
     {
         err("Failed to get correlation deviation\n");
@@ -571,7 +571,7 @@ int __search_tail(struct tfm_extract_config *cfg,
     {
         num_means = last - first - blk->missing + 2;
 
-        ret = stat_create_single_array(&acc, num_means);
+        ret = stat_create_single_array(&acc, STAT_AVG, num_means);
         if(ret < 0)
         {
             err("Failed to create accumulator\n");
@@ -589,7 +589,7 @@ int __search_tail(struct tfm_extract_config *cfg,
             }
         }
 
-        ret = stat_get_mean_all(acc, &means);
+        ret = stat_get_all(acc, STAT_AVG, &means);
         if(ret < 0)
         {
             err("Failed to get means from accumulator\n");

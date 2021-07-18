@@ -76,7 +76,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
         goto __free_trace;
     }
 
-    ret = stat_create_dual_array(&acc, 2 * tfm->max_shift, 1);
+    ret = stat_create_dual_array(&acc, STAT_PEARSON, 2 * tfm->max_shift, 1);
     if(ret < 0)
     {
         err("Failed to create accumulator\n");
@@ -132,7 +132,7 @@ int __do_align(struct trace *t, double *best_conf, int *best_shift)
         }
     }
 
-    ret = stat_get_pearson_all(acc, &pearson);
+    ret = stat_get_all(acc, STAT_PEARSON, &pearson);
     if(ret < 0)
     {
         err("Failed to get pearson from accumulator\n");

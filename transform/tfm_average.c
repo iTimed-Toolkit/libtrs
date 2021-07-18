@@ -62,7 +62,7 @@ int __tfm_average_get(struct trace *t)
 
     if(tfm->per_sample)
     {
-        ret = stat_create_single_array(&acc, ts_num_samples(t->owner->prev));
+        ret = stat_create_single_array(&acc, STAT_AVG, ts_num_samples(t->owner->prev));
         if(ret < 0)
         {
             err("Failed to create accumulator\n");
@@ -93,7 +93,7 @@ int __tfm_average_get(struct trace *t)
             curr = NULL;
         }
 
-        ret = stat_get_mean_all(acc, &t->samples);
+        ret = stat_get_all(acc, STAT_AVG, &t->samples);
         if(ret < 0)
         {
             err("Failed to get mean from accumulator\n");
@@ -102,7 +102,7 @@ int __tfm_average_get(struct trace *t)
     }
     else
     {
-        ret = stat_create_single(&acc);
+        ret = stat_create_single(&acc, STAT_AVG);
         if(ret < 0)
         {
             err("Failed to create accumulator\n");
@@ -135,7 +135,7 @@ int __tfm_average_get(struct trace *t)
                     goto __free_accumulator;
                 }
 
-                ret = stat_get_mean(acc, 0, &result[i]);
+                ret = stat_get(acc, STAT_AVG, 0, &result[i]);
                 if(ret < 0)
                 {
                     err("Failed to get mean for trace %zu\n", TRACE_IDX(curr));

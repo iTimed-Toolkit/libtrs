@@ -82,7 +82,7 @@ int __tfm_match_get(struct trace *t)
 
     if(ref_trace->samples && prev_trace->samples)
     {
-        ret = stat_create_dual_array(&acc, (int) t->owner->num_samples, 1);
+        ret = stat_create_dual_array(&acc, STAT_PEARSON, (int) t->owner->num_samples, 1);
         if(ret < 0)
         {
             err("Failed to create accumulator\n");
@@ -105,7 +105,7 @@ int __tfm_match_get(struct trace *t)
         if(ret >= 0)
             ret = copy_data(t, prev_trace);
         if(ret >= 0)
-            ret = stat_get_pearson_all(acc, &t->samples);
+            ret = stat_get_all(acc, STAT_PEARSON, &t->samples);
 
         if(ret < 0)
         {
@@ -114,7 +114,7 @@ int __tfm_match_get(struct trace *t)
         }
 
         stat_free_accumulator(acc);
-        stat_create_single(&acc);
+        stat_create_single(&acc, STAT_AVG | STAT_DEV);
 
         int last_index = -1, count_true = 0, count_found = 0;
         float gap, max_diff_from_whole = -FLT_MAX, mean, dev;
@@ -150,8 +150,8 @@ int __tfm_match_get(struct trace *t)
             }
         }
 
-        stat_get_mean(acc, 0, &mean);
-        stat_get_dev(acc, 0, &dev);
+        stat_get(acc, STAT_AVG, 0, &mean);
+        stat_get(acc, STAT_DEV, 0, &dev);
 
         // then predict gaps: front to back
         last_index = -1;

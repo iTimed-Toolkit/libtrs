@@ -3,6 +3,7 @@
 #include "trace.h"
 #include "__trace_internal.h"
 
+#include "statistics.h"
 #include "list.h"
 
 #include <string.h>
@@ -144,4 +145,27 @@ void passthrough_free(struct trace *t)
 
     if(t->samples)
         free(t->samples);
+}
+
+// this is used by various transformations
+stat_t __summary_to_cability(summary_t s)
+{
+    switch(s)
+    {
+        case SUMMARY_AVG:
+            return STAT_AVG;
+        case SUMMARY_DEV:
+            return STAT_DEV;
+        case SUMMARY_MIN:
+            return STAT_MIN;
+        case SUMMARY_MAX:
+            return STAT_MAX;
+        case SUMMARY_MINABS:
+            return STAT_MINABS;
+        case SUMMARY_MAXABS:
+            return STAT_MAXABS;
+        default:
+        err("Invalid summary\n");
+            return 0;
+    }
 }

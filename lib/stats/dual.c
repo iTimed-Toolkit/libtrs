@@ -10,50 +10,24 @@
 int __stat_reset_dual(struct accumulator *acc)
 {
     acc->count = 0;
-
-    IF_CAP(acc, STAT_AVG | STAT_DEV | STAT_COV | STAT_PEARSON)
-    { memset(acc->m.a, 0, 2 * sizeof(float)); }
-
-    IF_CAP(acc, STAT_DEV)
-    { memset(acc->s.a, 0, 2 * sizeof(float)); }
-
-    IF_CAP(acc, STAT_COV | STAT_PEARSON) acc->cov.f = 0;
-
-    IF_CAP(acc, STAT_MAX)
-    { memset(acc->max.a, 0, 2 * sizeof(float)); }
-
-    IF_CAP(acc, STAT_MIN)
-    { memset(acc->min.a, 0, 2 * sizeof(float)); }
-
-    IF_CAP(acc, STAT_MAXABS)
-    { memset(acc->maxabs.a, 0, 2 * sizeof(float)); }
-
-    IF_CAP(acc, STAT_MINABS)
-    { memset(acc->minabs.a, 0, 2 * sizeof(float)); }
-
+    CAP_RESET_ARRAY(acc, _AVG, 0, 2);
+    CAP_RESET_ARRAY(acc, _DEV, 0, 2);
+    CAP_RESET_SCALAR(acc, _COV, 0.0f);
+    CAP_RESET_ARRAY(acc, _MAX, 0, 2);
+    CAP_RESET_ARRAY(acc, _MIN, 0, 2);
+    CAP_RESET_ARRAY(acc, _MAXABS, 0, 2);
+    CAP_RESET_ARRAY(acc, _MINABS, 0, 2);
     return 0;
 }
 
 int __stat_free_dual(struct accumulator *acc)
 {
-    if(acc->m.a)
-        free(acc->m.a);
-
-    if(acc->s.a)
-        free(acc->s.a);
-
-    if(acc->max.a)
-        free(acc->max.a);
-
-    if(acc->min.a)
-        free(acc->min.a);
-
-    if(acc->maxabs.a)
-        free(acc->maxabs.a);
-
-    if(acc->minabs.a)
-        free(acc->minabs.a);
-
+    CAP_FREE_ARRAY(acc, _AVG);
+    CAP_FREE_ARRAY(acc, _DEV);
+    CAP_FREE_ARRAY(acc, _MAX);
+    CAP_FREE_ARRAY(acc, _MIN);
+    CAP_FREE_ARRAY(acc, _MAXABS);
+    CAP_FREE_ARRAY(acc, _MINABS);
     return 0;
 }
 
@@ -67,37 +41,46 @@ int __stat_get_dual(struct accumulator *acc, stat_t stat, int index, float *res)
         return -EINVAL;
     }
 
-    if(index != 0)
+    if(stat & (STAT_COV | STAT_PEARSON) && index != 0)
     {
-        err("Invalid index for accumulator\n");
+        err("Invalid index for accumulator and statistic\n");
+        return -EINVAL;
+    }
+    else if(index >= 2)
+    {
+        err("Invalid index for accumulator and statistic\n");
         return -EINVAL;
     }
 
     switch(stat)
     {
         case STAT_AVG:
-            val = acc->m.f;
-            break;
+            val = acc->_AVG.a[index]; break;
 
         case STAT_DEV:
-            val = sqrtf(acc->s.f / (acc->count - 1));
+            val = sqrtf(acc->_DEV.a[index] / (acc->count - 1)); break;
+
+        case STAT_COV:
+            val = acc->_COV.f; break;
+
+        case STAT_PEARSON:
+            val = acc->_COV.f /
+                  ((acc->count - 1) *
+                   sqrtf(acc->_DEV.a[0] / (acc->count - 1)) *
+                   sqrtf(acc->_DEV.a[1] / (acc->count - 1)));
             break;
 
         case STAT_MAX:
-            val = acc->max.f;
-            break;
+            val = acc->_MAX.a[index]; break;
 
         case STAT_MIN:
-            val = acc->min.f;
-            break;
+            val = acc->_MIN.a[index]; break;
 
         case STAT_MAXABS:
-            val = acc->maxabs.f;
-            break;
+            val = acc->_MAXABS.a[index]; break;
 
         case STAT_MINABS:
-            val = acc->minabs.f;
-            break;
+            val = acc->_MINABS.a[index]; break;
 
         default:
             err("Invalid requested statistic\n");
@@ -111,19 +94,45 @@ int __stat_get_dual(struct accumulator *acc, stat_t stat, int index, float *res)
 int __stat_get_all_dual(struct accumulator *acc, stat_t stat, float **res)
 {
     int ret;
-    float *result = calloc(1, sizeof(float));
+    float *result;
+
+    if(stat & (STAT_COV | STAT_PEARSON))
+        result = calloc(1, sizeof(float));
+    else
+        result = calloc(2, sizeof(float));
     if(!result)
     {
         err("Failed to allocate result\n");
         return -ENOMEM;
     }
 
-    ret = __stat_get_single(acc, stat, 0, result);
-    if(ret < 0)
+    if(stat & (STAT_COV | STAT_PEARSON))
     {
-        err("Failed to get statistic\n");
-        free(result);
-        return ret;
+        ret = __stat_get_dual(acc, stat, 0, &result[0]);
+        if(ret < 0)
+        {
+            err("Failed to get statistic\n");
+            free(result);
+            return ret;
+        }
+    }
+    else
+    {
+        ret = __stat_get_dual(acc, stat, 0, &result[0]);
+        if(ret < 0)
+        {
+            err("Failed to get statistic\n");
+            free(result);
+            return ret;
+        }
+
+        ret = __stat_get_dual(acc, stat, 1, &result[1]);
+        if(ret < 0)
+        {
+            err("Failed to get statistic\n");
+            free(result);
+            return ret;
+        }
     }
 
     *res = result;
@@ -150,68 +159,13 @@ int stat_create_dual(struct accumulator **acc, stat_t capabilities)
     res->capabilities = capabilities;
     res->count = 0;
 
-    IF_CAP(res, STAT_AVG | STAT_DEV |
-                STAT_COV | STAT_PEARSON)
-    {
-        res->m.a = calloc(2, sizeof(float));
-        if(!res->m.a)
-        {
-            err("Failed to allocate dual m array\n");
-            goto __free_acc;
-        }
-    }
-
-    IF_CAP(res, STAT_DEV)
-    {
-        res->s.a = calloc(2, sizeof(float));
-        if(!res->s.a)
-        {
-            err("Failed to allocate dual s array\n");
-            goto __free_acc;
-        }
-    }
-
-    IF_CAP(res, STAT_COV | STAT_PEARSON) res->cov.f = 0;
-
-    IF_CAP(res, STAT_MAX)
-    {
-        res->max.a = calloc(2, sizeof(float));
-        if(!res->max.a)
-        {
-            err("Failed to allocate dual max array\n");
-            goto __free_acc;
-        }
-    }
-
-    IF_CAP(res, STAT_MIN)
-    {
-        res->min.a = calloc(2, sizeof(float));
-        if(!res->min.a)
-        {
-            err("Failed to allocate dual min array\n");
-            goto __free_acc;
-        }
-    }
-
-    IF_CAP(res, STAT_MAXABS)
-    {
-        res->maxabs.a = calloc(2, sizeof(float));
-        if(!res->maxabs.a)
-        {
-            err("Failed to allocate dual maxabs array\n");
-            goto __free_acc;
-        }
-    }
-
-    IF_CAP(res, STAT_MINABS)
-    {
-        res->minabs.a = calloc(2, sizeof(float));
-        if(!res->minabs.a)
-        {
-            err("Failed to allocate dual minabs array\n");
-            goto __free_acc;
-        }
-    }
+    CAP_INIT_ARRAY(res, _AVG, 2, __free_acc);
+    CAP_INIT_ARRAY(res, _DEV, 2, __free_acc);
+    CAP_INIT_SCALAR(res, _COV, 0);
+    CAP_INIT_ARRAY(res, _MAX, 2, __free_acc);
+    CAP_INIT_ARRAY(res, _MIN, 2, __free_acc);
+    CAP_INIT_ARRAY(res, _MAXABS, 2, __free_acc);
+    CAP_INIT_ARRAY(res, _MINABS, 2, __free_acc);
 
     res->reset = __stat_reset_dual;
     res->free = __stat_free_dual;
@@ -222,24 +176,12 @@ int stat_create_dual(struct accumulator **acc, stat_t capabilities)
     return 0;
 
 __free_acc:
-    if(res->m.a)
-        free(res->m.a);
-
-    if(res->s.a)
-        free(res->s.a);
-
-    if(res->max.a)
-        free(res->max.a);
-
-    if(res->min.a)
-        free(res->min.a);
-
-    if(res->maxabs.a)
-        free(res->maxabs.a);
-
-    if(res->minabs.a)
-        free(res->minabs.a);
-
+    CAP_FREE_ARRAY(res, _AVG);
+    CAP_FREE_ARRAY(res, _DEV);
+    CAP_FREE_ARRAY(res, _MAX);
+    CAP_FREE_ARRAY(res, _MIN);
+    CAP_FREE_ARRAY(res, _MAXABS);
+    CAP_FREE_ARRAY(res, _MINABS);
     free(res);
     return -ENOMEM;
 }
@@ -252,96 +194,86 @@ static inline int __accumulate_dual(struct accumulator *acc, float val0, float v
     acc->count++;
     if(acc->count == 1)
     {
-        IF_CAP(acc, STAT_AVG | STAT_DEV |
-                    STAT_COV | STAT_PEARSON)
+        IF_CAP(acc, _AVG)
         {
-            acc->m.a[0] = val0;
-            acc->m.a[1] = val1;
+            acc->_AVG.a[0] = val0;
+            acc->_AVG.a[1] = val1;
         }
 
-        IF_CAP(acc, STAT_DEV)
+        IF_CAP(acc, _DEV)
         {
-            acc->s.a[0] = 0;
-            acc->s.a[1] = 0;
+            acc->_DEV.a[0] = 0;
+            acc->_DEV.a[1] = 0;
         }
 
-        IF_CAP(acc, STAT_COV | STAT_PEARSON) acc->cov.f = 0;
+        IF_CAP(acc, _COV) acc->_COV.f = 0;
 
-        IF_CAP(acc, STAT_MAX)
+        IF_CAP(acc, _MAX)
         {
-            acc->max.a[0] = val0;
-            acc->max.a[1] = val1;
+            acc->_MAX.a[0] = val0;
+            acc->_MAX.a[1] = val1;
         }
 
-        IF_CAP(acc, STAT_MIN)
+        IF_CAP(acc, _MIN)
         {
-            acc->min.a[0] = val0;
-            acc->min.a[1] = val1;
+            acc->_MIN.a[0] = val0;
+            acc->_MIN.a[1] = val1;
         }
 
-        IF_CAP(acc, STAT_MAXABS)
+        IF_CAP(acc, _MAXABS)
         {
-            acc->maxabs.a[0] = fabsf(val0);
-            acc->maxabs.a[1] = fabsf(val1);
+            acc->_MAXABS.a[0] = fabsf(val0);
+            acc->_MAXABS.a[1] = fabsf(val1);
         }
 
-        IF_CAP(acc, STAT_MINABS)
+        IF_CAP(acc, _MINABS)
         {
-            acc->minabs.a[0] = fabsf(val0);
-            acc->minabs.a[1] = fabsf(val1);
+            acc->_MINABS.a[0] = fabsf(val0);
+            acc->_MINABS.a[1] = fabsf(val1);
         }
     }
     else
     {
-        IF_CAP(acc, STAT_AVG | STAT_DEV |
-                    STAT_COV | STAT_PEARSON)
+        IF_CAP(acc, _AVG)
         {
-            m_new_0 = acc->m.a[0] + (val0 - acc->m.a[0]) / acc->count;
-            m_new_1 = acc->m.a[1] + (val1 - acc->m.a[1]) / acc->count;
+            m_new_0 = acc->_AVG.a[0] + (val0 - acc->_AVG.a[0]) / acc->count;
+            m_new_1 = acc->_AVG.a[1] + (val1 - acc->_AVG.a[1]) / acc->count;
+            acc->_DEV.a[0] += ((val0 - acc->_AVG.a[0]) * (val0 - m_new_0));
+            acc->_DEV.a[1] += ((val1 - acc->_AVG.a[1]) * (val1 - m_new_1));
+
+            IF_CAP(acc, _COV)
+            { acc->_COV.f += ((val0 - acc->_AVG.a[0]) * (val1 - m_new_1)); }
+
+            acc->_AVG.a[0] = m_new_0;
+            acc->_AVG.a[1] = m_new_1;
         }
 
-        IF_CAP(acc, STAT_DEV)
+        IF_CAP(acc, _MAX)
         {
-            acc->s.a[0] += ((val0 - acc->m.a[0]) * (val0 - m_new_0));
-            acc->s.a[1] += ((val1 - acc->m.a[1]) * (val1 - m_new_1));
+            acc->_MAX.a[0] = (val0 > acc->_MAX.a[0] ? val0 : acc->_MAX.a[0]);
+            acc->_MAX.a[1] = (val1 > acc->_MAX.a[1] ? val1 : acc->_MAX.a[1]);
         }
 
-        IF_CAP(acc, STAT_COV | STAT_PEARSON)
-        { acc->cov.f += ((val0 - acc->m.a[0]) * (val1 - m_new_1)); }
-
-        IF_CAP(acc, STAT_AVG | STAT_DEV |
-                    STAT_COV | STAT_PEARSON)
+        IF_CAP(acc, _MIN)
         {
-            acc->m.a[0] = m_new_0;
-            acc->m.a[1] = m_new_1;
+            acc->_MIN.a[0] = (val0 < acc->_MIN.a[0] ? val0 : acc->_MIN.a[0]);
+            acc->_MIN.a[1] = (val1 < acc->_MIN.a[1] ? val1 : acc->_MIN.a[1]);
         }
 
-        IF_CAP(acc, STAT_MAX)
+        IF_CAP(acc, _MAXABS)
         {
-            acc->max.a[0] = (val0 > acc->max.a[0] ? val0 : acc->max.a[0]);
-            acc->max.a[1] = (val1 > acc->max.a[1] ? val1 : acc->max.a[1]);
+            acc->_MAXABS.a[0] = (fabsf(val0) > acc->_MAXABS.a[0] ?
+                                fabsf(val0) : acc->_MAXABS.a[0]);
+            acc->_MAXABS.a[1] = (fabsf(val1) > acc->_MAXABS.a[1] ?
+                                fabsf(val1) : acc->_MAXABS.a[1]);
         }
 
-        IF_CAP(acc, STAT_MIN)
+        IF_CAP(acc, _MINABS)
         {
-            acc->min.a[0] = (val0 < acc->max.a[0] ? val0 : acc->min.a[0]);
-            acc->min.a[1] = (val1 < acc->max.a[1] ? val1 : acc->min.a[1]);
-        }
-
-        IF_CAP(acc, STAT_MAXABS)
-        {
-            acc->maxabs.a[0] = (fabsf(val0) > acc->maxabs.a[0] ?
-                                fabsf(val0) : acc->maxabs.a[0]);
-            acc->maxabs.a[1] = (fabsf(val1) > acc->maxabs.a[1] ?
-                                fabsf(val1) : acc->maxabs.a[1]);
-        }
-
-        IF_CAP(acc, STAT_MINABS)
-        {
-            acc->minabs.a[0] = (fabsf(val0) < acc->minabs.a[0] ?
-                                fabsf(val0) : acc->minabs.a[0]);
-            acc->minabs.a[1] = (fabsf(val1) < acc->minabs.a[1] ?
-                                fabsf(val1) : acc->minabs.a[1]);
+            acc->_MINABS.a[0] = (fabsf(val0) < acc->_MINABS.a[0] ?
+                                fabsf(val0) : acc->_MINABS.a[0]);
+            acc->_MINABS.a[1] = (fabsf(val1) < acc->_MINABS.a[1] ?
+                                fabsf(val1) : acc->_MINABS.a[1]);
         }
     }
 
@@ -390,128 +322,5 @@ int stat_accumulate_dual_many(struct accumulator *acc, float *val0, float *val1,
         }
     }
 
-    return 0;
-}
-
-int __get_mean_dual(struct accumulator *acc, int index, float *res)
-{
-    if(index >= 2)
-    {
-        err("Invalid index for accumulator\n");
-        return -EINVAL;
-    }
-
-    *res = acc->m.a[index];
-    return 0;
-}
-
-int __get_dev_dual(struct accumulator *acc, int index, float *res)
-{
-    if(index >= 2)
-    {
-        err("Invalid index for accumulator\n");
-        return -EINVAL;
-    }
-
-    *res = sqrtf(acc->s.a[index] / (acc->count - 1));
-    return 0;
-}
-
-int __get_cov_dual(struct accumulator *acc, int index, float *res)
-{
-    if(index != 0)
-    {
-        err("Invalid index for accumulator\n");
-        return -EINVAL;
-    }
-
-    *res = acc->cov.f / acc->count;
-    return 0;
-}
-
-int __get_pearson_dual(struct accumulator *acc, int index, float *res)
-{
-    if(index != 0)
-    {
-        err("Invalid index for accumulator\n");
-        return -EINVAL;
-    }
-
-    *res = acc->cov.f /
-           ((acc->count - 1) *
-            sqrtf(acc->s.a[0] / (acc->count - 1)) *
-            sqrtf(acc->s.a[1] / (acc->count - 1)));
-    return 0;
-}
-
-int __get_mean_dual_all(struct accumulator *acc, float **res)
-{
-    float *result = calloc(2, sizeof(float));
-    if(!result)
-    {
-        err("Failed to allocate result\n");
-        return -ENOMEM;
-    }
-
-    result[0] = acc->m.a[0];
-    result[1] = acc->m.a[1];
-    *res = result;
-    return 0;
-}
-
-int __get_dev_dual_all(struct accumulator *acc, float **res)
-{
-    float *result = calloc(2, sizeof(float));
-    if(!result)
-    {
-        err("Failed to allocate result\n");
-        return -ENOMEM;
-    }
-
-    result[0] = sqrtf(acc->s.a[0] / (acc->count - 1));
-    result[1] = sqrtf(acc->s.a[1] / (acc->count - 1));
-    *res = result;
-    return 0;
-}
-
-int __get_cov_dual_all(struct accumulator *acc, float **res)
-{
-    int ret;
-    float *result = calloc(1, sizeof(float));
-    if(!result)
-    {
-        err("Failed to allocate result\n");
-        return -ENOMEM;
-    }
-
-    ret = __get_cov_dual(acc, 0, result);
-    if(ret < 0)
-    {
-        free(result);
-        return ret;
-    }
-
-    *res = result;
-    return 0;
-}
-
-int __get_pearson_dual_all(struct accumulator *acc, float **res)
-{
-    int ret;
-    float *result = calloc(1, sizeof(float));
-    if(!result)
-    {
-        err("Failed to allocate result\n");
-        return -ENOMEM;
-    }
-
-    ret = __get_pearson_dual(acc, 0, result);
-    if(ret < 0)
-    {
-        free(result);
-        return ret;
-    }
-
-    *res = result;
     return 0;
 }

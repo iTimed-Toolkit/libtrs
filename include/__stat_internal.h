@@ -25,13 +25,13 @@ struct accumulator
     int dim0, dim1;
     float count;
 
-    ACCUMULATOR(m);
-    ACCUMULATOR(s);
-    ACCUMULATOR(cov);
-    ACCUMULATOR(max);
-    ACCUMULATOR(min);
-    ACCUMULATOR(maxabs);
-    ACCUMULATOR(minabs);
+    ACCUMULATOR(_AVG);
+    ACCUMULATOR(_DEV);
+    ACCUMULATOR(_COV);
+    ACCUMULATOR(_MAX);
+    ACCUMULATOR(_MIN);
+    ACCUMULATOR(_MAXABS);
+    ACCUMULATOR(_MINABS);
 
     int (*reset)(struct accumulator *);
     int (*free)(struct accumulator *);
@@ -43,11 +43,43 @@ struct accumulator
 #endif
 };
 
-#define IF_CAP(acc, stat) \
-    if((acc)->capabilities & (stat))
+/*
+ * This table tells us which statistics (entries) depend on which
+ * other statistics (indices).
+ */
+static const stat_t dependencies[] = {
+        [_AVG] = STAT_DEV | STAT_COV | STAT_PEARSON,
+        [_DEV] = STAT_AVG | STAT_COV | STAT_PEARSON,
+        [_COV] = STAT_AVG | STAT_DEV | STAT_COV | STAT_PEARSON,
+        [_PEARSON] = 0,
+        [_MAX] = 0, [_MIN] = 0,
+        [_MAXABS] = 0, [_MINABS] = 0
+};
 
-#define IF_NOT_CAP(acc, stat) \
-    if(~(acc)->capabilities & (stat))
+#define ONEHOT_NODECL(stat) 1 << ((stat))
+
+#define IF_CAP(acc, stat)       \
+    if((acc)->capabilities & ((ONEHOT_NODECL(stat)) | dependencies[stat]))
+
+#define IF_NOT_CAP(acc, stat)                   \
+    if((acc)->capabilities & ~((ONEHOT_NODECL(stat)) | dependencies[stat]))
+
+#define CAP_INIT_SCALAR(acc, cap, val) \
+    IF_CAP(acc, cap) { (acc)->cap.f = val; }
+
+#define CAP_INIT_ARRAY(acc, cap, num, fail) \
+    IF_CAP(acc, cap) { (acc)->cap.a = calloc(num, sizeof(float)); \
+    if(!(acc)->cap.a) {err("Failed to alloc " #acc " for stat " #cap) \
+        goto fail; }}
+
+#define CAP_RESET_SCALAR(acc, cap, val) \
+    IF_CAP(acc, cap) { (acc)->cap.f = val; }
+
+#define CAP_RESET_ARRAY(acc, cap, val, num) \
+    IF_CAP(acc, cap) { memset((acc)->cap.a, val, (num) * sizeof(float)); }
+
+#define CAP_FREE_ARRAY(acc, cap) \
+    IF_CAP(acc, cap) { free((acc)->cap.a); }
 
 #if USE_GPU
 int __init_single_array_gpu(struct accumulator *acc, int num);
@@ -121,6 +153,11 @@ int __sync_dual_array_gpu(struct accumulator *acc);
 #define AVX256  256
 #define AVX128
 
+// Different conventions for AVX512
+#define _mm512_broadcast_ss(var)    \
+    _mm512_broadcastss_ps(          \
+        _mm_broadcast_ss(var))
+
 #define __defer_avx_var(type, name) \
     name ## _ ## type
 
@@ -142,6 +179,9 @@ int __sync_dual_array_gpu(struct accumulator *acc);
 #define avx_sub_ps(type, arg1, arg2) \
     __defer_avx_func(type, sub_ps, arg1, arg2)
 
+#define avx_andnot_ps(type, arg1, arg2) \
+    __defer_avx_func(type, andnot_ps, arg1, arg2)
+
 #define avx_mul_ps(type, arg1, arg2) \
     __defer_avx_func(type, mul_ps, arg1, arg2)
 
@@ -150,6 +190,9 @@ int __sync_dual_array_gpu(struct accumulator *acc);
 
 #define avx_setzero_ps(type) \
     __defer_avx_func(type, setzero_ps,)
+
+#define avx_broadcast_ss(type, val) \
+    __defer_avx_func(type, broadcast_ss, val)
 
 #define avx_sqrt_ps(type, arg) \
     __defer_avx_func(type, sqrt_ps, arg)
@@ -162,11 +205,20 @@ int __sync_dual_array_gpu(struct accumulator *acc);
 
 // high-level components
 
+static const float __gbl_abs_mask = -0.0f;
+#define avx_abs_ps(type, val_name)                      \
+        avx_andnot_ps(type, val_name,                   \
+            avx_broadcast_ss(type, &__gbl_abs_mask))      \
+
 #define init_m(type, m_ptr, val_ptr)                    \
     avx_storeu_ps(type, m_ptr,                          \
         avx_loadu_ps(type, val_ptr));
 
-#define fetch_data(type, val_name, m_name, s_name,      \
+#define init_abs(type, acc_ptr, val_ptr)                \
+    avx_storeu_ps(type, acc_ptr,                        \
+        avx_abs_ps(type, avx_loadu_ps(type, val_ptr)));
+
+#define fetch_data(type, val_name, m_name, s_name, \
                     val_ptr, m_ptr, s_ptr)              \
     avx_var(type, val_name) =                           \
         avx_loadu_ps(type, val_ptr);                    \
@@ -181,7 +233,7 @@ int __sync_dual_array_gpu(struct accumulator *acc);
     avx_storeu_ps(type, cov_ptr,                        \
         avx_var(type, cov_name ## _new));
 
-#define calc_new_a(type,                                \
+#define calc_new_a(type, \
                     m_name, val_name, cnt_name)         \
     avx_var(type, m_name ## _new) =                     \
         avx_add_ps(type,                                \
@@ -204,8 +256,8 @@ int __sync_dual_array_gpu(struct accumulator *acc);
                     avx_var(type, val_name),            \
                     avx_var(type, m_name ## _new))));
 
-#define calc_new_cov(type, cov_name,                    \
-                        val0_name, m0_name,             \
+#define calc_new_cov(type, cov_name, \
+                        val0_name, m0_name, \
                         val1_ptr, m1_ptr)               \
     avx_var(type, cov_name ## _new) =                   \
         avx_add_ps(type,                                \
@@ -233,8 +285,8 @@ int __sync_dual_array_gpu(struct accumulator *acc);
             avx_loadu_ps(type, s_ptr),                  \
             avx_var(type, cnt_name)))
 
-#define reduce_pearson(type, cov_ptr,                   \
-                        s0_ptr, dev1_name,              \
+#define reduce_pearson(type, cov_ptr, \
+                        s0_ptr, dev1_name, \
                         d_ptr, cnt_name)                \
     avx_storeu_ps(type,                                 \
         d_ptr,                                          \
@@ -251,8 +303,8 @@ int __sync_dual_array_gpu(struct accumulator *acc);
 
 // entire functions
 
-#define accumulate(type, m_name, s_name,                \
-                    val_name, cnt_name,                 \
+#define accumulate(type, m_name, s_name, \
+                    val_name, cnt_name, \
                     m_ptr, s_ptr, val_ptr)              \
     fetch_data(type, val_name, m_name, s_name,          \
                 val_ptr, m_ptr, s_ptr);                 \
@@ -263,15 +315,15 @@ int __sync_dual_array_gpu(struct accumulator *acc);
     avx_storeu_ps(type, s_ptr,                          \
         avx_var(type, s_name ## _new));
 
-#define accumulate_cov(type, cov_name, cov_ptr,         \
-                        val0_name, m0_name,             \
+#define accumulate_cov(type, cov_name, cov_ptr, \
+                        val0_name, m0_name, \
                         val1_ptr, m1_ptr)               \
     fetch_cov(type, cov_name, cov_ptr);                 \
     calc_new_cov(type, cov_name, val0_name, m0_name,    \
                     val1_ptr, m1_ptr)                   \
     store_cov(type, cov_name, cov_ptr)
 
-#define accumulate_max(type, val_name, val_ptr,         \
+#define accumulate_max(type, val_name, val_ptr, \
                             max_name, max_ptr)          \
     avx_var(type, val_name) =                           \
         avx_loadu_ps(type, val_ptr);                    \
@@ -283,7 +335,7 @@ int __sync_dual_array_gpu(struct accumulator *acc);
     avx_storeu_ps(type, max_ptr,                        \
                     avx_var(type, max_name));
 
-#define accumulate_min(type, val_name, val_ptr,         \
+#define accumulate_min(type, val_name, val_ptr, \
                             min_name, min_ptr)          \
     avx_var(type, val_name) =                           \
         avx_loadu_ps(type, val_ptr);                    \
@@ -294,5 +346,31 @@ int __sync_dual_array_gpu(struct accumulator *acc);
                     avx_var(type, val_name));           \
     avx_storeu_ps(type, min_ptr,                        \
                     avx_var(type, min_name));
+
+#define accumulate_maxabs(type, val_name, val_ptr, \
+                            maxabs_name, maxabs_ptr)    \
+    avx_var(type, val_name) =                           \
+        avx_loadu_ps(type, val_ptr);                    \
+    avx_var(type, maxabs_name) =                        \
+        avx_loadu_ps(type, maxabs_ptr);                 \
+    avx_var(type, maxabs_name) =                        \
+        avx_max_ps(type, avx_var(type, maxabs_name),    \
+                    avx_abs_ps(type,                    \
+                    avx_var(type, val_name)));          \
+    avx_storeu_ps(type, maxabs_ptr,                     \
+        avx_var(type, maxabs_name));
+
+#define accumulate_minabs(type, val_name, val_ptr, \
+                            minabs_name, minabs_ptr)    \
+    avx_var(type, val_name) =                           \
+        avx_loadu_ps(type, val_ptr);                    \
+    avx_var(type, minabs_name) =                        \
+        avx_loadu_ps(type, minabs_ptr);                 \
+    avx_var(type, minabs_name) =                        \
+        avx_min_ps(type, avx_var(type, minabs_name),    \
+                    avx_abs_ps(type,                    \
+                    avx_var(type, val_name)));          \
+    avx_storeu_ps(type, minabs_ptr,                     \
+        avx_var(type, minabs_name));
 
 #endif //LIBTRS___STAT_INTERNAL_H

@@ -14,36 +14,7 @@ int stat_reset_accumulator(struct accumulator *acc)
         return -EINVAL;
     }
 
-    if(!acc->reset)
-    {
-        err("Invalid accumulator reset function\n");
-        return -EINVAL;
-    }
-
     return acc->reset(acc);
-
-    switch(acc->type)
-    {
-
-        case ACC_SINGLE_ARRAY:
-            acc->count = 0;
-            memset(acc->m.a, 0, acc->dim0 * sizeof(float));
-            memset(acc->s.a, 0, acc->dim0 * sizeof(float));
-            acc->cov.f = 0;
-            return 0;
-
-
-        case ACC_DUAL_ARRAY:
-            acc->count = 0;
-            memset(acc->m.a, 0, (acc->dim0 + acc->dim1) * sizeof(float));
-            memset(acc->s.a, 0, (acc->dim0 + acc->dim1) * sizeof(float));
-            memset(acc->cov.a, 0, (acc->dim0 * acc->dim1) * sizeof(float));
-            return 0;
-
-        default:
-            err("Unknown accumulator type\n");
-            return -EINVAL;
-    }
 }
 
 int stat_free_accumulator(struct accumulator *acc)
@@ -54,32 +25,9 @@ int stat_free_accumulator(struct accumulator *acc)
         return -EINVAL;
     }
 
-    if(!acc->free)
-    {
-        err("Invalid accumulator free function\n");
-        return -EINVAL;
-    }
-
-    return acc->free(acc);
-
-    switch(acc->type)
-    {
-        case ACC_DUAL_ARRAY:
-            free(acc->cov.a);
-
-        case ACC_DUAL:
-        case ACC_SINGLE_ARRAY:
-            free(acc->m.a);
-            free(acc->s.a);
-
-        case ACC_SINGLE:
-            free(acc);
-            return 0;
-
-        default:
-            err("Unknown accumulator type\n");
-            return -EINVAL;
-    }
+    acc->free(acc);
+    free(acc);
+    return 0;
 }
 
 int stat_get(struct accumulator *acc, stat_t stat, int index, float *res)

@@ -4,6 +4,8 @@
 #include "__tfm_internal.h"
 #include "__trace_internal.h"
 
+#include "statistics.h"
+
 #include <string.h>
 #include <errno.h>
 #include <math.h>
@@ -133,9 +135,10 @@ bool tfm_select_along_matches(struct trace *t, void *block, void *arg)
 
 int tfm_select_along_accumulate(struct trace *t, void *block, void *arg)
 {
-    int i;
+    int ret;
     float val = -FLT_MAX;
 
+    struct accumulator *acc;
     struct tfm_select_along_block *blk = block;
     struct tfm_select_along_config *cfg = arg;
 
@@ -159,15 +162,31 @@ int tfm_select_along_accumulate(struct trace *t, void *block, void *arg)
         return -EINVAL;
     }
 
+    ret = stat_create_single(&acc, __summary_to_cability(cfg->stat));
+    if(ret < 0)
+    {
+        err("Failed to create accumulator\n");
+        return ret;
+    }
+
+    ret = stat_accumulate_single_many(acc, t->samples, t->owner->num_samples);
+    if(ret < 0)
+    {
+        err("Failed to accumulate trace samples\n");
+        goto __free_accumulator;
+    }
+
+    ret = stat_get(acc, __summary_to_cability(cfg->stat), 0, &val);
+    if(ret < 0)
+    {
+        err("Failed to get value from accumulator\n");
+        goto __free_accumulator;
+    }
+
     switch(cfg->stat)
     {
         case SUMMARY_MAX:
-            for(i = 0; i < t->owner->num_samples; i++)
-            {
-                if(fabsf(t->samples[i]) > val)
-                    val = fabsf(t->samples[i]);
-            }
-
+        case SUMMARY_MAXABS:
             if(val > blk->val)
             {
                 if(blk->t)
@@ -179,17 +198,33 @@ int tfm_select_along_accumulate(struct trace *t, void *block, void *arg)
                 trace_copy(&blk->t, t);
                 blk->val = val;
             }
-
             break;
 
         case SUMMARY_MIN:
+        case SUMMARY_MINABS:
+            if(val < blk->val)
+            {
+                if(blk->t)
+                {
+                    blk->t->owner = NULL;
+                    trace_free_memory(blk->t);
+                }
+
+                trace_copy(&blk->t, t);
+                blk->val = val;
+            }
+            break;
+
         case SUMMARY_AVG:
         case SUMMARY_DEV:
-            err("Unimplemented\n");
-            return -EINVAL;
+            err("Invalid summary statistic\n");
+            ret = -EINVAL; goto __free_accumulator;
     }
 
-    return 0;
+    ret = 0;
+__free_accumulator:
+    stat_free_accumulator(acc);
+    return ret;
 }
 
 int tfm_select_along_finalize(struct trace *t, void *block, void *arg)
@@ -230,6 +265,7 @@ int tfm_select_along_finalize(struct trace *t, void *block, void *arg)
 int tfm_select_along(struct tfm **tfm, summary_t stat, filter_t along, filter_param_t param)
 {
     int ret;
+    struct tfm_select_along_config *cfg;
     struct block_args block_args = {
             .consumer_init = tfm_select_along_init,
             .consumer_exit = tfm_select_along_exit,
@@ -244,7 +280,12 @@ int tfm_select_along(struct tfm **tfm, summary_t stat, filter_t along, filter_pa
             .criteria = DONE_LISTLEN
     };
 
-    struct tfm_select_along_config *cfg;
+    if(stat == SUMMARY_AVG || stat == SUMMARY_DEV)
+    {
+        err("Invalid summary statistic for selection transformation\n");
+        return -EINVAL;
+    }
+
     cfg = calloc(1, sizeof(struct tfm_select_along_config));
     if(!cfg)
     {

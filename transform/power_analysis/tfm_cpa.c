@@ -120,7 +120,7 @@ int __tfm_cpa_get(struct trace *t)
         return -ENOMEM;
     }
 
-    ret = stat_create_dual_array(&acc, ts_num_samples(t->owner->prev), tfm->num_models);
+    ret = stat_create_dual_array(&acc, STAT_PEARSON, ts_num_samples(t->owner->prev), tfm->num_models);
     if(ret < 0)
     {
         err("Failed to create accumulator\n");
@@ -166,7 +166,7 @@ int __tfm_cpa_get(struct trace *t)
             {
                 if(t->owner->tfm_next)
                 {
-                    ret = stat_get_pearson_all(acc, &pearson);
+                    ret = stat_get_all(acc, STAT_PEARSON, &pearson);
                     if(ret < 0)
                     {
                         err("Failed to get all pearson values from accumulator\n");
@@ -226,7 +226,7 @@ __next_trace:
     t->title = NULL;
     t->data = NULL;
 
-    ret = stat_get_pearson_all(acc, &pearson);
+    ret = stat_get_all(acc, STAT_PEARSON, &pearson);
     if(ret < 0)
     {
         err("Failed to get all pearson values from accumulator\n");

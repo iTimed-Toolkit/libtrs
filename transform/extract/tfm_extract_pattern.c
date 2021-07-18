@@ -123,7 +123,7 @@ int __process_ref_trace(struct trace *t, struct tfm_extract_config *cfg)
         goto __fail_free_trace;
     }
 
-    ret = stat_create_single(&acc);
+    ret = stat_create_single(&acc, STAT_AVG | STAT_DEV);
     if(ret < 0)
     {
         err("Failed to create accumulator for gap analysis\n");
@@ -177,14 +177,14 @@ int __process_ref_trace(struct trace *t, struct tfm_extract_config *cfg)
         free(pos);
     }
 
-    ret = stat_get_mean(acc, 0, &cfg->ref.mean);
+    ret = stat_get(acc, STAT_AVG, 0, &cfg->ref.mean);
     if(ret < 0)
     {
         err("Failed to get mean from accumulator\n");
         goto __fail_free_pearson;
     }
 
-    ret = stat_get_dev(acc, 0, &cfg->ref.dev);
+    ret = stat_get(acc, STAT_DEV, 0, &cfg->ref.dev);
     if(ret < 0)
     {
         err("Failed to get dev from accumulator\n");

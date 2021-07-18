@@ -87,7 +87,9 @@ int tfm_reduce_along_initialize(struct trace *t, void **block, void *arg)
             return -EINVAL;
     }
 
-    ret = stat_create_single_array(&new->acc, (int) t->owner->num_samples);
+    ret = stat_create_single_array(&new->acc,
+                                   __summary_to_cability(cfg->stat),
+                                   (int) t->owner->num_samples);
     if(ret < 0)
     {
         err("Failed to create new accumulator for block\n");
@@ -206,26 +208,9 @@ int tfm_reduce_along_finalize(struct trace *t, void *block, void *arg)
             return -EINVAL;
     }
 
-    switch(cfg->stat)
-    {
-        case SUMMARY_AVG:
-            ret = stat_get_mean_all(blk->acc, &t->samples);
-            break;
-
-        case SUMMARY_DEV:
-            ret = stat_get_dev_all(blk->acc, &t->samples);
-            break;
-
-        case SUMMARY_MIN:
-        case SUMMARY_MAX:
-            err("Unimplemented\n");
-            return -EINVAL;
-
-        default:
-            err("Unknown summary enum value\n");
-            return -EINVAL;
-    }
-
+    ret = stat_get_all(blk->acc,
+                       __summary_to_cability(cfg->stat),
+                       &t->samples);
     if(ret < 0)
     {
         err("Failed to get summary statistic\n");
