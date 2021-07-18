@@ -303,8 +303,12 @@ __free_acc:
     return -ENOMEM;
 }
 
-__attribute__ ((always_inline))
-static inline int __accumulate_dual_array(struct accumulator *acc,
+#if defined(LIBTRACE_PLATFORM_LINUX)
+__attribute__((always_inline)) static inline
+#elif defined(LIBTRACE_PLATFORM_WINDOWS)
+static __forceinline
+#endif
+int __accumulate_dual_array(struct accumulator *acc,
                                           float *val0, float *val1,
                                           int len0, int len1)
 {
@@ -515,11 +519,7 @@ static inline int __accumulate_dual_array(struct accumulator *acc,
                                   IF_CAP(acc, _COV) {
                               for(j = 0; j < 16; j++)
                               {
-#if defined(LIBTRACE_PLATFORM_LINUX)
-                                  m1_new_scalar = m1_512[j];
-#elif defined(LIBRACE_PLATFORM_WINDOWS)
-                                  m1_new_scalar = m1_512.m512_f32[j];
-#endif
+                                  m1_new_scalar = mm512_extract(m1_512, j);
                                   IF_HAVE_128(cov_m_ = _mm_broadcast_ss(&m1_new_scalar));
                                   IF_HAVE_256(cov_m_256 = _mm256_broadcast_ss(&m1_new_scalar));
                                   IF_HAVE_512(cov_m_512 = _mm512_broadcastss_ps(cov_m_));
@@ -582,11 +582,7 @@ static inline int __accumulate_dual_array(struct accumulator *acc,
                                   IF_CAP(acc, _COV) {
                               for(j = 0; j < 8; j++)
                               {
-#if defined(LIBTRACE_PLATFORM_LINUX)
-                                  m1_new_scalar = m1_256[j];
-#elif defined(LIBRACE_PLATFORM_WINDOWS)
-                                  m1_new_scalar = m1_256.m256_f32[j];
-#endif
+                                  m1_new_scalar = mm256_extract(m1_256, j);
                                   IF_HAVE_128(cov_m_ = _mm_broadcast_ss(&m1_new_scalar));
                                   IF_HAVE_256(cov_m_256 = _mm256_broadcast_ss(&m1_new_scalar));
                                   IF_HAVE_512(cov_m_512 = _mm512_broadcastss_ps(cov_m_));
@@ -649,11 +645,7 @@ static inline int __accumulate_dual_array(struct accumulator *acc,
                                   IF_CAP(acc, _COV) {
                               for(j = 0; j < 4; j++)
                               {
-#if defined(LIBTRACE_PLATFORM_LINUX)
-                                  m1_new_scalar = m1_[j];
-#elif defined(LIBRACE_PLATFORM_WINDOWS)
-                                  m1_new_scalar = m1_.m128_f32[j];
-#endif
+                                  m1_new_scalar = mm128_extract(m1_, j);
                                   IF_HAVE_128(cov_m_ = _mm_broadcast_ss(&m1_new_scalar));
                                   IF_HAVE_256(cov_m_256 = _mm256_broadcast_ss(&m1_new_scalar));
                                   IF_HAVE_512(cov_m_512 = _mm512_broadcastss_ps(cov_m_));

@@ -2,6 +2,7 @@
 
 #include "__trace_internal.h"
 #include "__stat_internal.h"
+#include "platform.h"
 
 #include <errno.h>
 #include <stdlib.h>
@@ -210,8 +211,12 @@ __free_acc:
     return -ENOMEM;
 }
 
-__attribute__ ((always_inline))
-static inline int __accumulate_single_array(struct accumulator *acc, float *val, int len)
+#if defined(LIBTRACE_PLATFORM_LINUX)
+__attribute__ ((always_inline)) static inline
+#elif defined(LIBTRACE_PLATFORM_WINDOWS)
+static __forceinline
+#endif
+int __accumulate_single_array(struct accumulator *acc, float *val, int len)
 {
     int i;
     float m_new_scalar;

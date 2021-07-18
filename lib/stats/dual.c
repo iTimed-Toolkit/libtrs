@@ -186,8 +186,12 @@ __free_acc:
     return -ENOMEM;
 }
 
-__attribute__ ((always_inline))
-static inline int __accumulate_dual(struct accumulator *acc, float val0, float val1)
+#if defined(LIBTRACE_PLATFORM_LINUX)
+__attribute__((always_inline)) static inline
+#elif defined(LIBTRACE_PLATFORM_WINDOWS)
+static __forceinline
+#endif
+int __accumulate_dual(struct accumulator *acc, float val0, float val1)
 {
     float m_new_0, m_new_1;
 

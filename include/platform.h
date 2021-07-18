@@ -22,6 +22,10 @@ typedef FILE                        LT_FILE_TYPE;
 #define p_fseek(file, offs, whence) fseek(file, offs, whence)
 #define p_sleep(s)                  usleep(1000 * (s))
 
+#define mm128_extract(var, i)       (var)[(i)]
+#define mm256_extract(var, i)       (var)[(i)]
+#define mm512_extract(var, i)       (var)[(i)]
+
 #elif defined(_WIN32)
 
 #include <stdio.h>
@@ -39,6 +43,10 @@ typedef FILE                        LT_FILE_TYPE;
 
 #define p_fseek(file, offs, whence) _fseeki64(file, offs, whence)
 #define p_sleep(s)                  Sleep((s))
+
+#define mm128_extract(var, i)       (var).m128_f32[(i)]
+#define mm256_extract(var, i)       (var).m256_f32[(i)]
+#define mm512_extract(var, i)       (var).m512_f32[(i)]
 
 static char* strsep(char** stringp, const char* delim)
 {

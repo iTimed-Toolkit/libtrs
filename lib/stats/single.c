@@ -122,8 +122,12 @@ int stat_create_single(struct accumulator **acc, stat_t capabilities)
     return 0;
 }
 
-__attribute__ ((always_inline))
-static inline int __accumulate_single(struct accumulator *acc, float val)
+#if defined(LIBTRACE_PLATFORM_LINUX)
+__attribute__((always_inline)) static inline
+#elif defined(LIBTRACE_PLATFORM_WINDOWS)
+static __forceinline
+#endif
+int __accumulate_single(struct accumulator *acc, float val)
 {
     float m_new;
 

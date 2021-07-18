@@ -36,7 +36,7 @@ struct __commit_queue
     LT_SEM_TYPE list_lock;
     struct list_head head;
 
-    size_t written, available;
+    size_t written;
     bool sentinel_seen;
 };
 
@@ -194,14 +194,6 @@ LT_THREAD_FUNC(__commit_thread, arg)
         p_sleep(1000);
         sem_acquire(&queue->list_lock);
 
-        if (queue->available == 0)
-        {
-            debug("No work, going back to sleep\n");
-            sem_release(&queue->list_lock); continue;
-        }
-
-        warn("%zu traces available to write\n", queue->available);
-
         if(queue->ts == NULL)
         {
             debug("Commit thread exiting cleanly\n");
@@ -221,12 +213,12 @@ LT_THREAD_FUNC(__commit_thread, arg)
         }
 
         list_cut_before(&write_head, &queue->head, &curr->list);
-        queue->available -= count;
         sem_release(&queue->list_lock);
 
         // write the collected batch
         if(!list_empty(&write_head))
         {
+            warn("Writing %zu traces\n", count);
             ret = __commit_traces(queue, &write_head);
             if(ret < 0)
             {
@@ -367,7 +359,6 @@ void __tfm_save_exit(struct trace_set *ts)
 
     // kill the commit threads
     queue->ts = NULL;
-    queue->available = -1;
     p_thread_join(queue->handle);
 
     p_sem_destroy(&queue->list_lock);
@@ -418,7 +409,6 @@ int __render_to_index(struct trace_set *ts, size_t index)
                 return ret;
             }
 
-            sem_with(&queue->list_lock, queue->available++);
             return 1;
         }
 
@@ -465,8 +455,6 @@ int __render_to_index(struct trace_set *ts, size_t index)
             __list_remove_entry(queue, entry);
             return queue->thread_ret;
         }
-
-        sem_with(&queue->list_lock, queue->available++);
     }
 
     return 0;

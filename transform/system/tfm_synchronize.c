@@ -14,7 +14,7 @@ struct __tfm_synchronize_entry
 {
     struct list_head list;
     size_t index;
-    int count;
+    int count, signalled;
     LT_SEM_TYPE signal;
 };
 
@@ -84,6 +84,7 @@ int __stall(struct tfm_synchronize *tfm, size_t index)
 
         LIST_HEAD_INIT_INLINE(new->list);
         new->index = index;
+        new->signalled = 0;
         new->count = 0;
 
         ret = p_sem_create(&new->signal, 0);
@@ -107,6 +108,14 @@ int __stall(struct tfm_synchronize *tfm, size_t index)
     sem_acquire(&tfm->list_lock);
 
     curr->count--;
+    if (curr->signalled)
+        curr->signalled = 0;
+    else
+    {
+        err("Signalled flag not set after wakeup\n");
+        return -EINVAL;
+    }
+
     if(curr->count == 0)
     {
         list_del(&curr->list);
@@ -169,6 +178,7 @@ int __synchronize(struct tfm_synchronize *tfm, size_t index)
 
         LIST_HEAD_INIT_INLINE(new->list);
         new->index = index;
+        new->signalled = 0;
         new->count = 0;
 
         list_add_tail(&new->list, &curr->list);
@@ -189,8 +199,12 @@ int __sync_finalize(struct tfm_synchronize *tfm, size_t index)
     sem_acquire(&tfm->list_lock);
     list_for_each_entry(curr, &tfm->waiting, struct __tfm_synchronize_entry, list)
     {
-        if(index + tfm->max_distance >= curr->index)
+        if (index + tfm->max_distance >= curr->index &&
+            !curr->signalled)
+        {
+            curr->signalled = 1;
             sem_release(&curr->signal);
+        }
     }
 
     // find ourselves in the list
@@ -236,7 +250,7 @@ int __tfm_synchronize_get(struct trace *t)
     ret = passthrough(t);
     if(ret < 0)
     {
-        err("Failed to passthrough title\n");
+        err("Failed to passthrough trace\n");
         return ret;
     }
 
