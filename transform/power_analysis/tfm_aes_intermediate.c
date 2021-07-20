@@ -7,7 +7,7 @@
 #include <errno.h>
 #include <string.h>
 
-#define PMS_PER_THREAD  64
+#define PMS_PER_THREAD  (64 * 16)
 
 static inline uint8_t hamming_weight(uint8_t n)
 {
@@ -102,7 +102,7 @@ int tfm_aes_intermediate_init(struct trace_set *ts, void *arg)
         case AES128_R0_HW_SBOX_OUT:
         case AES128_R10_OUT_HD:
         case AES128_R10_HW_SBOXIN:
-            ts->num_traces = 4 * 256 / PMS_PER_THREAD;
+            ts->num_traces = 1; // * 256 / PMS_PER_THREAD;
             ts->num_samples = ts->prev->num_samples * PMS_PER_THREAD;
             break;
 

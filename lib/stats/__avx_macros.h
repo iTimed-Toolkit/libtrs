@@ -1,98 +1,9 @@
-#ifndef LIBTRS___STAT_INTERNAL_H
-#define LIBTRS___STAT_INTERNAL_H
+#ifndef LIBTRS___AVX_MACROS_H
+#define LIBTRS___AVX_MACROS_H
 
-#include "statistics.h"
 #include <immintrin.h>
 
-#define ACCUMULATOR(name)   \
-    union {                 \
-        float f;            \
-        float *a;           \
-    } (name)
-
-// structs
-struct accumulator
-{
-    enum
-    {
-        ACC_SINGLE,
-        ACC_DUAL,
-        ACC_SINGLE_ARRAY,
-        ACC_DUAL_ARRAY
-    } type;
-    stat_t capabilities;
-
-    int dim0, dim1;
-    float count;
-
-    ACCUMULATOR(_AVG);
-    ACCUMULATOR(_DEV);
-    ACCUMULATOR(_COV);
-    ACCUMULATOR(_MAX);
-    ACCUMULATOR(_MIN);
-    ACCUMULATOR(_MAXABS);
-    ACCUMULATOR(_MINABS);
-
-    int (*reset)(struct accumulator *);
-    int (*free)(struct accumulator *);
-    int (*get)(struct accumulator *, stat_t, int, float *);
-    int (*get_all)(struct accumulator *, stat_t, float **);
-
-#if USE_GPU
-    void *gpu_vars;
-#endif
-};
-
-/*
- * This table tells us which statistics (entries) depend on which
- * other statistics (indices).
- */
-static const stat_t dependencies[] = {
-        [_AVG] = STAT_DEV | STAT_COV | STAT_PEARSON,
-        [_DEV] = STAT_AVG | STAT_COV | STAT_PEARSON,
-        [_COV] = STAT_AVG | STAT_DEV | STAT_COV | STAT_PEARSON,
-        [_PEARSON] = 0,
-        [_MAX] = 0, [_MIN] = 0,
-        [_MAXABS] = 0, [_MINABS] = 0
-};
-
-#define ONEHOT_NODECL(stat) 1 << ((stat))
-
-#define IF_CAP(acc, stat)       \
-    if((acc)->capabilities & ((ONEHOT_NODECL(stat)) | dependencies[stat]))
-
-#define IF_NOT_CAP(acc, stat)                   \
-    if((acc)->capabilities & ~((ONEHOT_NODECL(stat)) | dependencies[stat]))
-
-#define CAP_INIT_SCALAR(acc, cap, val) \
-    IF_CAP(acc, cap) { (acc)->cap.f = val; }
-
-#define CAP_INIT_ARRAY(acc, cap, num, fail) \
-    IF_CAP(acc, cap) { (acc)->cap.a = calloc(num, sizeof(float)); \
-    if(!(acc)->cap.a) {err("Failed to alloc " #acc " for stat " #cap) \
-        goto fail; }}
-
-#define CAP_RESET_SCALAR(acc, cap, val) \
-    IF_CAP(acc, cap) { (acc)->cap.f = val; }
-
-#define CAP_RESET_ARRAY(acc, cap, val, num) \
-    IF_CAP(acc, cap) { memset((acc)->cap.a, val, (num) * sizeof(float)); }
-
-#define CAP_FREE_ARRAY(acc, cap) \
-    IF_CAP(acc, cap) { free((acc)->cap.a); }
-
-#if USE_GPU
-int __init_single_array_gpu(struct accumulator *acc, int num);
-int __accumulate_single_array_gpu(struct accumulator *acc, float *val, int len);
-int __sync_single_array_gpu(struct accumulator *acc);
-
-int __init_dual_array_gpu(struct accumulator *acc, int num);
-int __accumulate_dual_array_gpu(struct accumulator *acc, float *val, int len);
-int __sync_dual_array_gpu(struct accumulator *acc);
-#endif
-
 // loop wrapper macros
-
 #if __AVX2__ && !__AVX__
 #error "Found AVX2 but not AVX"
 #endif
@@ -373,4 +284,5 @@ static const float __gbl_abs_mask = -0.0f;
     avx_storeu_ps(type, minabs_ptr,                     \
         avx_var(type, minabs_name));
 
-#endif //LIBTRS___STAT_INTERNAL_H
+
+#endif //LIBTRS___AVX_MACROS_H

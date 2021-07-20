@@ -32,11 +32,7 @@ int tfm_extract_pattern_exit(struct trace_set *ts, void *arg)
     sem_acquire(&cfg->lock);
     p_sem_destroy(&cfg->lock);
 
-#if USE_GPU
-    gpu_pattern_free(cfg->ref.match_pattern);
-#else
-    free(cfg->ref.match_pattern);
-#endif
+    stat_free_accumulator(cfg->ref.matcher);
     free(cfg);
     return 0;
 }
@@ -91,30 +87,14 @@ int __process_ref_trace(struct trace *t, struct tfm_extract_config *cfg)
 
     if(ref_trace->samples && ref_trace->data)
     {
-#if USE_GPU
-        ret = gpu_pattern_preprocess(&ref_trace->samples[cfg->pattern.lower],
-                                     NUM_MATCH(&cfg->pattern),
-                                     &cfg->ref.match_pattern,
-                                     &cfg->ref.s_pattern);
+        ret = stat_create_pattern_match(&cfg->ref.matcher,
+                                        &ref_trace->samples[cfg->pattern.lower],
+                                        NUM_MATCH(&cfg->pattern), t->owner->num_samples);
         if(ret < 0)
         {
-            err("Failed to preprocess pattern for GPU\n");
+            err("Failed to create accumulator for pattern matching\n");
             goto __fail_free_trace;
         }
-
-#else
-        cfg->ref.match_pattern = calloc(NUM_MATCH(&cfg->pattern), sizeof(float));
-        if(!cfg->ref.match_pattern)
-        {
-            err("Failed to allocate memory for reference pattern\n");
-            ret = -ENOMEM;
-            goto __fail_free_patterns;
-        }
-
-        memcpy(cfg->ref.match_pattern,
-               &ref_trace->samples[cfg->pattern.lower],
-               NUM_MATCH(&cfg->pattern) * sizeof(float));
-#endif
     }
     else
     {
@@ -202,14 +182,7 @@ __fail_free_gap_acc:
     stat_free_accumulator(acc);
 
 __fail_free_patterns:
-    if(cfg->ref.match_pattern)
-    {
-#if USE_GPU
-        gpu_pattern_free(cfg->ref.match_pattern);
-#else
-        free(cfg->ref.match_pattern);
-#endif
-    }
+    stat_free_accumulator(cfg->ref.matcher);
 
 __fail_free_trace:
     if(ref_trace)

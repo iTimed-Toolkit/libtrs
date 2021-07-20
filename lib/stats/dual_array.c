@@ -2,6 +2,7 @@
 
 #include "__trace_internal.h"
 #include "__stat_internal.h"
+#include "__avx_macros.h"
 #include "platform.h"
 
 #include <errno.h>
@@ -32,6 +33,10 @@ int __stat_free_dual_array(struct accumulator *acc)
     CAP_FREE_ARRAY(acc, _MIN);
     CAP_FREE_ARRAY(acc, _MAXABS);
     CAP_FREE_ARRAY(acc, _MINABS);
+
+#if USE_GPU
+    gpu_free_dual_array(acc);
+#endif
     return 0;
 }
 
@@ -55,6 +60,15 @@ int __stat_get_dual_array(struct accumulator *acc, stat_t stat, int index, float
         err("Invalid index for accumulator and statistic\n");
         return -EINVAL;
     }
+
+#if USE_GPU
+    int ret = gpu_sync_dual_array(acc);
+    if(ret < 0)
+    {
+        err("Failed to sync values from GPU\n");
+        return ret;
+    }
+#endif
 
     switch(stat)
     {
@@ -113,6 +127,39 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
     IF_HAVE_512(__m512 count_512, dev_512);
     IF_HAVE_256(__m256 count_256, dev_256);
     IF_HAVE_128(__m128 count_, dev_);
+
+#if USE_GPU
+    int ret = gpu_sync_dual_array(acc);
+    if(ret < 0)
+    {
+        err("Failed to sync values from GPU\n");
+        return ret;
+    }
+#endif
+
+//    if(acc->dim0 == 10300)
+//    {
+//        warn("dim = %i, %i sum = %i prod = %i\n",
+//             acc->dim0, acc->dim1,
+//             acc->dim0 + acc->dim1, acc->dim0 * acc->dim1);
+//
+//        printf("avg: ");
+//        for(i = 0; i < acc->dim0 + acc->dim1; i++)
+//            printf("%.3f,", acc->_AVG.a[i]);
+//        printf("\n");
+//
+//        printf("dev: ");
+//        for(i = 0; i < acc->dim0 + acc->dim1; i++)
+//            printf("%.3f,", acc->_DEV.a[i]);
+//        printf("\n");
+//
+//        printf("cov: ");
+//        for(i = 0; i < acc->dim0 * acc->dim1; i++)
+//            printf("%.3f,", acc->_COV.a[i]);
+//        printf("\n");
+//
+//        exit(0);
+//    }
 
     if(stat & (STAT_COV | STAT_PEARSON))
         result = calloc(acc->dim0 * acc->dim1, sizeof(float));
@@ -188,7 +235,6 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
             break;
 
         case STAT_PEARSON:
-            len = acc->dim0 + acc->dim1;
             count = acc->count - 1;
             IF_HAVE_128(count_ = _mm_broadcast_ss(&count));
             IF_HAVE_256(count_256 = _mm256_broadcast_ss(&count));
@@ -227,6 +273,7 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
                     i++;
                 }
             }
+            break;
 
         case STAT_MAX:
             memcpy(result, acc->_MAX.a, acc->dim0 * sizeof(float));
@@ -262,6 +309,13 @@ int stat_create_dual_array(struct accumulator **acc, stat_t capabilities, int nu
         return -EINVAL;
     }
 
+    if(num0 < num1)
+    {
+        err("Dual accumulators should have smaller second dimension "
+            "(for efficiency) -- please transpose your data\n");
+        return -EINVAL;
+    }
+
     res = calloc(1, sizeof(struct accumulator));
     if(!res)
     {
@@ -284,9 +338,18 @@ int stat_create_dual_array(struct accumulator **acc, stat_t capabilities, int nu
     CAP_INIT_ARRAY(res, _MINABS, num0 + num1, __free_acc);
 
     res->reset = __stat_reset_dual_array;
-    res->reset = __stat_free_dual_array;
+    res->free = __stat_free_dual_array;
     res->get = __stat_get_dual_array;
     res->get_all = __stat_get_all_dual_array;
+
+#if USE_GPU
+    int ret = gpu_init_dual_array(res, num0, num1);
+    if(ret < 0)
+    {
+        err("Failed to initialize GPU-side vars\n");
+        goto __free_acc;
+    }
+#endif
 
     *acc = res;
     return 0;
@@ -312,7 +375,24 @@ int __accumulate_dual_array(struct accumulator *acc,
                                           float *val0, float *val1,
                                           int len0, int len1)
 {
-    int i, j, k;
+    int i;
+//    if(len0 == 10300)
+//    {
+//        printf("val0: ");
+//        for(i = 0; i < len0; i++)
+//            printf("%.3f,", val0[i]);
+//        printf("\n");
+//
+//        printf("val1: ");
+//        for(i = 0; i < len1; i++)
+//            printf("%.3f,", val1[i]);
+//        printf("\n");
+//    }
+
+#if USE_GPU
+    return gpu_accumulate_dual_array(acc, val0, val1, len0, len1);
+#else
+    int  j, k;
     float m0_new_scalar, m1_new_scalar;
 
     IF_HAVE_512(__m512 curr0_512, curr1_512, count_512,
@@ -546,8 +626,8 @@ int __accumulate_dual_array(struct accumulator *acc,
                                       );
 
                                       acc->_COV.a[len0 * (i + j) + k] +=
-                                              ((val1[i + j] * m1_new_scalar) *
-                                               (val0[k] * acc->_AVG.a[k]));
+                                              ((val1[i + j] - m1_new_scalar) *
+                                               (val0[k] - acc->_AVG.a[k]));
                                       k++;
                                   }
                               }
@@ -738,6 +818,7 @@ int __accumulate_dual_array(struct accumulator *acc,
     }
 
     return 0;
+#endif
 }
 
 int stat_accumulate_dual_array(struct accumulator *acc, float *val0, float *val1, int len0, int len1)

@@ -2,6 +2,7 @@
 
 #include "__trace_internal.h"
 #include "__stat_internal.h"
+#include "__avx_macros.h"
 #include "platform.h"
 
 #include <errno.h>

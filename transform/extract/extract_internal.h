@@ -10,28 +10,10 @@
 
 #define NUM_MATCH(match)        ((match)->upper - (match)->lower)
 
-#define USE_GPU                 1
-#define USE_NET                 0
-
-#if USE_NET
-
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
-
-#define NETADDR                 "achilles.home"
-#define NETPORT                 9936
-
-#endif
-
-#if USE_GPU && USE_NET
-#error "Invalid configuration"
-#endif
-
 struct tfm_extract_reference
 {
     float mean, dev, count;
-    float *match_pattern, s_pattern;
+    struct accumulator *matcher;
 };
 
 struct tfm_extract_config

@@ -1,12 +1,11 @@
-#include "statistics.h"
 #include "__trace_internal.h"
+#include "__stat_internal.h"
 
 #include <stdlib.h>
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include "cuda.h"
-
 
 #define BLOCKDIM    128
 

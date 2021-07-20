@@ -202,6 +202,7 @@ int __sync_finalize(struct tfm_synchronize *tfm, size_t index)
         if (index + tfm->max_distance >= curr->index &&
             !curr->signalled)
         {
+            // todo i dont think this is quite right but seems to be workin?
             curr->signalled = 1;
             sem_release(&curr->signal);
         }

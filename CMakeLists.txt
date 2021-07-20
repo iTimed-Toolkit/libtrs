@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.14)
 project(libtrs C CUDA)
 set(CMAKE_C_STANDARD 11)
 
-cmake_policy(SET CMP0104 OLD)
-
 if(UNIX)
     message("Configuring for Linux")
     set(CMAKE_C_FLAGS "-Wall -mavx2 -O3")
@@ -13,7 +11,6 @@ if(UNIX)
     set(LT_SSL "crypto")
     set(LT_THREADS "pthread")
     set(LT_NET "")
-
 elseif(WIN32)
     message("Configuring for Windows")
     set(CMAKE_C_FLAGS "/arch:AVX2")
@@ -32,7 +29,6 @@ elseif(WIN32)
     set(LT_SSL "libcrypto")
     set(LT_THREADS "")
     set(LT_NET "ws2_32")
-
 endif()
 
 include_directories(include)
@@ -44,28 +40,28 @@ add_library(trace STATIC lib/trace/trace_set.c lib/trace/cache.c  lib/trace/trac
         lib/trace/backend/backend_trs.c lib/trace/backend/backend_ztrs.c lib/trace/backend/backend_net.c
         lib/platform/secure_socket.c lib/platform/platform_socket.c
         lib/platform/platform_sem.c lib/platform/platform_thread.c)
-#target_compile_options(trace PRIVATE "-O3")
 target_link_libraries(trace ${LT_THREADS} ${LT_NET} ${LT_ZLIB} ${LT_SSL})
 
 # statistics
-set(STATS_USE_GPU 0)
-add_library(stats STATIC lib/stats/single.c lib/stats/dual.c
-        lib/stats/single_array.c lib/stats/dual_array.c
-        lib/stats/stats.c lib/stats/oneshot.c lib/stats/gpu_pattern_match.cu)
-set_property(TARGET stats PROPERTY CUDA_SEPARABLE_COMPILATION ON)
-set_property(TARGET stats PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS ON)
-set_property(TARGET stats PROPERTY CUDA_ARCHITECTURES OFF)
+set(STATS_USE_GPU 1)
+add_library(stats STATIC lib/stats/single.c lib/stats/dual.c lib/stats/single_array.c lib/stats/dual_array.c
+        lib/stats/pattern_match.c lib/stats/stats.c)
 
-#if (${STATS_USE_GPU} EQUAL 1)
-#    target_sources(stats PRIVATE )
-#endif ()
+if (${STATS_USE_GPU} EQUAL 1)
+    target_sources(stats PRIVATE lib/stats/gpu_pattern_match.cu
+            lib/stats/gpu_dual_array.cu)
+
+    cmake_policy(SET CMP0104 OLD)
+    set_property(TARGET stats PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+    set_property(TARGET stats PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS ON)
+    set_property(TARGET stats PROPERTY CUDA_ARCHITECTURES OFF)
+endif ()
 
 target_compile_options(stats PRIVATE "-DUSE_GPU=${STATS_USE_GPU}")
 target_link_libraries(stats ${LT_MATH})
 
 # crypto
 add_library(crypto_utils STATIC lib/crypto/aes.c)
-#target_compile_options(crypto_utils PRIVATE "-O3")
 target_link_libraries(crypto_utils ${LT_SSL})
 
 # transformations
@@ -78,10 +74,8 @@ add_library(transform STATIC transform/tfm.c transform/tfm_align.c transform/tfm
         transform/system/tfm_synchronize.c transform/trace/tfm_append.c transform/tfm_verify.c
         transform/tfm_block.c transform/block/tfm_reduce_along.c transform/block/tfm_select_along.c
         transform/extract/tfm_extract_pattern.c transform/extract/tfm_extract_timing.c transform/extract/extract_internal.c)
-#target_compile_options(transform PRIVATE "-O3")
 target_link_libraries(transform ${LT_THREADS} ${LT_MATH} crypto_utils stats)
 
 # frontend
 add_executable(libtrace_evaluate main.c)
-#target_compile_options(libtrace_evaluate PRIVATE "-O3")
 target_link_libraries(libtrace_evaluate trace transform stats)

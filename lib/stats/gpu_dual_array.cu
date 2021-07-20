@@ -1,7 +1,12 @@
+#include "statistics.h"
 #include "__stat_internal.h"
 #include "__trace_internal.h"
 
-#include <errno.h>
+#include <stdlib.h>
+
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
+#include "cuda.h"
 
 #define THREADS_PER_BLOCK       32
 
@@ -12,6 +17,23 @@ struct dual_array_gpu_vars
     float *val0, *val1, *m, *s, *cov;
 };
 
+__global__ void __do_accumulate_dual_array2(float count,
+                                            float *val1, int len0, int len1,
+                                            float *m, float *s)
+{
+    unsigned int id_x = blockDim.x * blockIdx.x + threadIdx.x;
+    float v1, m1, m1_new, ds1;
+
+    if(id_x < len1)
+    {
+        v1 = val1[id_x]; m1 = m[len0 + id_x];
+        m1_new = m1 + (v1 - m1) / count;
+        ds1 = ((v1 - m1) * (v1 - m1_new));
+        m[len0 + id_x] = m1_new;
+        s[len0 + id_x] += ds1;
+    }
+}
+
 __global__ void __do_accumulate_dual_array(float count,
                                            float *val0, float *val1,
                                            int len0, int len1,
@@ -19,33 +41,25 @@ __global__ void __do_accumulate_dual_array(float count,
 {
     int i;
     unsigned int id_x = blockDim.x * blockIdx.x + threadIdx.x;
-    float my_val, my_m, my_s, my_new_m, my_new_s;
-
-    float per = len1 / len0;
+    float v0, m0, m0_new, ds0,
+            v1, m1_new, dcov;
 
     if(id_x < len0)
     {
-        my_val = val0[id_x];
-        my_m = m[id_x];
-        my_s = s[id_x];
-
-        my_new_m = my_m + (my_val - my_m) / count;
-        my_new_s = my_s + ((my_val - my_m) * (my_val - my_new_m));
-
-        m[id_x] = my_new_m;
-        s[id_x] = my_new_s;
+        v0 = val0[id_x]; m0 = m[id_x];
+        m0_new = m0 + (v0 - m0) / count;
+        ds0 = ((v0 - m0) * (v0 - m0_new));
 
         for(i = 0; i < len1; i++)
         {
-            my_val = val1[id_x];
-            my_m = m[len0 + id_x];
-            my_s = s[len0 + id_x];
-
-            my_new_m = my_m + (my_val - my_m) / count;
-            my_new_s = my_s + ((my_val - my_m) * my_val - my_new_m);
-
-            m[len0 + id_x] = my_new_m;
+            v1 = val1[i];
+            m1_new = m[len0 + i];
+            dcov = ((v0 - m0) * (v1 - m1_new));
+            cov[len0 * i + id_x] += dcov;
         }
+
+        m[id_x] = m0_new;
+        s[id_x] += ds0;
     }
 }
 
@@ -68,7 +82,7 @@ __global__ void __do_init_dual_array(float *val0, float *val1,
     }
 }
 
-int __sync_dual_array_gpu(struct accumulator *acc)
+int gpu_sync_dual_array(struct accumulator *acc)
 {
     cudaError_t cuda_ret;
     struct dual_array_gpu_vars *vars =
@@ -76,7 +90,7 @@ int __sync_dual_array_gpu(struct accumulator *acc)
 
     if(vars->host_stale)
     {
-        cuda_ret = cudaMemcpyAsync(acc->m.a, vars->m,
+        cuda_ret = cudaMemcpyAsync(acc->_AVG.a, vars->m,
                                    (acc->dim0 + acc->dim1) * sizeof(float),
                                    cudaMemcpyDeviceToHost,
                                    vars->stream);
@@ -86,7 +100,7 @@ int __sync_dual_array_gpu(struct accumulator *acc)
             return -EINVAL;
         }
 
-        cuda_ret = cudaMemcpyAsync(acc->s.a, vars->s,
+        cuda_ret = cudaMemcpyAsync(acc->_DEV.a, vars->s,
                                    (acc->dim0 + acc->dim1) * sizeof(float),
                                    cudaMemcpyDeviceToHost,
                                    vars->stream);
@@ -96,7 +110,7 @@ int __sync_dual_array_gpu(struct accumulator *acc)
             return -EINVAL;
         }
 
-        cuda_ret = cudaMemcpyAsync(acc->cov.a, vars->cov,
+        cuda_ret = cudaMemcpyAsync(acc->_COV.a, vars->cov,
                                    (acc->dim0 * acc->dim1) * sizeof(float),
                                    cudaMemcpyDeviceToHost,
                                    vars->stream);
@@ -119,7 +133,7 @@ int __sync_dual_array_gpu(struct accumulator *acc)
     return 0;
 }
 
-int __accumulate_dual_array_gpu(struct accumulator *acc, float *val0, float *val1, int len0, int len1)
+int gpu_accumulate_dual_array(struct accumulator *acc, float *val0, float *val1, int len0, int len1)
 {
     cudaError_t cuda_ret;
     struct dual_array_gpu_vars *vars =
@@ -127,7 +141,6 @@ int __accumulate_dual_array_gpu(struct accumulator *acc, float *val0, float *val
 
     dim3 block(THREADS_PER_BLOCK);
 
-    acc->count++;
     cuda_ret = cudaMemcpyAsync(vars->val0, val0,
                                len0 * sizeof(float),
                                cudaMemcpyHostToDevice,
@@ -148,6 +161,7 @@ int __accumulate_dual_array_gpu(struct accumulator *acc, float *val0, float *val
         return -EINVAL;
     }
 
+    acc->count++;
     if(acc->count == 1)
     {
         dim3 grid((len0 + len1) / THREADS_PER_BLOCK + 1);
@@ -157,17 +171,21 @@ int __accumulate_dual_array_gpu(struct accumulator *acc, float *val0, float *val
     }
     else
     {
+        dim3 grid2(len1 / THREADS_PER_BLOCK + 1);
+        __do_accumulate_dual_array2<<<grid2, block, 0, vars->stream>>>(acc->count, vars->val1, len0, len1,
+                                                                       vars->m, vars->s);
+
         dim3 grid(len0 / THREADS_PER_BLOCK + 1);
         __do_accumulate_dual_array<<<grid, block, 0, vars->stream>>>(acc->count, vars->val0, vars->val1,
-                                                                       len0, len1,
-                                                                       vars->m, vars->s, vars->cov);
+                                                                     len0, len1,
+                                                                     vars->m, vars->s, vars->cov);
     }
 
     vars->host_stale = true;
     return 0;
 }
 
-int __init_dual_array_gpu(struct accumulator *acc, int num0, int num1)
+int gpu_init_dual_array(struct accumulator *acc, int num0, int num1)
 {
     int ret;
     cudaError_t cuda_ret;
@@ -204,12 +222,13 @@ int __init_dual_array_gpu(struct accumulator *acc, int num0, int num1)
         ret = -ENOMEM;
         goto __destroy_stream;
     }
+
     cuda_ret = cudaMallocAsync(&vars->val1, num1 * sizeof(float), vars->stream);
     if(cuda_ret != cudaSuccess)
     {
         err("Failed to allocate GPU val1 array: %s\n", cudaGetErrorName(cuda_ret));
         ret = -ENOMEM;
-        goto __destroy_stream;
+        goto __free_bufs;
     }
 
     cuda_ret = cudaMallocAsync(&vars->m, (num0 + num1) * sizeof(float), vars->stream);
@@ -236,7 +255,6 @@ int __init_dual_array_gpu(struct accumulator *acc, int num0, int num1)
         goto __free_bufs;
     }
 
-
     acc->gpu_vars = (void *) vars;
     return 0;
 
@@ -262,4 +280,25 @@ __destroy_stream:
 __free_vars:
     free(vars);
     return ret;
+}
+
+int gpu_free_dual_array(struct accumulator *acc)
+{
+    struct dual_array_gpu_vars *vars =
+            (struct dual_array_gpu_vars *) acc->gpu_vars;
+
+    if(vars->val0)
+        cudaFreeAsync(vars->val0, vars->stream);
+    if(vars->val1)
+        cudaFreeAsync(vars->val1, vars->stream);
+    if(vars->m)
+        cudaFreeAsync(vars->m, vars->stream);
+    if(vars->s)
+        cudaFreeAsync(vars->s, vars->stream);
+    if(vars->cov)
+        cudaFreeAsync(vars->cov, vars->stream);
+
+    cudaStreamDestroy(vars->stream);
+    free(vars);
+    return 0;
 }

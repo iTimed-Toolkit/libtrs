@@ -4,7 +4,7 @@
 #include "__stat_internal.h"
 
 #include <errno.h>
-#include <string.h>
+#include <stdlib.h>
 
 int stat_reset_accumulator(struct accumulator *acc)
 {
@@ -38,7 +38,13 @@ int stat_get(struct accumulator *acc, stat_t stat, int index, float *res)
         return -EINVAL;
     }
 
-    return acc->get(acc, stat, index, res);
+    if(acc->get)
+        return acc->get(acc, stat, index, res);
+    else
+    {
+        err("Accumulator does not have a get function\n");
+        return -EINVAL;
+    }
 }
 
 int stat_get_all(struct accumulator *acc, stat_t stat, float **res)
@@ -49,5 +55,11 @@ int stat_get_all(struct accumulator *acc, stat_t stat, float **res)
         return -EINVAL;
     }
 
-    return acc->get_all(acc, stat, res);
+    if(acc->get_all)
+        return acc->get_all(acc, stat, res);
+    else
+    {
+        err("Accumulator does not have a get all function\n");
+        return -EINVAL;
+    }
 }
