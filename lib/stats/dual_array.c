@@ -81,7 +81,7 @@ int __stat_get_dual_array(struct accumulator *acc, stat_t stat, int index, float
             break;
 
         case STAT_COV:
-            val = acc->_COV.f;
+            val = acc->_COV.a[index];
             break;
 
         case STAT_PEARSON:
@@ -136,30 +136,6 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
         return ret;
     }
 #endif
-
-//    if(acc->dim0 == 10300)
-//    {
-//        warn("dim = %i, %i sum = %i prod = %i\n",
-//             acc->dim0, acc->dim1,
-//             acc->dim0 + acc->dim1, acc->dim0 * acc->dim1);
-//
-//        printf("avg: ");
-//        for(i = 0; i < acc->dim0 + acc->dim1; i++)
-//            printf("%.3f,", acc->_AVG.a[i]);
-//        printf("\n");
-//
-//        printf("dev: ");
-//        for(i = 0; i < acc->dim0 + acc->dim1; i++)
-//            printf("%.3f,", acc->_DEV.a[i]);
-//        printf("\n");
-//
-//        printf("cov: ");
-//        for(i = 0; i < acc->dim0 * acc->dim1; i++)
-//            printf("%.3f,", acc->_COV.a[i]);
-//        printf("\n");
-//
-//        exit(0);
-//    }
 
     if(stat & (STAT_COV | STAT_PEARSON))
         result = calloc(acc->dim0 * acc->dim1, sizeof(float));
@@ -311,9 +287,8 @@ int stat_create_dual_array(struct accumulator **acc, stat_t capabilities, int nu
 
     if(num0 < num1)
     {
-        err("Dual accumulators should have smaller second dimension "
-            "(for efficiency) -- please transpose your data\n");
-        return -EINVAL;
+        warn("Dual accumulators should have smaller second dimension (for efficiency). "
+             "This configuration is supported, but may perform worse\n");
     }
 
     res = calloc(1, sizeof(struct accumulator));
@@ -375,20 +350,6 @@ int __accumulate_dual_array(struct accumulator *acc,
                                           float *val0, float *val1,
                                           int len0, int len1)
 {
-    int i;
-//    if(len0 == 10300)
-//    {
-//        printf("val0: ");
-//        for(i = 0; i < len0; i++)
-//            printf("%.3f,", val0[i]);
-//        printf("\n");
-//
-//        printf("val1: ");
-//        for(i = 0; i < len1; i++)
-//            printf("%.3f,", val1[i]);
-//        printf("\n");
-//    }
-
 #if USE_GPU
     return gpu_accumulate_dual_array(acc, val0, val1, len0, len1);
 #else

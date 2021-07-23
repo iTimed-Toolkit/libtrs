@@ -38,7 +38,9 @@ static const char *summary_t_strings[] = {
         STR_AT_IDX(SUMMARY_AVG),
         STR_AT_IDX(SUMMARY_DEV),
         STR_AT_IDX(SUMMARY_MIN),
-        STR_AT_IDX(SUMMARY_MAX)
+        STR_AT_IDX(SUMMARY_MAX),
+        STR_AT_IDX(SUMMARY_MINABS),
+        STR_AT_IDX(SUMMARY_MAXABS)
 };
 
 static const char *filter_t_strings[] = {
@@ -50,6 +52,7 @@ static const char *aes_leakage_t_strings[] = {
         STR_AT_IDX(AES128_R0_R1_HD_NOMC),
         STR_AT_IDX(AES128_RO_HW_ADDKEY_OUT),
         STR_AT_IDX(AES128_R0_HW_SBOX_OUT),
+        STR_AT_IDX(AES128_R9_HW_MIXCOLS_OUT),
         STR_AT_IDX(AES128_R10_OUT_HD),
         STR_AT_IDX(AES128_R10_HW_SBOXIN)
 };
@@ -299,6 +302,14 @@ PARSE_FUNC(tfm_reduce_along,
            stat, along, param);
 
 PARSE_FUNC(tfm_select_along,
+           parse_enum(stat, summary_t, config);
+           parse_enum(along, filter_t, config);
+           filter_param_t param;
+           if(along == ALONG_NUM)
+               __parse_arg_nodecl(param.num, int, config),
+           stat, along, param);
+
+PARSE_FUNC(tfm_sort_along,
            parse_enum(stat, summary_t, config);
            parse_enum(along, filter_t, config);
            filter_param_t param;
@@ -590,6 +601,8 @@ int parse_transform(char *line, struct trace_set **ts,
         ret = __parse_tfm_reduce_along(&curr, &tfm);
     else if(strcmp(type, "select_along") == 0)
         ret = __parse_tfm_select_along(&curr, &tfm);
+    else if(strcmp(type, "sort_along") == 0)
+        ret = __parse_tfm_sort_along(&curr, &tfm);
     else if(strcmp(type, "extract_pattern") == 0)
         ret = __parse_tfm_extract_pattern(&curr, &tfm);
     else if(strcmp(type, "extract_timing") == 0)

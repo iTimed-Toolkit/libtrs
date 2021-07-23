@@ -85,15 +85,16 @@ static const uint32_t dependencies[] = {
 #define IF_CAP(acc, stat)       \
     if((acc)->capabilities & ((ONEHOT_NODECL(stat)) | dependencies[stat]))
 
+// todo: figure out some way to make this work with dependency tables :/
 #define IF_NOT_CAP(acc, stat)                   \
-    if((acc)->capabilities & ~((ONEHOT_NODECL(stat)) | dependencies[stat]))
+    if(!((acc)->capabilities & (((stat)))))
 
 #define CAP_INIT_SCALAR(acc, cap, val) \
     IF_CAP(acc, cap) { (acc)->cap.f = val; }
 
 #define CAP_INIT_ARRAY(acc, cap, num, fail) \
     IF_CAP(acc, cap) { (acc)->cap.a = calloc(num, sizeof(float)); \
-    if(!(acc)->cap.a) {err("Failed to alloc " #acc " for stat " #cap) \
+    if(!(acc)->cap.a) {err("Failed to alloc " #acc " for stat " #cap "\n") \
         goto fail; }}
 
 #define CAP_RESET_SCALAR(acc, cap, val) \

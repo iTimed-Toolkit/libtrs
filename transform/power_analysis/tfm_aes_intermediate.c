@@ -22,6 +22,24 @@ static inline uint8_t hamming_distance(uint8_t n0, uint8_t n1)
     return hamming_weight(n0 ^ n1);
 }
 
+int aes128_round9_hw_mixcols_out(uint8_t *data, int index, float *res)
+{
+    int key_index = (index / (256 * 256));
+    uint8_t key_guess11 = (index % (256 * 256)) / 256,
+            key_guess10 = (index % (256 * 256)), state;
+
+    // undo final shiftrows
+    state = data[16 + shift_rows_inv_indices[key_index]] ^ key_guess11;
+
+    // undo final subbytes
+    state = sbox_inv[state >> 4u][state & 0xFu];
+
+    // calculate output of mix cols
+    state = state ^ key_guess10;
+    *res = (float) hamming_weight(state);
+    return 0;
+}
+
 int aes128_round10_hw_sbox_in(uint8_t *data, int index, float *res)
 {
     int key_index = (index / 256);
@@ -106,6 +124,11 @@ int tfm_aes_intermediate_init(struct trace_set *ts, void *arg)
             ts->num_samples = ts->prev->num_samples * PMS_PER_THREAD;
             break;
 
+        case AES128_R9_HW_MIXCOLS_OUT:
+            ts->num_traces = 1;
+            ts->num_samples = ts->prev->num_samples * 1 * 256 * 256;
+            break;
+
         default:
             err("Unrecognized leakage model\n");
             return -EINVAL;
@@ -132,6 +155,16 @@ void tfm_aes_intermediate_progress_title(char *dst, int len, size_t index, int c
     uint8_t key_guess = (index % 256);
 
     snprintf(dst, len, "CPA %zu pm %02X (%i traces)", key_index, key_guess, count);
+}
+
+void tfm_aes_intermediate_progress_title_dualkey(char *dst, int len, size_t index, int count)
+{
+    size_t key_index = (index / (256 * 256));
+    uint8_t key_guess11 = (index % (256 * 256)) / 256,
+            key_guess10 = (index % (256 * 256));
+
+    snprintf(dst, len, "CPA %zu pm11 %02X pm10 %02X (%i traces)",
+             key_index, key_guess11, key_guess10, count);
 }
 
 int tfm_aes_intermediate(struct tfm **tfm, aes_leakage_t leakage_model)
@@ -161,6 +194,11 @@ int tfm_aes_intermediate(struct tfm **tfm, aes_leakage_t leakage_model)
 
         case AES128_R0_HW_SBOX_OUT:
             model = aes128_round0_hw_sbox_out;
+            break;
+
+        case AES128_R9_HW_MIXCOLS_OUT:
+            model = aes128_round9_hw_mixcols_out;
+            cpa_args.progress_title = tfm_aes_intermediate_progress_title_dualkey;
             break;
 
         case AES128_R10_OUT_HD:

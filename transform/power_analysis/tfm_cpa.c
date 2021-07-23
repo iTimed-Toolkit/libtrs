@@ -10,7 +10,7 @@
 #include <math.h>
 
 #define TFM_DATA(tfm)   ((struct cpa_args *) (tfm)->data)
-#define CPA_REPORT_INTERVAL     100000
+#define CPA_REPORT_INTERVAL     1000
 #define CPA_TITLE_SIZE          128
 
 int __tfm_cpa_init(struct trace_set *ts)

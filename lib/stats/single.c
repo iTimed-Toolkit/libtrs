@@ -26,7 +26,7 @@ int __stat_get_single(struct accumulator *acc, stat_t stat, int index, float *re
 
     IF_NOT_CAP(acc, stat)
     {
-        err("Accumulator does not have requested capability");
+        err("Accumulator does not have requested capability\n");
         return -EINVAL;
     }
 

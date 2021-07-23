@@ -85,6 +85,7 @@ int tfm_verify(struct tfm **tfm, crypto_t which);
 
 int tfm_reduce_along(struct tfm **tfm, summary_t stat, filter_t along, filter_param_t param);
 int tfm_select_along(struct tfm **tfm, summary_t stat, filter_t along, filter_param_t param);
+int tfm_sort_along(struct tfm **tfm, summary_t stat, filter_t along, filter_param_t param);
 int tfm_extract_pattern(struct tfm **tfm, int pattern_size, int expecting, int avg_len, int max_dev,
                         match_region_t *pattern, crypto_t data);
 int tfm_extract_timing(struct tfm **tfm, int pattern_size, int expecting, int avg_len, int max_dev,
@@ -114,6 +115,7 @@ typedef enum
     AES128_R0_R1_HD_NOMC = 0,
     AES128_RO_HW_ADDKEY_OUT,
     AES128_R0_HW_SBOX_OUT,
+    AES128_R9_HW_MIXCOLS_OUT,
     AES128_R10_OUT_HD,
     AES128_R10_HW_SBOXIN,
 } aes_leakage_t;

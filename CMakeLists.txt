@@ -72,7 +72,8 @@ add_library(transform STATIC transform/tfm.c transform/tfm_align.c transform/tfm
         transform/power_analysis/tfm_aes_intermediate.c transform/system/tfm_wait_on.c transform/system/tfm_visualize.c
         transform/power_analysis/tfm_aes_knownkey.c
         transform/system/tfm_synchronize.c transform/trace/tfm_append.c transform/tfm_verify.c
-        transform/tfm_block.c transform/block/tfm_reduce_along.c transform/block/tfm_select_along.c
+        transform/tfm_block.c transform/block/tfm_reduce_along.c
+        transform/block/tfm_select_along.c transform/block/tfm_sort_along.c
         transform/extract/tfm_extract_pattern.c transform/extract/tfm_extract_timing.c transform/extract/extract_internal.c)
 target_link_libraries(transform ${LT_THREADS} ${LT_MATH} crypto_utils stats)
 
