@@ -3,6 +3,7 @@
 
 #include "statistics.h"
 #include <stdint.h>
+#include <stdbool.h>
 
 #define ACCUMULATOR(name)   \
     union {                 \
@@ -37,6 +38,7 @@ struct accumulator
     ACCUMULATOR(_MAXABS);
     ACCUMULATOR(_MINABS);
 
+    bool transpose;
     int (*reset)(struct accumulator *);
     int (*free)(struct accumulator *);
     int (*get)(struct accumulator *, stat_t, int, float *);

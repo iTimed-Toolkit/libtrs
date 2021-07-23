@@ -40,6 +40,23 @@ int __stat_free_dual_array(struct accumulator *acc)
     return 0;
 }
 
+/*
+ * In array is len0 x len1, out array is len1 x len0.
+ * Note that this could be more efficient, but this call
+ * is not usually performance critical
+ */
+void __transpose(int len0, int len1, float *in, float *out)
+{
+    int y, x;
+    for(y = 0; y < len0; y++)
+    {
+        for(x = 0; x < len1; x++)
+        {
+            out[len0 * x + y] = in[y * len1 + x];
+        }
+    }
+}
+
 int __stat_get_dual_array(struct accumulator *acc, stat_t stat, int index, float *res)
 {
     int i0, i1;
@@ -69,6 +86,32 @@ int __stat_get_dual_array(struct accumulator *acc, stat_t stat, int index, float
         return ret;
     }
 #endif
+
+    if(acc->transpose)
+    {
+        switch(stat)
+        {
+            case STAT_AVG:
+            case STAT_DEV:
+            case STAT_MAX:
+            case STAT_MIN:
+            case STAT_MAXABS:
+            case STAT_MINABS:
+                index = (acc->dim0 + acc->dim1 - index);
+                break;
+
+            case STAT_COV:
+            case STAT_PEARSON:
+                i0 = (index % acc->dim0);
+                i1 = (index / acc->dim0);
+                index = i0 * acc->dim0 + i1;
+                break;
+
+            default:
+                err("Invalid requested statistic\n");
+                return -EINVAL;
+        }
+    }
 
     switch(stat)
     {
@@ -111,7 +154,7 @@ int __stat_get_dual_array(struct accumulator *acc, stat_t stat, int index, float
             break;
 
         default:
-        err("Invalid requested statistic\n");
+            err("Invalid requested statistic\n");
             return -EINVAL;
     }
 
@@ -137,6 +180,9 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
     }
 #endif
 
+    if(acc->transpose)
+        warn("Transposed access unimplemented\n");
+
     if(stat & (STAT_COV | STAT_PEARSON))
         result = calloc(acc->dim0 * acc->dim1, sizeof(float));
     else
@@ -159,7 +205,7 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
             IF_HAVE_256(count_256 = _mm256_broadcast_ss(&count));
             IF_HAVE_512(count_512 = _mm512_broadcastss_ps(count_));
 
-            for(i = 0; i < acc->dim0;)
+            for(i = 0; i < acc->dim0 + acc->dim1;)
             {
                 LOOP_HAVE_512(i, acc->dim0,
                               reduce_dev(AVX512, &acc->_DEV.a[i],
@@ -182,7 +228,7 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
             break;
 
         case STAT_COV:
-            len = acc->dim0 + acc->dim1;
+            len = acc->dim0 * acc->dim1;
             count = acc->count - 1;
             IF_HAVE_128(count_ = _mm_broadcast_ss(&acc->count));
             IF_HAVE_256(count_256 = _mm256_broadcast_ss(&acc->count));
@@ -268,7 +314,7 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
             break;
 
         default:
-        err("Invalid requested statistic\n");
+            err("Invalid requested statistic\n");
             return -EINVAL;
     }
 
@@ -285,12 +331,6 @@ int stat_create_dual_array(struct accumulator **acc, stat_t capabilities, int nu
         return -EINVAL;
     }
 
-    if(num0 < num1)
-    {
-        warn("Dual accumulators should have smaller second dimension (for efficiency). "
-             "This configuration is supported, but may perform worse\n");
-    }
-
     res = calloc(1, sizeof(struct accumulator));
     if(!res)
     {
@@ -303,6 +343,14 @@ int stat_create_dual_array(struct accumulator **acc, stat_t capabilities, int nu
     res->dim0 = num0;
     res->dim1 = num1;
     res->count = 0;
+    res->transpose = false;
+
+    if(num0 < num1)
+    {
+        warn("Dual accumulators should have smaller second dimension (for efficiency). "
+             "Automatically transposing your data.\n");
+        res->transpose = true;
+    }
 
     CAP_INIT_ARRAY(res, _AVG, num0 + num1, __free_acc);
     CAP_INIT_ARRAY(res, _DEV, num0 + num1, __free_acc);
@@ -318,11 +366,24 @@ int stat_create_dual_array(struct accumulator **acc, stat_t capabilities, int nu
     res->get_all = __stat_get_all_dual_array;
 
 #if USE_GPU
-    int ret = gpu_init_dual_array(res, num0, num1);
-    if(ret < 0)
+    int ret;
+    if(res->transpose)
     {
-        err("Failed to initialize GPU-side vars\n");
-        goto __free_acc;
+        ret = gpu_init_dual_array(res, num1, num0);
+        if(ret < 0)
+        {
+            err("Failed to initialize GPU-side vars\n");
+            goto __free_acc;
+        }
+    }
+    else
+    {
+        ret = gpu_init_dual_array(res, num0, num1);
+        if(ret < 0)
+        {
+            err("Failed to initialize GPU-side vars\n");
+            goto __free_acc;
+        }
     }
 #endif
 
@@ -802,7 +863,10 @@ int stat_accumulate_dual_array(struct accumulator *acc, float *val0, float *val1
         return -EINVAL;
     }
 
-    return __accumulate_dual_array(acc, val0, val1, len0, len1);
+    if(acc->transpose)
+        return __accumulate_dual_array(acc, val1, val0, len1, len0);
+    else
+        return __accumulate_dual_array(acc, val0, val1, len0, len1);
 }
 
 int stat_accumulate_dual_array_many(struct accumulator *acc, float *val0, float *val1, int len0, int len1, int num)
