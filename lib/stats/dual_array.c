@@ -10,6 +10,7 @@
 #include <string.h>
 #include <math.h>
 
+#define AUTO_TRANSPOSE      1
 
 int __stat_reset_dual_array(struct accumulator *acc)
 {
@@ -47,12 +48,14 @@ int __stat_free_dual_array(struct accumulator *acc)
  */
 void __transpose(int len0, int len1, float *in, float *out)
 {
-    int y, x;
+    int y, x, i1, i2;
     for(y = 0; y < len0; y++)
     {
         for(x = 0; x < len1; x++)
         {
-            out[len0 * x + y] = in[y * len1 + x];
+            i1 = y * len1 + x;
+            i2 = x * len0 + y;
+            out[i2] = in[i1];
         }
     }
 }
@@ -165,7 +168,9 @@ int __stat_get_dual_array(struct accumulator *acc, stat_t stat, int index, float
 int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
 {
     int i, j, len;
-    float *result, count, dev;
+    float *result, *temp,
+            *source, *source_dev,
+            count, dev;
 
     IF_HAVE_512(__m512 count_512, dev_512);
     IF_HAVE_256(__m256 count_256, dev_256);
@@ -193,10 +198,28 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
         return -ENOMEM;
     }
 
+    if(acc->transpose)
+    {
+        if(stat & (STAT_COV | STAT_PEARSON))
+            temp = calloc(acc->dim0 * acc->dim1, sizeof(float));
+        else
+            temp = calloc(acc->dim0 + acc->dim1, sizeof(float));
+        if(!temp)
+        {
+            err("Failed to allocate result\n");
+            return -ENOMEM;
+        }
+    }
+
     switch(stat)
     {
         case STAT_AVG:
-            memcpy(result, acc->_AVG.a, acc->dim0 * sizeof(float));
+            if(acc->transpose)
+            {
+                memcpy(&result[0], &acc->_AVG.a[acc->dim1], acc->dim0 * sizeof(float));
+                memcpy(&result[acc->dim0], &acc->_AVG.a[0], acc->dim1 * sizeof(float));
+            }
+            else memcpy(result, acc->_AVG.a, (acc->dim0 + acc->dim1) * sizeof(float));
             break;
 
         case STAT_DEV:
@@ -205,24 +228,32 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
             IF_HAVE_256(count_256 = _mm256_broadcast_ss(&count));
             IF_HAVE_512(count_512 = _mm512_broadcastss_ps(count_));
 
+            if(acc->transpose)
+            {
+                memcpy(&temp[0], &acc->_DEV.a[acc->dim1], acc->dim0 * sizeof(float));
+                memcpy(&temp[acc->dim0], &acc->_DEV.a[0], acc->dim1 * sizeof(float));
+                source = temp;
+            }
+            else source = acc->_DEV.a;
+
             for(i = 0; i < acc->dim0 + acc->dim1;)
             {
-                LOOP_HAVE_512(i, acc->dim0,
-                              reduce_dev(AVX512, &acc->_DEV.a[i],
+                LOOP_HAVE_512(i, acc->dim0 + acc->dim1,
+                              reduce_dev(AVX512, &source[i],
                                          &result[i], count);
                 );
 
-                LOOP_HAVE_256(i, acc->dim0,
-                              reduce_dev(AVX256, &acc->_DEV.a[i],
+                LOOP_HAVE_256(i, acc->dim0 + acc->dim1,
+                              reduce_dev(AVX256, &source[i],
                                          &result[i], count);
                 );
 
-                LOOP_HAVE_128(i, acc->dim0,
-                              reduce_dev(AVX128, &acc->_DEV.a[i],
+                LOOP_HAVE_128(i, acc->dim0 + acc->dim1,
+                              reduce_dev(AVX128, &source[i],
                                          &result[i], count);
                 );
 
-                result[i] = sqrtf(acc->_DEV.a[i] / count);
+                result[i] = sqrtf(source[i] / count);
                 i++;
             }
             break;
@@ -234,24 +265,31 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
             IF_HAVE_256(count_256 = _mm256_broadcast_ss(&acc->count));
             IF_HAVE_512(count_512 = _mm512_broadcastss_ps(count_));
 
+            if(acc->transpose)
+            {
+                __transpose(acc->dim0, acc->dim1, acc->_COV.a, temp);
+                source = temp;
+            }
+            else source = acc->_COV.a;
+
             for(i = 0; i < len;)
             {
                 LOOP_HAVE_512(i, len,
-                              reduce_cov(AVX512, &acc->_COV.a[i],
+                              reduce_cov(AVX512, &source[i],
                                          &result[i], count);
                 );
 
                 LOOP_HAVE_256(i, len,
-                              reduce_cov(AVX256, &acc->_COV.a[i],
+                              reduce_cov(AVX256, &source[i],
                                          &result[i], count);
                 );
 
                 LOOP_HAVE_128(i, len,
-                              reduce_cov(AVX128, &acc->_COV.a[i],
+                              reduce_cov(AVX128, &source[i],
                                          &result[i], count);
                 );
 
-                result[i] = acc->_COV.a[i] / acc->count;
+                result[i] = source[i] / acc->count;
                 i++;
             }
             break;
@@ -262,9 +300,47 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
             IF_HAVE_256(count_256 = _mm256_broadcast_ss(&count));
             IF_HAVE_512(count_512 = _mm512_broadcastss_ps(count_));
 
+            if(acc->transpose)
+            {
+                __transpose(acc->dim0, acc->dim1, acc->_COV.a, temp);
+                source = temp;
+
+                source_dev = calloc(acc->dim0 + acc->dim1, sizeof(float));
+                if(!source_dev)
+                {
+                    err("Failed to allocate temp array to hold deviation\n");
+                    free(temp); return -ENOMEM;
+                }
+
+                memcpy(&source_dev[0], &acc->_DEV.a[acc->dim1], acc->dim0 * sizeof(float));
+                memcpy(&source_dev[acc->dim0], &acc->_DEV.a[0], acc->dim1 * sizeof(float));
+            }
+            else
+            {
+                source = acc->_COV.a;
+                source_dev = acc->_DEV.a;
+            }
+
+            char name[128];
+            sprintf(name, "dump_%i.bin", AUTO_TRANSPOSE);
+
+            FILE *debugfile = p_fopen(name, "w+");
+            fprintf(debugfile, "dev,cov\n");
+            for(i = 0; i < acc->dim0 * acc->dim1; i++)
+            {
+                if(i < acc->dim0 + acc->dim1)
+                    fprintf(debugfile, "%.03f,%.03f\n",
+                            source_dev[i], source[i]);
+                else
+                    fprintf(debugfile, ",%.03f\n", source[i]);
+            }
+            p_fflush(debugfile);
+            p_fclose(debugfile);
+            exit(0);
+
             for(j = 0; j < acc->dim1; j++)
             {
-                dev = sqrtf(acc->_DEV.a[acc->dim0 + j] / count);
+                dev = sqrtf(source_dev[acc->dim0 + j] / count);
                 IF_HAVE_128(dev_ = _mm_broadcast_ss(&dev));
                 IF_HAVE_256(dev_256 = _mm256_broadcast_ss(&dev));
                 IF_HAVE_512(dev_512 = _mm512_broadcastss_ps(dev_));
@@ -272,51 +348,77 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
                 for(i = 0; i < acc->dim0;)
                 {
                     LOOP_HAVE_512(i, acc->dim0,
-                                  reduce_pearson(AVX512, &acc->_COV.a[j * acc->dim0 + i],
-                                                 &acc->_DEV.a[i], dev,
+                                  reduce_pearson(AVX512, &source[j * acc->dim0 + i],
+                                                 &source_dev[i], dev,
                                                  &result[j * acc->dim0 + i], count);
                     );
 
                     LOOP_HAVE_256(i, acc->dim0,
-                                  reduce_pearson(AVX256, &acc->_COV.a[j * acc->dim0 + i],
-                                                 &acc->_DEV.a[i], dev,
+                                  reduce_pearson(AVX256, &source[j * acc->dim0 + i],
+                                                 &source_dev[i], dev,
                                                  &result[j * acc->dim0 + i], count);
                     );
 
                     LOOP_HAVE_128(i, acc->dim0,
-                                  reduce_pearson(AVX128, &acc->_COV.a[j * acc->dim0 + i],
-                                                 &acc->_DEV.a[i], dev,
+                                  reduce_pearson(AVX128, &source[j * acc->dim0 + i],
+                                                 &source_dev[i], dev,
                                                  &result[j * acc->dim0 + i], count);
                     );
 
-                    result[j * acc->dim0 + i] = acc->_COV.a[j * acc->dim0 + i] /
+                    result[j * acc->dim0 + i] = source[j * acc->dim0 + i] /
                                                 (count * dev *
-                                                 sqrtf(acc->_DEV.a[i] / count));
+                                                 sqrtf(source_dev[i] / count));
                     i++;
                 }
             }
+
+            if(acc->transpose)
+                free(source_dev);
             break;
 
         case STAT_MAX:
-            memcpy(result, acc->_MAX.a, acc->dim0 * sizeof(float));
+            if(acc->transpose)
+            {
+                memcpy(&result[0], &acc->_MAX.a[acc->dim1], acc->dim0 * sizeof(float));
+                memcpy(&result[acc->dim0], &acc->_MAX.a[0], acc->dim1 * sizeof(float));
+            }
+            else memcpy(result, acc->_MAX.a, (acc->dim0 + acc->dim1) * sizeof(float));
             break;
 
         case STAT_MIN:
-            memcpy(result, acc->_MIN.a, acc->dim0 * sizeof(float));
+            if(acc->transpose)
+            {
+                memcpy(&result[0], &acc->_MIN.a[acc->dim1], acc->dim0 * sizeof(float));
+                memcpy(&result[acc->dim0], &acc->_MIN.a[0], acc->dim1 * sizeof(float));
+            }
+            else memcpy(result, acc->_MIN.a, (acc->dim0 + acc->dim1) * sizeof(float));
             break;
 
         case STAT_MAXABS:
-            memcpy(result, acc->_MAXABS.a, acc->dim0 * sizeof(float));
+            if(acc->transpose)
+            {
+                memcpy(&result[0], &acc->_MAXABS.a[acc->dim1], acc->dim0 * sizeof(float));
+                memcpy(&result[acc->dim0], &acc->_MAXABS.a[0], acc->dim1 * sizeof(float));
+            }
+            else memcpy(result, acc->_MAXABS.a, (acc->dim0 + acc->dim1) * sizeof(float));
             break;
 
         case STAT_MINABS:
-            memcpy(result, acc->_MINABS.a, acc->dim0 * sizeof(float));
+            if(acc->transpose)
+            {
+                memcpy(&result[0], &acc->_MINABS.a[acc->dim1], acc->dim0 * sizeof(float));
+                memcpy(&result[acc->dim0], &acc->_MINABS.a[0], acc->dim1 * sizeof(float));
+            }
+            else memcpy(result, acc->_MINABS.a, (acc->dim0 + acc->dim1) * sizeof(float));
             break;
 
         default:
             err("Invalid requested statistic\n");
             return -EINVAL;
     }
+
+    if(temp)
+        free(temp);
 
     *res = result;
     return 0;
@@ -345,12 +447,14 @@ int stat_create_dual_array(struct accumulator **acc, stat_t capabilities, int nu
     res->count = 0;
     res->transpose = false;
 
+#if AUTO_TRANSPOSE
     if(num0 < num1)
     {
         warn("Dual accumulators should have smaller second dimension (for efficiency). "
              "Automatically transposing your data.\n");
         res->transpose = true;
     }
+#endif
 
     CAP_INIT_ARRAY(res, _AVG, num0 + num1, __free_acc);
     CAP_INIT_ARRAY(res, _DEV, num0 + num1, __free_acc);
