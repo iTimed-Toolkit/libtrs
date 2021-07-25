@@ -17,16 +17,17 @@ struct dual_array_gpu_vars
     float *val0, *val1, *m, *s, *cov;
 };
 
-__global__ void __do_accumulate_dual_array2(float count,
-                                            float *val1, int len0, int len1,
-                                            float *m, float *s)
+__global__ void __do_accumulate_dual_array_val1(float count,
+                                                float *val1, int len0, int len1,
+                                                float *m, float *s)
 {
     unsigned int id_x = blockDim.x * blockIdx.x + threadIdx.x;
     float v1, m1, m1_new, ds1;
 
     if(id_x < len1)
     {
-        v1 = val1[id_x]; m1 = m[len0 + id_x];
+        v1 = val1[id_x];
+        m1 = m[len0 + id_x];
         m1_new = m1 + (v1 - m1) / count;
         ds1 = ((v1 - m1) * (v1 - m1_new));
         m[len0 + id_x] = m1_new;
@@ -34,30 +35,40 @@ __global__ void __do_accumulate_dual_array2(float count,
     }
 }
 
-__global__ void __do_accumulate_dual_array(float count,
-                                           float *val0, float *val1,
-                                           int len0, int len1,
-                                           float *m, float *s, float *cov)
+__global__ void __do_accumulate_dual_array_cov(float count,
+                                               float *val0, float *val1,
+                                               int len0, int len1,
+                                               float *m, float *s, float *cov)
 {
-    int i;
+    unsigned int id0 = blockDim.x * blockIdx.x + threadIdx.x,
+            id1 = blockDim.y * blockIdx.y + threadIdx.y;
+    float v0, m0, v1, m1_new, dcov;
+
+    if(id0 < len0 && id1 < len1)
+    {
+        v0 = val0[id0];
+        m0 = m[id0];
+        v1 = val1[id1];
+        m1_new = m[len0 + id1];
+
+        dcov = ((v0 - m0) * (v1 - m1_new));
+        cov[len0 * id1 + id0] += dcov;
+    }
+}
+
+__global__ void __do_accumulate_dual_array_val0(float count,
+                                                float *val0, int len0,
+                                                float *m, float *s)
+{
     unsigned int id_x = blockDim.x * blockIdx.x + threadIdx.x;
-    float v0, m0, m0_new, ds0,
-            v1, m1_new, dcov;
+    float v0, m0, m0_new, ds0;
 
     if(id_x < len0)
     {
-        v0 = val0[id_x]; m0 = m[id_x];
+        v0 = val0[id_x];
+        m0 = m[id_x];
         m0_new = m0 + (v0 - m0) / count;
         ds0 = ((v0 - m0) * (v0 - m0_new));
-
-        for(i = 0; i < len1; i++)
-        {
-            v1 = val1[i];
-            m1_new = m[len0 + i];
-            dcov = ((v0 - m0) * (v1 - m1_new));
-            cov[len0 * i + id_x] += dcov;
-        }
-
         m[id_x] = m0_new;
         s[id_x] += ds0;
     }
@@ -140,6 +151,7 @@ int gpu_accumulate_dual_array(struct accumulator *acc, float *val0, float *val1,
             (struct dual_array_gpu_vars *) acc->gpu_vars;
 
     dim3 block(THREADS_PER_BLOCK);
+    dim3 block2(THREADS_PER_BLOCK, THREADS_PER_BLOCK);
 
     cuda_ret = cudaMemcpyAsync(vars->val0, val0,
                                len0 * sizeof(float),
@@ -171,14 +183,16 @@ int gpu_accumulate_dual_array(struct accumulator *acc, float *val0, float *val1,
     }
     else
     {
-        dim3 grid2(len1 / THREADS_PER_BLOCK + 1);
-        __do_accumulate_dual_array2<<<grid2, block, 0, vars->stream>>>(acc->count, vars->val1, len0, len1,
-                                                                       vars->m, vars->s);
-
-        dim3 grid(len0 / THREADS_PER_BLOCK + 1);
-        __do_accumulate_dual_array<<<grid, block, 0, vars->stream>>>(acc->count, vars->val0, vars->val1,
-                                                                     len0, len1,
-                                                                     vars->m, vars->s, vars->cov);
+        dim3 grid_val1(len1 / THREADS_PER_BLOCK + 1);
+        __do_accumulate_dual_array_val1<<<grid_val1, block, 0, vars->stream>>>(acc->count, vars->val1, len0, len1,
+                                                                               vars->m, vars->s);
+        dim3 grid_cov(len0 / THREADS_PER_BLOCK + 1, len1 / THREADS_PER_BLOCK + 1);
+        __do_accumulate_dual_array_cov<<<grid_cov, block2, 0, vars->stream>>>(acc->count, vars->val0, vars->val1,
+                                                                              len0, len1,
+                                                                              vars->m, vars->s, vars->cov);
+        dim3 grid_val0(len0 / THREADS_PER_BLOCK + 1);
+        __do_accumulate_dual_array_val0<<<grid_val0, block, 0, vars->stream>>>(acc->count, vars->val0, len0,
+                                                                               vars->m, vars->s);
     }
 
     vars->host_stale = true;

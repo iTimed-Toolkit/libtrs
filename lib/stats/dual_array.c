@@ -185,9 +185,6 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
     }
 #endif
 
-    if(acc->transpose)
-        warn("Transposed access unimplemented\n");
-
     if(stat & (STAT_COV | STAT_PEARSON))
         result = calloc(acc->dim0 * acc->dim1, sizeof(float));
     else
@@ -320,23 +317,6 @@ int __stat_get_all_dual_array(struct accumulator *acc, stat_t stat, float **res)
                 source = acc->_COV.a;
                 source_dev = acc->_DEV.a;
             }
-
-            char name[128];
-            sprintf(name, "dump_%i.bin", AUTO_TRANSPOSE);
-
-            FILE *debugfile = p_fopen(name, "w+");
-            fprintf(debugfile, "dev,cov\n");
-            for(i = 0; i < acc->dim0 * acc->dim1; i++)
-            {
-                if(i < acc->dim0 + acc->dim1)
-                    fprintf(debugfile, "%.03f,%.03f\n",
-                            source_dev[i], source[i]);
-                else
-                    fprintf(debugfile, ",%.03f\n", source[i]);
-            }
-            p_fflush(debugfile);
-            p_fclose(debugfile);
-            exit(0);
 
             for(j = 0; j < acc->dim1; j++)
             {

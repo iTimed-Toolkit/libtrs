@@ -10,7 +10,7 @@
 #include <errno.h>
 
 #define TITLE_SIZE      128
-#define LIST_LENGTH     16
+#define LIST_LENGTH     2
 
 
 struct __tfm_block_block
