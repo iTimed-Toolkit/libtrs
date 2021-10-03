@@ -4,7 +4,7 @@ set(CMAKE_C_STANDARD 11)
 
 if(UNIX)
     message("Configuring for Linux")
-    set(CMAKE_C_FLAGS "-Wall -mavx2 -O3")
+    set(CMAKE_C_FLAGS "-Wall -mavx2 -g")
 
     set(LT_ZLIB "z")
     set(LT_MATH "m")
@@ -80,3 +80,6 @@ target_link_libraries(transform ${LT_THREADS} ${LT_MATH} crypto_utils stats)
 # frontend
 add_executable(libtrace_evaluate main.c)
 target_link_libraries(libtrace_evaluate trace transform stats)
+
+add_executable(libtrace_misc misc.c)
+target_link_libraries(libtrace_misc trace transform stats)

@@ -15,11 +15,18 @@ struct __ts_render_arg
     int ret;
 };
 
+#include "statistics.h"
+
 LT_THREAD_FUNC(__ts_render_func, thread_arg)
 {
     int ret;
     struct __ts_render_arg *arg = (struct __ts_render_arg *) thread_arg;
     struct trace *trace;
+
+    struct accumulator *acc;
+    float maxabs;
+
+    stat_create_single(&acc, STAT_MAXABS);
 
     debug("Hello from thread %i, ts %p\n", arg->thread_index, arg->ts);
     while(1)
@@ -48,7 +55,21 @@ LT_THREAD_FUNC(__ts_render_func, thread_arg)
             return NULL;
         }
 
-        debug("%s\n", trace->title);
+        stat_reset_accumulator(acc);
+        stat_accumulate_single_many(acc, trace->samples, trace->owner->num_samples);
+        stat_get(acc, STAT_MAXABS, 0, &maxabs);
+
+        if(arg->trace_index % 65536 == 0)
+            printf("\n");
+        else
+            printf(",");
+        printf("%0.5f", maxabs);
+
+        if(arg->trace_index % 65536 < 8)
+            err("%s\n", trace->title);
+        if(arg->trace_index % 65536 == 8)
+            err("\n");
+
         trace_free(trace);
 
         arg->ret = 1;

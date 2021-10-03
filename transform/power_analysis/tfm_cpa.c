@@ -153,6 +153,7 @@ int __tfm_cpa_get(struct trace *t)
                 }
             }
 
+            err("%f\n", pm[0]);
             ret = stat_accumulate_dual_array(acc, curr->samples, pm,
                                              ts_num_samples(t->owner->prev), j);
             if(ret < 0)

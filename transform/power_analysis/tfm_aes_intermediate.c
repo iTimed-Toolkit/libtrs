@@ -28,40 +28,40 @@ int aes128_round9_hw_mixcols_out(uint8_t *data, int index, float *res)
     uint8_t key_guess11 = (index % (256 * 256)) / 256,
             key_guess10 = (index % (256 * 256)), state;
 
-//    uint8_t c11[] = {0x36, 0xd0, 0x24, 0x46,
-//                     0x1d, 0x84, 0xb8, 0x37,
-//                     0x5f, 0xc0, 0xf9, 0xc0,
-//                     0x4c, 0xba, 0xb6, 0xbb};
-//
-//    uint8_t correct11[] = {c11[shift_rows_inv_indices[0]],
-//                           c11[shift_rows_inv_indices[1]],
-//                           c11[shift_rows_inv_indices[2]],
-//                           c11[shift_rows_inv_indices[3]],
-//                           c11[shift_rows_inv_indices[4]],
-//                           c11[shift_rows_inv_indices[5]],
-//                           c11[shift_rows_inv_indices[6]],
-//                           c11[shift_rows_inv_indices[7]],
-//                           c11[shift_rows_inv_indices[8]],
-//                           c11[shift_rows_inv_indices[9]],
-//                           c11[shift_rows_inv_indices[0xa]],
-//                           c11[shift_rows_inv_indices[0xb]],
-//                           c11[shift_rows_inv_indices[0xc]],
-//                           c11[shift_rows_inv_indices[0xd]],
-//                           c11[shift_rows_inv_indices[0xe]],
-//                           c11[shift_rows_inv_indices[0xf]]
-//            };
-//
-//    uint8_t correct10[] = {0xda, 0x54, 0x05, 0x3b,
-//                           0x2b, 0x54, 0x9c, 0x71,
-//                           0x42, 0x44, 0x41, 0xf7,
-//                           0x13, 0x7a, 0x4f, 0x7b};
-//
-//
-//    if(key_guess10 == correct10[key_index] &&
-//       key_guess11 == correct11[key_index])
-//    {
-//        err("ITS THE CORRECT MODEL\n");
-//    }
+    uint8_t c11[] = {0x36, 0xd0, 0x24, 0x46,
+                     0x1d, 0x84, 0xb8, 0x37,
+                     0x5f, 0xc0, 0xf9, 0xc0,
+                     0x4c, 0xba, 0xb6, 0xbb};
+
+    uint8_t correct11[] = {c11[shift_rows_inv_indices[0]],
+                           c11[shift_rows_inv_indices[1]],
+                           c11[shift_rows_inv_indices[2]],
+                           c11[shift_rows_inv_indices[3]],
+                           c11[shift_rows_inv_indices[4]],
+                           c11[shift_rows_inv_indices[5]],
+                           c11[shift_rows_inv_indices[6]],
+                           c11[shift_rows_inv_indices[7]],
+                           c11[shift_rows_inv_indices[8]],
+                           c11[shift_rows_inv_indices[9]],
+                           c11[shift_rows_inv_indices[0xa]],
+                           c11[shift_rows_inv_indices[0xb]],
+                           c11[shift_rows_inv_indices[0xc]],
+                           c11[shift_rows_inv_indices[0xd]],
+                           c11[shift_rows_inv_indices[0xe]],
+                           c11[shift_rows_inv_indices[0xf]]
+            };
+
+    uint8_t correct10[] = {0xda, 0x54, 0x05, 0x3b,
+                           0x2b, 0x54, 0x9c, 0x71,
+                           0x42, 0x44, 0x41, 0xf7,
+                           0x13, 0x7a, 0x4f, 0x7b};
+
+
+    if(key_guess10 == correct10[key_index] &&
+       key_guess11 == correct11[key_index])
+    {
+        err("ITS THE CORRECT MODEL @ %i\n", index);
+    }
 
     // undo final shiftrows
     state = data[16 + shift_rows_inv_indices[key_index]] ^ key_guess11;
@@ -160,8 +160,8 @@ int tfm_aes_intermediate_init(struct trace_set *ts, void *arg)
             break;
 
         case AES128_R9_HW_MIXCOLS_OUT:
-            ts->num_traces = 16;
-            ts->num_samples = ts->prev->num_samples * 1 * 256 * 256;
+            ts->num_traces = 1;
+            ts->num_samples = ts->prev->num_samples * 4 * 256 * 256;
             break;
 
         default:
